@@ -1,0 +1,35 @@
+{
+  "name": "flowlens",
+  "version": "0.1.0",
+  "description": "Local-first code intelligence platform — Figma for Developers",
+  "type": "module",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "flowlens": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@ast-grep/napi": "^0.42.0",
+    "chalk": "^5.6.2",
+    "classic-level": "^3.0.0",
+    "commander": "^14.0.3",
+    "fast-glob": "^3.3.3",
+    "ignore": "^7.0.5",
+    "levelgraph": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "memory-level": "^3.1.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.1"
+  }
+}
