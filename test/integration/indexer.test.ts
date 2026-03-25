@@ -99,9 +99,43 @@ describe('Indexer integration', () => {
     expect(languages.has('python')).toBe(true);
     expect(languages.has('go')).toBe(true);
     expect(languages.has('java')).toBe(true);
+    expect(languages.has('kotlin')).toBe(true);
+    expect(languages.has('c')).toBe(true);
+    expect(languages.has('cpp')).toBe(true);
 
     // Verify per-language counts
     expect(result.languageCounts['typescript']).toBeGreaterThan(0);
+  });
+
+  it('indexes flat project with no directory structure', async () => {
+    const result = await runIndex({
+      rootDir: join(import.meta.dirname, '../fixtures/flat-project'),
+      graphStore: store,
+      config: { ...DEFAULT_CONFIG, exclude: [] },
+      fileIndexPath: join(tmpDir, 'file_index.json'),
+      incremental: false,
+    });
+
+    expect(result.filesIndexed).toBeGreaterThan(0);
+    const files = await store.getNodesByKind('file');
+    expect(files.find(f => f.name === 'app.ts')).toBeDefined();
+    expect(files.find(f => f.name === 'helpers.ts')).toBeDefined();
+  });
+
+  it('indexes mixed CJS/ESM modules', async () => {
+    const result = await runIndex({
+      rootDir: join(import.meta.dirname, '../fixtures/mixed-modules'),
+      graphStore: store,
+      config: { ...DEFAULT_CONFIG, exclude: [] },
+      fileIndexPath: join(tmpDir, 'file_index.json'),
+      incremental: false,
+    });
+
+    expect(result.filesIndexed).toBeGreaterThan(0);
+    const files = await store.getNodesByKind('file');
+    const languages = files.map(f => f.language);
+    expect(languages).toContain('javascript'); // .mjs, .cjs
+    expect(languages).toContain('typescript'); // .ts
   });
 
   it('handles broken syntax gracefully', async () => {
