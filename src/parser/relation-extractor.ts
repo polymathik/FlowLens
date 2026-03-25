@@ -216,9 +216,10 @@ function isInsideConditional(node: SgNode): boolean {
   ]);
   let current = node.parent();
   while (current) {
-    if (CONDITIONAL_KINDS.has(current.kind())) return true;
+    const k = String(current.kind());
+    if (CONDITIONAL_KINDS.has(k)) return true;
     // Stop at function/program boundaries to avoid false positives
-    if (current.kind() === 'function_declaration' || current.kind() === 'program') break;
+    if (k === 'function_declaration' || k === 'program') break;
     current = current.parent();
   }
   return false;
