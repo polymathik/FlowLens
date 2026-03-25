@@ -40,12 +40,13 @@ describe('AstGrepParser', () => {
     expect(result.entities[0].kind).toBe('file');
   });
 
-  it('creates file entity for TypeScript (deep, but stubs return empty for now)', async () => {
+  it('creates file entity and extracted entities for TypeScript', async () => {
     const result = await parser.parseFile('src/foo.ts', 'export class Foo {}');
     expect(result.language).toBe('typescript');
-    // Should have at least a file entity
-    expect(result.entities.length).toBeGreaterThanOrEqual(1);
+    // Should have a file entity plus the extracted class entity
+    expect(result.entities.length).toBeGreaterThanOrEqual(2);
     expect(result.entities.find(e => e.kind === 'file')).toBeDefined();
+    expect(result.entities.find(e => e.kind === 'class')).toBeDefined();
   });
 
   it('handles empty content', async () => {

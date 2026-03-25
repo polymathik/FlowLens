@@ -10,6 +10,7 @@ import {
   normalizeRelativePath,
 } from '../utils/paths.js';
 import { generateEntityId } from '../utils/id.js';
+import { extractEntities } from './entity-extractor.js';
 
 /**
  * Maps our internal language names to the string identifiers accepted by
@@ -102,7 +103,7 @@ function tryParse(
  *
  * Two-tier extraction model:
  *  - Deep extraction (TS/JS/JSX/TSX): parse with ast-grep, delegate to
- *    entity-extractor and relation-extractor (stubs for now — Tasks 7 & 9).
+ *    entity-extractor for entity extraction and relation-extractor (stub — Task 9).
  *  - Basic extraction (all other languages): create a file entity with
  *    line_count. If ast-grep supports the language, parse to validate syntax.
  */
@@ -127,9 +128,7 @@ export class AstGrepParser implements Parser {
         const sgRoot = tryParse(astGrepLang, content, normalized, errors);
 
         if (sgRoot) {
-          // STUB: entity extraction (Task 7) and relation extraction (Task 9)
-          // will populate these arrays. For now, return only the file entity.
-          const extractedEntities = extractEntitiesStub();
+          const extractedEntities = extractEntities(sgRoot.root(), normalized, language);
           const extractedRelations = extractRelationsStub();
 
           entities.push(...extractedEntities);
@@ -181,13 +180,8 @@ export class AstGrepParser implements Parser {
 }
 
 // ────────────────────────────────────────────────────────────────
-// Stubs for extractors that will be implemented in Tasks 7 and 9
+// Stub for relation extractor (Task 9)
 // ────────────────────────────────────────────────────────────────
-
-/** @internal Stub — returns empty entity array until Task 7 is implemented. */
-function extractEntitiesStub(): Entity[] {
-  return [];
-}
 
 /** @internal Stub — returns empty relation array until Task 9 is implemented. */
 function extractRelationsStub(): import('../contracts/relations.js').Relation[] {
