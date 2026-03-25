@@ -12,20 +12,39 @@ import {
 import { generateEntityId } from '../utils/id.js';
 import { extractEntities } from './entity-extractor.js';
 import { extractRelations } from './relation-extractor.js';
+import { ensureLanguagesRegistered } from './lang-registration.js';
 
 /**
  * Maps our internal language names to the string identifiers accepted by
- * `@ast-grep/napi`'s `parse()`. Only languages that ast-grep natively
- * supports are included. Languages not in this map can still produce a
- * basic file entity — they just skip AST parsing.
+ * `@ast-grep/napi`'s `parse()`.
+ *
+ * Built-in languages use PascalCase identifiers; dynamically registered
+ * languages (via `@ast-grep/lang-*`) use the lowercase key from registration.
  */
 const LANG_TO_AST_GREP: Record<string, string> = {
+  // Built-in
   typescript: 'TypeScript',
   tsx: 'Tsx',
   javascript: 'JavaScript',
   jsx: 'Tsx', // ast-grep's Tsx grammar handles JSX
   css: 'Css',
   html: 'Html',
+  // Dynamic (registered via @ast-grep/lang-*)
+  python: 'python',
+  go: 'go',
+  rust: 'rust',
+  java: 'java',
+  kotlin: 'kotlin',
+  c: 'c',
+  cpp: 'cpp',
+  csharp: 'csharp',
+  php: 'php',
+  ruby: 'ruby',
+  swift: 'swift',
+  scala: 'scala',
+  bash: 'bash',
+  json: 'json',
+  yaml: 'yaml',
 };
 
 /**
@@ -123,6 +142,7 @@ export class AstGrepParser implements Parser {
    * Parse a source file and return entities, relations, and any parse errors.
    */
   async parseFile(filePath: string, content: string): Promise<ParseResult> {
+    ensureLanguagesRegistered();
     const normalized = normalizeRelativePath(filePath);
     const ext = path.extname(normalized);
     const language = extensionToLanguage(ext) ?? 'unknown';

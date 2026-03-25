@@ -66,4 +66,17 @@ describe('AstGrepParser', () => {
     expect(fileEntity.location.line_start).toBe(1);
     expect(fileEntity.location.line_end).toBe(2);
   });
+
+  it('parses Python with dynamic language registration', async () => {
+    const result = await parser.parseFile('test.py', 'class Foo:\n    pass\n');
+    expect(result.language).toBe('python');
+    expect(result.entities.length).toBeGreaterThanOrEqual(1); // at least file entity
+    expect(result.errors).toHaveLength(0); // should parse without errors now
+  });
+
+  it('parses Go with dynamic language registration', async () => {
+    const result = await parser.parseFile('main.go', 'package main\nfunc main() {}\n');
+    expect(result.language).toBe('go');
+    expect(result.errors).toHaveLength(0);
+  });
 });
