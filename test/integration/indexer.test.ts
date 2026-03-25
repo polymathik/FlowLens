@@ -180,6 +180,51 @@ describe('Indexer integration', () => {
     expect(result2.filesIndexed).toBe(0);
   });
 
+  it('removes entities/relations when a file is deleted between indexes', async () => {
+    // Create a temporary project with files we can delete
+    const projectDir = join(tmpDir, 'deletable-project');
+    const { mkdir: mkdirSync, writeFile: writeFileSync } = await import('node:fs/promises');
+    await mkdirSync(projectDir, { recursive: true });
+    await writeFileSync(join(projectDir, 'keep.ts'), 'export class Keep {}');
+    await writeFileSync(join(projectDir, 'remove.ts'), 'export class Remove {}');
+
+    const indexPath = join(tmpDir, 'file_index.json');
+    const config = { ...DEFAULT_CONFIG, exclude: [] };
+
+    // First full index — both files indexed
+    const result1 = await runIndex({
+      rootDir: projectDir,
+      graphStore: store,
+      config,
+      fileIndexPath: indexPath,
+      incremental: false,
+    });
+    expect(result1.filesIndexed).toBe(2);
+
+    const classesBeforeDelete = await store.getNodesByKind('class');
+    expect(classesBeforeDelete.find(c => c.name === 'Remove')).toBeDefined();
+
+    // Delete remove.ts
+    const { unlink } = await import('node:fs/promises');
+    await unlink(join(projectDir, 'remove.ts'));
+
+    // Incremental re-index — should detect deletion
+    const result2 = await runIndex({
+      rootDir: projectDir,
+      graphStore: store,
+      config,
+      fileIndexPath: indexPath,
+      incremental: true,
+    });
+    expect(result2.filesDeleted).toBe(1);
+
+    // Verify Remove class is gone from the graph
+    const classesAfterDelete = await store.getNodesByKind('class');
+    expect(classesAfterDelete.find(c => c.name === 'Remove')).toBeUndefined();
+    // Keep class should still exist
+    expect(classesAfterDelete.find(c => c.name === 'Keep')).toBeDefined();
+  });
+
   it('respects exclude patterns', async () => {
     const result = await runIndex({
       rootDir: join(import.meta.dirname, '../fixtures/multi-language'),
