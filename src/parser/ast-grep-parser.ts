@@ -11,6 +11,7 @@ import {
 } from '../utils/paths.js';
 import { generateEntityId } from '../utils/id.js';
 import { extractEntities } from './entity-extractor.js';
+import { extractRelations } from './relation-extractor.js';
 
 /**
  * Maps our internal language names to the string identifiers accepted by
@@ -103,7 +104,7 @@ function tryParse(
  *
  * Two-tier extraction model:
  *  - Deep extraction (TS/JS/JSX/TSX): parse with ast-grep, delegate to
- *    entity-extractor for entity extraction and relation-extractor (stub — Task 9).
+ *    entity-extractor for entity extraction and relation-extractor.
  *  - Basic extraction (all other languages): create a file entity with
  *    line_count. If ast-grep supports the language, parse to validate syntax.
  */
@@ -118,6 +119,7 @@ export class AstGrepParser implements Parser {
     const lineCount = countLines(content);
     const errors: ParseError[] = [];
     const entities: Entity[] = [];
+    let relations: import('../contracts/relations.js').Relation[] = [];
 
     const fileEntity = createFileEntity(normalized, language, lineCount);
     const astGrepLang = LANG_TO_AST_GREP[language];
@@ -129,11 +131,9 @@ export class AstGrepParser implements Parser {
 
         if (sgRoot) {
           const extractedEntities = extractEntities(sgRoot.root(), normalized, language);
-          const extractedRelations = extractRelationsStub();
-
           entities.push(...extractedEntities);
-          // Relations are returned below via the result object
-          void extractedRelations;
+
+          relations = extractRelations(sgRoot.root(), normalized, extractedEntities, '');
         }
       }
 
@@ -152,7 +152,7 @@ export class AstGrepParser implements Parser {
       file: normalized,
       language,
       entities,
-      relations: [], // Populated by relation extractor in Task 9
+      relations,
       errors,
     };
   }
@@ -179,11 +179,3 @@ export class AstGrepParser implements Parser {
   }
 }
 
-// ────────────────────────────────────────────────────────────────
-// Stub for relation extractor (Task 9)
-// ────────────────────────────────────────────────────────────────
-
-/** @internal Stub — returns empty relation array until Task 9 is implemented. */
-function extractRelationsStub(): import('../contracts/relations.js').Relation[] {
-  return [];
-}
