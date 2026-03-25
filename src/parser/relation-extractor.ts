@@ -15,7 +15,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { Entity } from '../contracts/entities.js';
 import type { Relation } from '../contracts/relations.js';
 import { generateEntityId, generateRelationId } from '../utils/id.js';
-import { resolveImportPath } from './import-resolver.js';
+import { resolveImportPath, resolveBarrelReExports } from './import-resolver.js';
 import { findChild } from './extractor-helpers.js';
 import path from 'node:path';
 
@@ -84,10 +84,39 @@ function handleImportStatement(
   const specifier = extractStringSpecifier(node);
   if (!specifier) return;
 
+  // Extract imported names for barrel resolution
+  const importedNames = extractImportedNames(node);
+
   createImportRelation(
     specifier, filePath, rootDir, fileEntityId,
-    node, 1.0, relations,
+    node, 1.0, relations, importedNames,
   );
+}
+
+/**
+ * Extract the names being imported from an import statement.
+ * e.g., `import { Foo, Bar } from './index'` → ['Foo', 'Bar']
+ */
+function extractImportedNames(node: SgNode): string[] {
+  const names: string[] = [];
+  for (const child of node.children()) {
+    if (child.kind() === 'import_clause') {
+      for (const clauseChild of child.children()) {
+        if (clauseChild.kind() === 'named_imports') {
+          for (const spec of clauseChild.children()) {
+            if (spec.kind() === 'import_specifier') {
+              const nameNode = spec.children().find(c => c.kind() === 'identifier');
+              if (nameNode) names.push(nameNode.text());
+            }
+          }
+        } else if (clauseChild.kind() === 'identifier') {
+          // Default import
+          names.push(clauseChild.text());
+        }
+      }
+    }
+  }
+  return names;
 }
 
 /**
@@ -188,7 +217,9 @@ function getCallExpressionCallee(node: SgNode): SgNode | null {
 }
 
 /**
- * Create an import relation if the specifier resolves to a real file.
+ * Create import relation(s) for an import statement. If the resolved target
+ * is a barrel file (index.ts with re-exports), follow the re-export chain
+ * to point relations at the actual source files.
  */
 function createImportRelation(
   specifier: string,
@@ -198,19 +229,47 @@ function createImportRelation(
   node: SgNode,
   confidence: number,
   relations: Relation[],
+  importedNames?: string[],
 ): void {
   const resolved = resolveImportPath(specifier, filePath, rootDir);
   if (!resolved) return;
 
+  const range = node.range();
+  const line = range.start.line + 1;
+  const column = range.start.column + 1;
+
+  // Try barrel re-export resolution if we have imported names and a rootDir
+  if (rootDir && importedNames && importedNames.length > 0) {
+    const reExports = resolveBarrelReExports(resolved, importedNames, rootDir);
+    if (reExports.size > 0) {
+      // Create relations to actual source files instead of the barrel
+      const targetFiles = new Set(reExports.values());
+      for (const targetFile of targetFiles) {
+        const targetEntityId = generateEntityId(
+          targetFile,
+          path.basename(targetFile),
+          'file',
+        );
+        relations.push({
+          id: generateRelationId(fileEntityId, targetEntityId, 'import', filePath, line),
+          from: fileEntityId,
+          to: targetEntityId,
+          type: 'import',
+          location: { file: filePath, line, column },
+          weight: 1,
+          confidence,
+        });
+      }
+      return;
+    }
+  }
+
+  // Fallback: point to the resolved file directly
   const targetEntityId = generateEntityId(
     resolved,
     path.basename(resolved),
     'file',
   );
-
-  const range = node.range();
-  const line = range.start.line + 1;
-  const column = range.start.column + 1;
 
   relations.push({
     id: generateRelationId(fileEntityId, targetEntityId, 'import', filePath, line),

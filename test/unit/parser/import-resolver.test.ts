@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveImportPath } from '../../../src/parser/import-resolver.js';
+import { resolveImportPath, resolveBarrelReExports } from '../../../src/parser/import-resolver.js';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../../fixtures/barrel-exports');
@@ -43,5 +43,28 @@ describe('resolveImportPath', () => {
   it('resolves exact file path with extension', () => {
     const result = resolveImportPath('./foo.ts', 'consumer.ts', ROOT);
     expect(result).toBe('foo.ts');
+  });
+});
+
+describe('resolveBarrelReExports', () => {
+  it('follows re-exports through barrel file to actual source', () => {
+    const results = resolveBarrelReExports('index.ts', ['Foo'], ROOT);
+    expect(results.get('Foo')).toBe('foo.ts');
+  });
+
+  it('resolves multiple re-exported names', () => {
+    const results = resolveBarrelReExports('index.ts', ['Foo', 'Bar'], ROOT);
+    expect(results.get('Foo')).toBe('foo.ts');
+    expect(results.get('Bar')).toBe('bar.ts');
+  });
+
+  it('returns empty map for non-barrel file', () => {
+    const results = resolveBarrelReExports('foo.ts', ['Foo'], ROOT);
+    expect(results.size).toBe(0);
+  });
+
+  it('returns empty map for names not re-exported', () => {
+    const results = resolveBarrelReExports('index.ts', ['NonExistent'], ROOT);
+    expect(results.size).toBe(0);
   });
 });
