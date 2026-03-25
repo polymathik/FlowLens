@@ -1,0 +1,161 @@
+/**
+ * `flowlens init [--force]`
+ *
+ * First-run setup:
+ *   1. Creates the `.flowlens/` directory structure.
+ *   2. Writes default config, annotations, and snapshot index files.
+ *   3. Runs a full (non-incremental) index of the project.
+ *   4. Infers architecture layers from the indexed graph data.
+ *   5. Writes `architecture.json`.
+ */
+
+import { Command } from 'commander';
+import { existsSync } from 'node:fs';
+import { mkdir, writeFile, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { runIndex } from '../../indexer/indexer.js';
+import { inferArchitecture } from '../../architecture/heuristic-inference.js';
+import { printHeader, printSuccess, printError, printSummary } from '../output.js';
+import type { FlowLensConfig } from '../../contracts/config.js';
+import type { Entity } from '../../contracts/entities.js';
+
+/* ---------- Default configuration ---------- */
+
+const DEFAULT_CONFIG: FlowLensConfig = {
+  exclude: [
+    'node_modules/**',
+    'dist/**',
+    'build/**',
+    'vendor/**',
+    '__pycache__/**',
+    'target/**',
+    '.next/**',
+    'coverage/**',
+    '.flowlens/**',
+    '.git/**',
+  ],
+  languages: {
+    typescript: true,
+    javascript: true,
+    tsx: true,
+    jsx: true,
+    python: true,
+    go: true,
+    rust: true,
+    java: true,
+    kotlin: true,
+    c: true,
+    cpp: true,
+    css: true,
+    html: true,
+    json: true,
+  },
+  ai: {
+    enabled: false,
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-20250514',
+    api_key_env: 'ANTHROPIC_API_KEY',
+  },
+};
+
+/* ---------- Entity kinds to collect for architecture inference ---------- */
+
+const ENTITY_KINDS = [
+  'class',
+  'function',
+  'interface',
+  'method',
+  'variable',
+  'type',
+  'enum',
+  'namespace',
+  'module',
+] as const;
+
+/* ---------- Command ---------- */
+
+export const initCommand = new Command('init')
+  .description('Initialize FlowLens for the current project')
+  .option('--force', 'Overwrite existing .flowlens/ directory')
+  .action(async (opts: { force?: boolean }) => {
+    const rootDir = resolve('.');
+    const flowlensDir = join(rootDir, '.flowlens');
+
+    if (existsSync(flowlensDir) && !opts.force) {
+      printError('.flowlens/ already exists. Use --force to reinitialize.');
+      process.exit(1);
+    }
+
+    try {
+      printHeader('FlowLens Init');
+
+      // Remove old directory if --force
+      if (existsSync(flowlensDir)) {
+        await rm(flowlensDir, { recursive: true });
+      }
+
+      // Create directory structure
+      await mkdir(join(flowlensDir, 'graph'), { recursive: true });
+      await mkdir(join(flowlensDir, 'snapshots'), { recursive: true });
+
+      // Write default config
+      await writeFile(
+        join(flowlensDir, 'config.json'),
+        JSON.stringify(DEFAULT_CONFIG, null, 2),
+      );
+      printSuccess('Created config.json');
+
+      // Write empty annotations
+      await writeFile(
+        join(flowlensDir, 'annotations.json'),
+        JSON.stringify({ annotations: [] }, null, 2),
+      );
+      printSuccess('Created annotations.json');
+
+      // Write empty snapshot index
+      await writeFile(
+        join(flowlensDir, 'snapshots', 'index.json'),
+        JSON.stringify({}, null, 2),
+      );
+
+      // Open graph store and run full index
+      const graphStore = new LevelGraphStore();
+      await graphStore.open(join(flowlensDir, 'graph'));
+
+      const result = await runIndex({
+        rootDir,
+        graphStore,
+        config: DEFAULT_CONFIG,
+        fileIndexPath: join(flowlensDir, 'file_index.json'),
+        incremental: false,
+      });
+
+      printSuccess(`Indexed ${result.filesIndexed} files`);
+
+      // Collect all entities from the graph for architecture inference
+      const allEntities: Entity[] = await graphStore.getNodesByKind('file');
+
+      for (const kind of ENTITY_KINDS) {
+        const kindEntities = await graphStore.getNodesByKind(kind);
+        allEntities.push(...kindEntities);
+      }
+
+      // Relations are used for import-based layer analysis; passing empty array
+      // is safe — architecture inference falls back to directory grouping only.
+      const archConfig = inferArchitecture(allEntities, []);
+      await writeFile(
+        join(flowlensDir, 'architecture.json'),
+        JSON.stringify(archConfig, null, 2),
+      );
+      printSuccess(`Inferred ${archConfig.layers.length} architectural layers`);
+
+      await graphStore.close();
+
+      printSummary(result);
+      printSuccess('\nFlowLens initialized successfully!');
+    } catch (err) {
+      printError(`Init failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
