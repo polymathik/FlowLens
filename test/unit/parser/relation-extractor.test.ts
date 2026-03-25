@@ -313,3 +313,70 @@ describe('comprehensive scenario', () => {
     }
   });
 });
+
+// ────────────────────────────────────────────────────────────────
+// 6. Import Confidence Tiers (using real fixtures for path resolution)
+// ────────────────────────────────────────────────────────────────
+
+import { join } from 'node:path';
+
+const FIXTURE_ROOT = join(import.meta.dirname, '../../fixtures/simple-project');
+
+function parseWithFixtureRoot(code: string, filePath: string) {
+  const root = parse('TypeScript', code).root();
+  const entities = extractEntities(root, filePath, 'typescript');
+  const relations = extractRelations(root, filePath, entities, FIXTURE_ROOT);
+  return { entities, relations };
+}
+
+describe('import confidence tiers', () => {
+  it('assigns 1.0 for static ESM import', () => {
+    const { relations } = parseWithFixtureRoot(
+      `import { UserService } from './user-service';`,
+      'index.ts',
+    );
+    const imp = findByType(relations, 'import');
+    expect(imp).toBeDefined();
+    expect(imp!.confidence).toBe(1.0);
+  });
+
+  it('assigns 1.0 for require()', () => {
+    const { relations } = parseWithFixtureRoot(
+      `const utils = require('./utils');`,
+      'index.ts',
+    );
+    const imp = findByType(relations, 'import');
+    expect(imp).toBeDefined();
+    expect(imp!.confidence).toBe(1.0);
+  });
+
+  it('assigns 1.0 for dynamic import with literal string', () => {
+    const { relations } = parseWithFixtureRoot(
+      `const m = import('./utils');`,
+      'index.ts',
+    );
+    const imp = findByType(relations, 'import');
+    expect(imp).toBeDefined();
+    expect(imp!.confidence).toBe(1.0);
+  });
+
+  it('assigns 0.5 for dynamic import inside if statement', () => {
+    const { relations } = parseWithFixtureRoot(
+      `if (true) { import('./utils'); }`,
+      'index.ts',
+    );
+    const imp = findByType(relations, 'import');
+    expect(imp).toBeDefined();
+    expect(imp!.confidence).toBe(0.5);
+  });
+
+  it('assigns 0.5 for dynamic import inside ternary', () => {
+    const { relations } = parseWithFixtureRoot(
+      `const m = true ? import('./utils') : null;`,
+      'index.ts',
+    );
+    const imp = findByType(relations, 'import');
+    expect(imp).toBeDefined();
+    expect(imp!.confidence).toBe(0.5);
+  });
+});

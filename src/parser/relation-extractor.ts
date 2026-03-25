@@ -162,13 +162,17 @@ function handleDynamicImportOrRequire(
   const args = findChild(node, 'arguments');
   if (!args) return;
 
+  // Check if this import is inside a conditional (if/ternary) → lower confidence
+  const isConditional = isDynamicImport && isInsideConditional(node);
+
   for (const arg of args.children()) {
     if (arg.kind() === 'string') {
       const fragment = findChild(arg, 'string_fragment');
       if (fragment) {
+        const confidence = isConditional ? 0.5 : 1.0;
         createImportRelation(
           fragment.text(), filePath, rootDir, fileEntityId,
-          node, 1.0, relations,
+          node, confidence, relations,
         );
       }
       return;
@@ -177,9 +181,10 @@ function handleDynamicImportOrRequire(
       // Dynamic import with template literal — lower confidence
       const fragment = findChild(arg, 'string_fragment');
       if (fragment) {
+        const confidence = isConditional ? 0.5 : 0.75;
         createImportRelation(
           fragment.text(), filePath, rootDir, fileEntityId,
-          node, 0.75, relations,
+          node, confidence, relations,
         );
       }
       return;
@@ -199,6 +204,24 @@ function extractStringSpecifier(node: SgNode): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Check if a node is inside a conditional construct (if_statement, ternary_expression).
+ * Used to lower confidence for dynamic imports inside conditionals.
+ */
+function isInsideConditional(node: SgNode): boolean {
+  const CONDITIONAL_KINDS = new Set([
+    'if_statement', 'ternary_expression', 'conditional_expression',
+  ]);
+  let current = node.parent();
+  while (current) {
+    if (CONDITIONAL_KINDS.has(current.kind())) return true;
+    // Stop at function/program boundaries to avoid false positives
+    if (current.kind() === 'function_declaration' || current.kind() === 'program') break;
+    current = current.parent();
+  }
+  return false;
 }
 
 /**
