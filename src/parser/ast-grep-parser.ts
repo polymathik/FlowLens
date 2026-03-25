@@ -6,13 +6,20 @@ import type { Entity } from '../contracts/entities.js';
 import {
   LANGUAGE_EXTENSIONS,
   extensionToLanguage,
-  isDeepExtractionLanguage,
   normalizeRelativePath,
 } from '../utils/paths.js';
 import { generateEntityId } from '../utils/id.js';
-import { extractEntities } from './entity-extractor.js';
-import { extractRelations } from './relation-extractor.js';
 import { ensureLanguagesRegistered } from './lang-registration.js';
+import { extractorRegistry } from './extractor-registry.js';
+import { typescriptExtractor } from './extractors/typescript-extractor.js';
+
+// ─── Register built-in extractors ────────────────────────────────
+extractorRegistry.register(typescriptExtractor);
+for (const lang of ['tsx', 'jsx', 'javascript'] as const) {
+  if (!extractorRegistry.has(lang)) {
+    extractorRegistry.register({ ...typescriptExtractor, language: lang });
+  }
+}
 
 /**
  * Maps our internal language names to the string identifiers accepted by
@@ -154,16 +161,17 @@ export class AstGrepParser implements Parser {
     const fileEntity = createFileEntity(normalized, language, lineCount);
     const astGrepLang = LANG_TO_AST_GREP[language];
 
-    if (isDeepExtractionLanguage(language)) {
-      // Deep extraction path — parse with ast-grep, then extract entities & relations
+    const extractor = extractorRegistry.get(language);
+    if (extractor) {
+      // Deep extraction path — parse with ast-grep, then delegate to the extractor
       if (astGrepLang && content.length > 0) {
         const sgRoot = tryParse(astGrepLang, content, normalized, errors);
 
         if (sgRoot) {
-          const extractedEntities = extractEntities(sgRoot.root(), normalized, language);
+          const extractedEntities = extractor.extractEntities(sgRoot.root(), normalized);
           entities.push(...extractedEntities);
 
-          relations = extractRelations(sgRoot.root(), normalized, extractedEntities, this.rootDir);
+          relations = extractor.extractRelations(sgRoot.root(), normalized, extractedEntities, this.rootDir);
         }
       }
 
@@ -205,7 +213,7 @@ export class AstGrepParser implements Parser {
    * Check whether the given language has a deep (entity + relation) extractor.
    */
   hasDeepExtractor(language: string): boolean {
-    return isDeepExtractionLanguage(language);
+    return extractorRegistry.has(language);
   }
 }
 
