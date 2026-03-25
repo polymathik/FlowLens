@@ -109,6 +109,16 @@ function tryParse(
  *    line_count. If ast-grep supports the language, parse to validate syntax.
  */
 export class AstGrepParser implements Parser {
+  private rootDir: string;
+
+  /**
+   * @param rootDir - Project root directory used for import path resolution.
+   *                  Defaults to '' for backward compatibility.
+   */
+  constructor(rootDir: string = '') {
+    this.rootDir = rootDir;
+  }
+
   /**
    * Parse a source file and return entities, relations, and any parse errors.
    */
@@ -133,7 +143,7 @@ export class AstGrepParser implements Parser {
           const extractedEntities = extractEntities(sgRoot.root(), normalized, language);
           entities.push(...extractedEntities);
 
-          relations = extractRelations(sgRoot.root(), normalized, extractedEntities, '');
+          relations = extractRelations(sgRoot.root(), normalized, extractedEntities, this.rootDir);
         }
       }
 
