@@ -10,6 +10,11 @@ import { javaExtractor } from './java-extractor.js';
 import { kotlinExtractor } from './kotlin-extractor.js';
 import { csharpExtractor } from './csharp-extractor.js';
 import { phpExtractor } from './php-extractor.js';
+import { goExtractor } from './go-extractor.js';
+import { rustExtractor } from './rust-extractor.js';
+import { cExtractor } from './c-extractor.js';
+import { cppExtractor } from './cpp-extractor.js';
+import { swiftExtractor } from './swift-extractor.js';
 
 let registered = false;
 
@@ -24,6 +29,11 @@ export function registerAllExtractors(): void {
   extractorRegistry.register(kotlinExtractor);
   extractorRegistry.register(csharpExtractor);
   extractorRegistry.register(phpExtractor);
+  extractorRegistry.register(goExtractor);
+  extractorRegistry.register(rustExtractor);
+  extractorRegistry.register(cExtractor);
+  extractorRegistry.register(cppExtractor);
+  extractorRegistry.register(swiftExtractor);
 
   registered = true;
 }

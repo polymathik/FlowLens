@@ -38,8 +38,10 @@ describe('AstGrepParser', () => {
   it('creates basic file entity for Go', async () => {
     const result = await parser.parseFile('src/main.go', 'package main\n\nfunc main() {}\n');
     expect(result.language).toBe('go');
-    expect(result.entities).toHaveLength(1);
-    expect(result.entities[0].kind).toBe('file');
+    // Now has deep extraction: file entity + main function entity
+    expect(result.entities.length).toBeGreaterThanOrEqual(1);
+    const fileEntity = result.entities.find(e => e.kind === 'file');
+    expect(fileEntity).toBeDefined();
   });
 
   it('creates file entity and extracted entities for TypeScript', async () => {
