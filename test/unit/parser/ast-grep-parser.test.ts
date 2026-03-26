@@ -20,17 +20,19 @@ describe('AstGrepParser', () => {
     expect(parser.hasDeepExtractor('typescript')).toBe(true);
   });
 
-  it('does not have deep extractor for python', () => {
-    expect(parser.hasDeepExtractor('python')).toBe(false);
+  it('has deep extractor for python', () => {
+    expect(parser.hasDeepExtractor('python')).toBe(true);
   });
 
-  it('creates basic file entity for Python', async () => {
+  it('creates file entity and extracted entities for Python', async () => {
     const result = await parser.parseFile('src/script.py', 'x = 1\ny = 2\n');
     expect(result.language).toBe('python');
-    expect(result.entities).toHaveLength(1);
-    expect(result.entities[0].kind).toBe('file');
-    expect(result.entities[0].language).toBe('python');
-    expect(result.entities[0].metrics?.line_count).toBe(2);
+    // Now has deep extraction: file entity + 2 variable entities
+    expect(result.entities.length).toBeGreaterThanOrEqual(1);
+    const fileEntity = result.entities.find(e => e.kind === 'file');
+    expect(fileEntity).toBeDefined();
+    expect(fileEntity!.language).toBe('python');
+    expect(fileEntity!.metrics?.line_count).toBe(2);
   });
 
   it('creates basic file entity for Go', async () => {
@@ -58,7 +60,8 @@ describe('AstGrepParser', () => {
 
   it('populates file entity fields correctly', async () => {
     const result = await parser.parseFile('src/utils/helper.py', 'def foo():\n    pass\n');
-    const fileEntity = result.entities[0];
+    // With deep extraction, entities[0] may be the extracted function — find the file entity
+    const fileEntity = result.entities.find(e => e.kind === 'file')!;
     expect(fileEntity.name).toBe('helper.py');
     expect(fileEntity.qualified_name).toBe('src/utils/helper.py');
     expect(fileEntity.file).toBe('src/utils/helper.py');

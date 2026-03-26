@@ -12,6 +12,7 @@ import { generateEntityId } from '../utils/id.js';
 import { ensureLanguagesRegistered } from './lang-registration.js';
 import { extractorRegistry } from './extractor-registry.js';
 import { typescriptExtractor } from './extractors/typescript-extractor.js';
+import { registerAllExtractors } from './extractors/register-all.js';
 
 // ─── Register built-in extractors ────────────────────────────────
 extractorRegistry.register(typescriptExtractor);
@@ -20,6 +21,8 @@ for (const lang of ['tsx', 'jsx', 'javascript'] as const) {
     extractorRegistry.register({ ...typescriptExtractor, language: lang });
   }
 }
+// Register all multi-language extractors (Python, Java, Kotlin, C#, PHP)
+registerAllExtractors();
 
 /**
  * Maps our internal language names to the string identifiers accepted by
