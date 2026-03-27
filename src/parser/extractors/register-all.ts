@@ -15,6 +15,11 @@ import { rustExtractor } from './rust-extractor.js';
 import { cExtractor } from './c-extractor.js';
 import { cppExtractor } from './cpp-extractor.js';
 import { swiftExtractor } from './swift-extractor.js';
+import { scalaExtractor } from './scala-extractor.js';
+import { rubyExtractor } from './ruby-extractor.js';
+import { bashExtractor } from './bash-extractor.js';
+import { jsonExtractor } from './json-extractor.js';
+import { yamlExtractor } from './yaml-extractor.js';
 
 let registered = false;
 
@@ -34,6 +39,11 @@ export function registerAllExtractors(): void {
   extractorRegistry.register(cExtractor);
   extractorRegistry.register(cppExtractor);
   extractorRegistry.register(swiftExtractor);
+  extractorRegistry.register(scalaExtractor);
+  extractorRegistry.register(rubyExtractor);
+  extractorRegistry.register(bashExtractor);
+  extractorRegistry.register(jsonExtractor);
+  extractorRegistry.register(yamlExtractor);
 
   registered = true;
 }
