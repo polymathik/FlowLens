@@ -149,11 +149,7 @@ function extractRelations(
       return;
     }
     else if (k === 'function_declaration') {
-      const name = findChildText(node, 'simple_identifier');
-      const fn = name ? findMethodEntity(ctx, name, cur) : null;
-      if (cur && fn) addRelation(ctx, cur, fn, 'contain', node);
-      annotationRels(node, fn ?? cur);
-      for (const c of node.children()) walk(c, fn ?? cur);
+      handleFuncRels(node, cur, null);
       return;
     }
     else if (k === 'call_expression') {
@@ -166,6 +162,25 @@ function extractRelations(
       const pe = name ? entities.find(e => e.name === name && (e.kind === 'field' || e.kind === 'variable')) : null;
       if (pe) addRelation(ctx, cur, pe, 'contain', node);
     }
+    // Use detection: simple_identifier or navigation_expression referencing a field/variable
+    else if (k === 'navigation_expression' && cur) {
+      const fname = findChildText(node, 'simple_identifier');
+      if (fname) {
+        const target = entities.find(e => e.name === fname && (e.kind === 'field' || e.kind === 'variable'));
+        if (target) addRelation(ctx, cur, target, 'use', node);
+      }
+    }
+    else if (k === 'simple_identifier' && cur) {
+      const parentKind = node.parent()?.kind();
+      if (parentKind !== 'call_expression' && parentKind !== 'function_declaration'
+        && parentKind !== 'variable_declaration' && parentKind !== 'property_declaration'
+        && parentKind !== 'class_declaration' && parentKind !== 'type_identifier'
+        && parentKind !== 'user_type' && parentKind !== 'parameter'
+        && parentKind !== 'navigation_expression') {
+        const target = entities.find(e => e.name === node.text() && (e.kind === 'field' || e.kind === 'variable'));
+        if (target) addRelation(ctx, cur, target, 'use', node);
+      }
+    }
     for (const c of node.children()) walk(c, cur);
   }
 
@@ -174,13 +189,15 @@ function extractRelations(
     const cls = name ? ctx.entityMap.get(name) : null;
     if (!cls) return;
 
+    // Collect parent class name for override detection
+    let parentClassName: string | null = null;
     for (const c of node.children()) {
       if (c.kind() === 'delegation_specifier') {
         const ci = findChild(c, 'constructor_invocation');
         if (ci) {
           const ut = findChild(ci, 'user_type');
           const bn = ut ? findChildText(ut, 'type_identifier') : null;
-          if (bn) addRelationByName(ctx, cls, bn, 'extend', c);
+          if (bn) { addRelationByName(ctx, cls, bn, 'extend', c); parentClassName = bn; }
         } else {
           const ut = findChild(c, 'user_type');
           const in_ = ut ? findChildText(ut, 'type_identifier') : null;
@@ -189,8 +206,75 @@ function extractRelations(
       }
     }
     annotationRels(node, cls);
+
+    // Store parent entity for override detection in nested function_declaration
+    const parentEntity = parentClassName ? ctx.entityMap.get(parentClassName) ?? null : null;
     const body = findChild(node, 'class_body');
-    if (body) for (const c of body.children()) walk(c, cls);
+    if (body) for (const c of body.children()) {
+      if (c.kind() === 'function_declaration') {
+        handleFuncRels(c, cls, parentEntity);
+      } else {
+        walk(c, cls);
+      }
+    }
+  }
+
+  function handleFuncRels(
+    node: SgNode, parent: Entity | null, classParentEntity: Entity | null,
+  ): void {
+    const name = findChildText(node, 'simple_identifier');
+    const fn = name ? findMethodEntity(ctx, name, parent) : null;
+    if (parent && fn) addRelation(ctx, parent, fn, 'contain', node);
+    annotationRels(node, fn ?? parent);
+
+    // Override detection: check if function has 'override' modifier
+    if (fn && classParentEntity) {
+      const mods = findChild(node, 'modifiers');
+      if (mods) {
+        for (const m of mods.children()) {
+          if (m.kind() === 'member_modifier' && m.text().trim() === 'override') {
+            const parentMethod = findMethodEntity(ctx, name!, classParentEntity);
+            if (parentMethod) addRelation(ctx, fn, parentMethod, 'override', node);
+            break;
+          }
+        }
+      }
+    }
+
+    const cur = fn ?? parent;
+
+    // Parameter type relations
+    const params = findChild(node, 'function_value_parameters');
+    if (params && cur) {
+      for (const p of params.children()) {
+        if (p.kind() === 'parameter') {
+          const ut = findChild(p, 'user_type');
+          const typeId = ut ? findChildText(ut, 'type_identifier') : null;
+          if (typeId) {
+            const target = ctx.entityMap.get(typeId);
+            if (target && (target.kind === 'class' || target.kind === 'interface' || target.kind === 'enum')) {
+              addRelation(ctx, cur, target, 'parameter', p);
+            }
+          }
+        }
+      }
+    }
+
+    // Return type relation
+    if (cur) {
+      const ut = findChild(node, 'user_type');
+      if (ut) {
+        const typeId = findChildText(ut, 'type_identifier');
+        if (typeId) {
+          const target = ctx.entityMap.get(typeId);
+          if (target && (target.kind === 'class' || target.kind === 'interface' || target.kind === 'enum')) {
+            addRelation(ctx, cur, target, 'return', ut);
+          }
+        }
+      }
+    }
+
+    for (const c of node.children()) walk(c, cur);
   }
 
   function annotationRels(node: SgNode, cur: Entity | null): void {
@@ -219,7 +303,7 @@ export const kotlinExtractor: LanguageExtractor = {
   language: LANG,
   extensions: ['.kt'],
   supportedRelationTypes: [
-    'import', 'call', 'extend', 'implement', 'override', 'mixin',
+    'import', 'call', 'extend', 'implement', 'override',
     'use', 'contain', 'create', 'parameter', 'return', 'throw', 'decorate',
   ] as RelationType[],
   extractEntities,

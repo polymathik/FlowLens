@@ -124,6 +124,23 @@ function extractRelations(
     }
     else if (k === 'object_creation_expression') { handleCreate(node, cur); }
     else if (k === 'method_invocation') { handleCall(node, cur); }
+    else if (k === 'field_access' && cur) {
+      const fname = findChildText(node, 'identifier');
+      if (fname) {
+        const target = entities.find(e => e.name === fname && (e.kind === 'field' || e.kind === 'variable'));
+        if (target) addRelation(ctx, cur, target, 'use', node);
+      }
+    }
+    else if (k === 'identifier' && cur) {
+      // Only create use relation if parent is NOT a method_invocation (that would be a call)
+      const parentKind = node.parent()?.kind();
+      if (parentKind !== 'method_invocation' && parentKind !== 'method_declaration'
+        && parentKind !== 'variable_declarator' && parentKind !== 'field_declaration'
+        && parentKind !== 'class_declaration' && parentKind !== 'type_identifier') {
+        const target = entities.find(e => e.name === node.text() && (e.kind === 'field' || e.kind === 'variable'));
+        if (target) addRelation(ctx, cur, target, 'use', node);
+      }
+    }
     for (const c of node.children()) walk(c, cur);
   }
 
@@ -140,12 +157,21 @@ function extractRelations(
 
     annotationRels(node, cls);
 
+    // Resolve parent class entity for override detection
+    const parentName = sc ? findChildText(sc, 'type_identifier') : null;
+    const parentEntity = parentName ? ctx.entityMap.get(parentName) : null;
+
     const body = findChild(node, 'class_body');
     if (body) for (const c of body.children()) {
       if (c.kind() === 'method_declaration' || c.kind() === 'constructor_declaration') {
         const mn = findChildText(c, 'identifier');
         const me = mn ? findMethodEntity(ctx, mn, cls) : null;
         if (me) addRelation(ctx, cls, me, 'contain', c);
+        // Override: child method with same name as parent method
+        if (me && parentEntity) {
+          const parentMethod = findMethodEntity(ctx, mn!, parentEntity);
+          if (parentMethod) addRelation(ctx, me, parentMethod, 'override', c);
+        }
       } else if (c.kind() === 'field_declaration') {
         for (const vd of c.children()) if (vd.kind() === 'variable_declarator') {
           const fn = findChildText(vd, 'identifier');
@@ -182,6 +208,36 @@ function extractRelations(
       if (c.kind() === 'type_identifier') addRelationByName(ctx, cur, c.text(), 'throw', tc);
     }
     annotationRels(node, cur);
+
+    // Parameter type relations: method params referencing known entities
+    const params = findChild(node, 'formal_parameters');
+    if (params && cur) {
+      for (const p of params.children()) {
+        if (p.kind() === 'formal_parameter' || p.kind() === 'spread_parameter') {
+          const typeId = findChildText(p, 'type_identifier');
+          if (typeId) {
+            const target = ctx.entityMap.get(typeId);
+            if (target && (target.kind === 'class' || target.kind === 'interface' || target.kind === 'enum')) {
+              addRelation(ctx, cur, target, 'parameter', p);
+            }
+          }
+        }
+      }
+    }
+
+    // Return type relation: first type_identifier child of method_declaration
+    if (cur) {
+      for (const c of node.children()) {
+        if (c.kind() === 'type_identifier') {
+          const target = ctx.entityMap.get(c.text());
+          if (target && (target.kind === 'class' || target.kind === 'interface' || target.kind === 'enum')) {
+            addRelation(ctx, cur, target, 'return', c);
+          }
+          break; // First type_identifier is the return type
+        }
+      }
+    }
+
     for (const c of node.children()) walk(c, cur);
   }
 
@@ -222,7 +278,7 @@ export const javaExtractor: LanguageExtractor = {
   language: LANG,
   extensions: ['.java'],
   supportedRelationTypes: [
-    'import', 'call', 'extend', 'implement', 'override', 'mixin',
+    'import', 'call', 'extend', 'implement', 'override',
     'use', 'contain', 'create', 'parameter', 'return', 'throw', 'decorate',
   ] as RelationType[],
   extractEntities,

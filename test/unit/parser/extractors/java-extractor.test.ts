@@ -225,4 +225,68 @@ class Foo {}
     const decorates = relations.filter(r => r.type === 'decorate');
     expect(decorates.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('extracts override relations', () => {
+    const { entities, relations } = extractRelations(`
+class Animal { void speak() {} }
+class Dog extends Animal { void speak() {} }
+`);
+    const overrides = relations.filter(r => r.type === 'override');
+    expect(overrides.length).toBeGreaterThanOrEqual(1);
+    const dogSpeak = entities.find(e => e.name === 'speak' && e.qualified_name.includes('Dog.'));
+    const animalSpeak = entities.find(e => e.name === 'speak' && e.qualified_name.includes('Animal.'));
+    expect(dogSpeak).toBeDefined();
+    expect(animalSpeak).toBeDefined();
+    const overrideRel = overrides.find(r => r.from === dogSpeak!.id && r.to === animalSpeak!.id);
+    expect(overrideRel).toBeDefined();
+  });
+
+  it('extracts parameter type relations', () => {
+    const { entities, relations } = extractRelations(`
+class User {}
+class Service { void save(User user) {} }
+`);
+    const params = relations.filter(r => r.type === 'parameter');
+    expect(params.length).toBeGreaterThanOrEqual(1);
+    const save = entities.find(e => e.name === 'save');
+    const user = entities.find(e => e.name === 'User' && e.kind === 'class');
+    expect(save).toBeDefined();
+    expect(user).toBeDefined();
+    const paramRel = params.find(r => r.from === save!.id && r.to === user!.id);
+    expect(paramRel).toBeDefined();
+  });
+
+  it('extracts return type relations', () => {
+    const { entities, relations } = extractRelations(`
+class User {}
+class Service { User getUser() { return null; } }
+`);
+    const returns = relations.filter(r => r.type === 'return');
+    expect(returns.length).toBeGreaterThanOrEqual(1);
+    const getUser = entities.find(e => e.name === 'getUser');
+    const user = entities.find(e => e.name === 'User' && e.kind === 'class');
+    expect(getUser).toBeDefined();
+    expect(user).toBeDefined();
+    const returnRel = returns.find(r => r.from === getUser!.id && r.to === user!.id);
+    expect(returnRel).toBeDefined();
+  });
+
+  it('extracts use relations for field access', () => {
+    const { entities, relations } = extractRelations(`
+class Service {
+    String name = "test";
+    void run() { System.out.println(name); }
+}
+`);
+    const uses = relations.filter(r => r.type === 'use');
+    expect(uses.length).toBeGreaterThanOrEqual(1);
+    const nameField = entities.find(e => e.name === 'name' && e.kind === 'field');
+    expect(nameField).toBeDefined();
+    const useRel = uses.find(r => r.to === nameField!.id);
+    expect(useRel).toBeDefined();
+  });
+
+  it('does not include mixin in supportedRelationTypes', () => {
+    expect(javaExtractor.supportedRelationTypes).not.toContain('mixin');
+  });
 });
