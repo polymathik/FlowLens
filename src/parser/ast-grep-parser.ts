@@ -13,6 +13,7 @@ import { ensureLanguagesRegistered } from './lang-registration.js';
 import { extractorRegistry } from './extractor-registry.js';
 import { typescriptExtractor } from './extractors/typescript-extractor.js';
 import { registerAllExtractors } from './extractors/register-all.js';
+import { populateEntityMetrics } from '../metrics/compute-entity-metrics.js';
 
 // ─── Register built-in extractors ────────────────────────────────
 extractorRegistry.register(typescriptExtractor);
@@ -173,6 +174,9 @@ export class AstGrepParser implements Parser {
         if (sgRoot) {
           const extractedEntities = extractor.extractEntities(sgRoot.root(), normalized);
           entities.push(...extractedEntities);
+
+          // Populate metrics (complexity, Halstead, quality) on extracted entities
+          populateEntityMetrics(sgRoot.root(), extractedEntities);
 
           relations = extractor.extractRelations(sgRoot.root(), normalized, extractedEntities, this.rootDir);
         }
