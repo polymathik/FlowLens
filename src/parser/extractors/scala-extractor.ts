@@ -213,7 +213,7 @@ function extractRelations(
   function handleTraitRels(node: SgNode): void {
     const name = findChildText(node, 'identifier');
     const iface = name ? ctx.entityMap.get(name) : null;
-    if (!iface) return;
+    if (!iface || !name) return;
 
     handleDecorateRels(node, iface);
 
@@ -227,7 +227,7 @@ function extractRelations(
   function handleObjectRels(node: SgNode, _parent: Entity | null): void {
     const name = findChildText(node, 'identifier');
     const obj = name ? ctx.entityMap.get(name) : null;
-    if (!obj) return;
+    if (!obj || !name) return;
 
     handleDecorateRels(node, obj);
 

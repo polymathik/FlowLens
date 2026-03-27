@@ -65,7 +65,7 @@ function findFunctionNodes(root: SgNode): LocatedNode[] {
 }
 
 function walkForFunctions(node: SgNode, out: LocatedNode[]): void {
-  const kind = node.kind();
+  const kind = String(node.kind());
   if (FUNCTION_NODE_KINDS.has(kind)) {
     const range = node.range();
     out.push({

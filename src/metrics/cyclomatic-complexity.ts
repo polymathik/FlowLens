@@ -44,7 +44,7 @@ export function computeCyclomaticComplexity(node: SgNode): number {
  * Recursively count all decision points in the subtree rooted at `node`.
  */
 function countDecisionPoints(node: SgNode): number {
-  const kind = node.kind();
+  const kind = String(node.kind());
   let count = 0;
 
   // Count this node if it is a decision point
@@ -71,7 +71,7 @@ function countDecisionPoints(node: SgNode): number {
  */
 function countLogicalOperator(node: SgNode): number {
   for (const child of node.children()) {
-    if (LOGICAL_OPERATORS.has(child.kind())) {
+    if (LOGICAL_OPERATORS.has(String(child.kind()))) {
       return 1;
     }
   }

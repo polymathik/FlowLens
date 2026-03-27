@@ -118,7 +118,7 @@ function walkNode(
   operands: Set<string>,
   onToken: (isOperator: boolean) => void,
 ): void {
-  const kind = node.kind();
+  const kind = String(node.kind());
   const children = node.children();
 
   if (children.length === 0) {

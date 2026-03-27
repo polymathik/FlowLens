@@ -83,7 +83,7 @@ function walkComplexity(node: SgNode, nesting: number): number {
  * Score a single node and recurse into its children.
  */
 function scoreNode(node: SgNode, nesting: number): number {
-  const kind = node.kind();
+  const kind = String(node.kind());
   let score = 0;
 
   // Handle else_clause specially
@@ -195,7 +195,7 @@ function scoreLogicalExpression(node: SgNode, nesting: number): number {
   const children = node.children();
 
   // Find the operator token
-  const operator = children.find(c => LOGICAL_OPERATORS.has(c.kind()));
+  const operator = children.find(c => LOGICAL_OPERATORS.has(String(c.kind())));
 
   if (operator) {
     // This is a logical binary expression — add +1 for the operator

@@ -154,7 +154,7 @@ function extractRelations(
   function handleClassRels(node: SgNode, _parent: Entity | null): void {
     const name = findChildText(node, 'constant');
     const cls = name ? ctx.entityMap.get(name) : null;
-    if (!cls) return;
+    if (!cls || !name) return;
 
     // Superclass: class Dog < Animal
     const superclass = findChild(node, 'superclass');
@@ -170,7 +170,7 @@ function extractRelations(
   function handleModuleRels(node: SgNode, _parent: Entity | null): void {
     const name = findChildText(node, 'constant');
     const mod = name ? ctx.entityMap.get(name) : null;
-    if (!mod) return;
+    if (!mod || !name) return;
 
     const body = findChild(node, 'body_statement');
     if (body) handleBodyMembers(body, mod, name);
