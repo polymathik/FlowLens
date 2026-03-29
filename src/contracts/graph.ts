@@ -18,6 +18,9 @@ export interface GraphStore {
   putNodes(entities: Entity[]): Promise<void>;
   putEdges(relations: Relation[]): Promise<void>;
 
+  getAllNodes(): Promise<Entity[]>;
+  getAllEdges(): Promise<Relation[]>;
+
   open(dbPath: string): Promise<void>;
   close(): Promise<void>;
   clear(): Promise<void>;

@@ -271,6 +271,22 @@ export class LevelGraphStore implements GraphStore {
     }
   }
 
+  /* ---- bulk reads ---- */
+
+  async getAllNodes(): Promise<Entity[]> {
+    const db = this.ensureOpen();
+    const results = await lgGet(db, { predicate: 'entity' });
+    return results.map((t) => JSON.parse(t._data as string) as Entity);
+  }
+
+  async getAllEdges(): Promise<Relation[]> {
+    const db = this.ensureOpen();
+    const results = await lgGet(db, {});
+    return results
+      .filter((t) => !INTERNAL_PREDICATES.has(t.predicate) && t._data)
+      .map((t) => JSON.parse(t._data as string) as Relation);
+  }
+
   /* ---- internal ---- */
 
   private ensureOpen(): LevelGraphDB {

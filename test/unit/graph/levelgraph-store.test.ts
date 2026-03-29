@@ -130,4 +130,27 @@ describe('LevelGraphStore', () => {
     expect(await store.getNode('abc123')).toBeNull();
     expect(await store.getEdgesFrom('abc123')).toHaveLength(0);
   });
+
+  it('getAllNodes returns all stored entities', async () => {
+    await store.putNode(makeEntity({ id: 'a', name: 'A' }));
+    await store.putNode(makeEntity({ id: 'b', name: 'B' }));
+    const all = await store.getAllNodes();
+    expect(all).toHaveLength(2);
+  });
+
+  it('getAllEdges returns all stored relations', async () => {
+    await store.putEdge(makeRelation({ id: 'r1' }));
+    await store.putEdge(makeRelation({ id: 'r2', from: 'x', to: 'y' }));
+    const all = await store.getAllEdges();
+    expect(all).toHaveLength(2);
+  });
+
+  it('getAllEdges excludes internal index triples', async () => {
+    await store.putNode(makeEntity({ id: 'a' }));
+    await store.putEdge(makeRelation({ id: 'r1' }));
+    const edges = await store.getAllEdges();
+    // Should only return the relation, not the internal 'entity', 'in_file', 'edge_idx', 'edge_in_file' triples
+    expect(edges).toHaveLength(1);
+    expect(edges[0].type).toBe('import');
+  });
 });
