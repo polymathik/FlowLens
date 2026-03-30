@@ -13,9 +13,11 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 import { LevelGraphStore } from '../../graph/levelgraph-store.js';
 import { runIndex } from '../../indexer/indexer.js';
 import { inferArchitecture } from '../../architecture/heuristic-inference.js';
+import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { printHeader, printSuccess, printError, printSummary } from '../output.js';
 import type { FlowLensConfig } from '../../contracts/config.js';
 import type { Entity } from '../../contracts/entities.js';
@@ -149,6 +151,19 @@ export const initCommand = new Command('init')
         JSON.stringify(archConfig, null, 2),
       );
       printSuccess(`Inferred ${archConfig.layers.length} architectural layers`);
+
+      // Take a snapshot at the current git HEAD if available
+      try {
+        const sha = execSync('git rev-parse HEAD', {
+          cwd: rootDir,
+          encoding: 'utf-8',
+        }).trim();
+        const snapshotMgr = new SnapshotManager(join(flowlensDir, 'snapshots'));
+        await snapshotMgr.takeSnapshot(graphStore, sha);
+        printSuccess(`Snapshot taken at ${sha.slice(0, 8)}`);
+      } catch {
+        // Not a git repo or git not available — skip snapshot
+      }
 
       await graphStore.close();
 
