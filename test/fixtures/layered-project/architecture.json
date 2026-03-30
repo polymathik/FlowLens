@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "inferred_by": "manual",
+  "inferred_at": "2026-01-01T00:00:00Z",
+  "layers": [
+    {
+      "name": "Routes",
+      "include": { "patterns": ["routes/**"] },
+      "may_only_access": ["Services"]
+    },
+    {
+      "name": "Services",
+      "include": { "patterns": ["services/**"] },
+      "may_only_access": ["Data"]
+    },
+    {
+      "name": "Data",
+      "include": { "patterns": ["data/**"] }
+    }
+  ]
+}
