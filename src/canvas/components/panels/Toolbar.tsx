@@ -38,6 +38,8 @@ export function Toolbar({
   const overlay = useCanvasStore((s) => s.activeOverlay);
   const setOverlay = useCanvasStore((s) => s.setOverlay);
   const zoomLevel = useCanvasStore((s) => s.currentZoomLevel);
+  const diffSha = useCanvasStore((s) => s.diffSha);
+  const setDiffSha = useCanvasStore((s) => s.setDiffSha);
 
   return (
     <div
@@ -79,6 +81,21 @@ export function Toolbar({
             </option>
           ))}
         </select>
+        {overlay === 'interface-diff' && (
+          <input
+            type="text"
+            placeholder="Snapshot SHA"
+            value={diffSha}
+            onChange={(e) => setDiffSha(e.target.value)}
+            style={{
+              padding: '4px 8px',
+              borderRadius: 4,
+              border: '1px solid #cbd5e1',
+              fontSize: 11,
+              width: 120,
+            }}
+          />
+        )}
         <button onClick={onToggleFilter} style={buttonStyle}>
           Filters
         </button>

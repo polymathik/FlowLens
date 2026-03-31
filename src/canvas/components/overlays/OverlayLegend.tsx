@@ -21,8 +21,18 @@ const LEGENDS: Record<string, LegendEntry[]> = {
     { color: '#93c5fd', label: 'Low churn' },
     { color: '#ef4444', label: 'High churn' },
   ],
+  hotspot: [
+    { color: '#22c55e', label: 'Low hotspot' },
+    { color: '#ef4444', label: 'High hotspot (scaled up)' },
+  ],
   cycles: [{ color: '#ef4444', label: 'Cycle member (dashed)' }],
   'architecture-violations': [{ color: '#ef4444', label: 'Violation' }],
+  'interface-diff': [
+    { color: '#22c55e', label: 'Added' },
+    { color: '#ef4444', label: 'Removed' },
+    { color: '#eab308', label: 'Modified' },
+    { color: '#f59e0b', label: 'Visibility changed' },
+  ],
 };
 
 export function OverlayLegend() {

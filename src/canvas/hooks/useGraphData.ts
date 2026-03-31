@@ -1,10 +1,17 @@
 /**
  * React hook that fetches graph data from the API and transforms it into
  * React Flow nodes + edges. Returns loading/error states for the UI.
+ *
+ * Also fetches annotations and attaches them to entity node data.
  */
 import { useState, useEffect } from 'react';
 import type { Node, Edge } from '@xyflow/react';
-import { fetchEntities, fetchRelations, type Entity } from '../api/graph-client';
+import {
+  fetchEntities,
+  fetchRelations,
+  fetchAnnotations,
+  type Entity,
+} from '../api/graph-client';
 import { transformEntitiesToNodes } from '../utils/node-transformer';
 import { transformRelationsToEdges } from '../utils/edge-transformer';
 
@@ -28,14 +35,15 @@ export function useGraphData(): GraphData {
 
     async function load() {
       try {
-        const [rawEntities, relations] = await Promise.all([
+        const [rawEntities, relations, annotations] = await Promise.all([
           fetchEntities(),
           fetchRelations(),
+          fetchAnnotations(),
         ]);
 
         if (cancelled) return;
 
-        const rfNodes = transformEntitiesToNodes(rawEntities);
+        const rfNodes = transformEntitiesToNodes(rawEntities, annotations);
         const nodeIds = new Set(rfNodes.map((n) => n.id));
         const rfEdges = transformRelationsToEdges(relations, nodeIds);
 

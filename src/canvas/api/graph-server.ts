@@ -6,6 +6,8 @@ import { existsSync } from 'node:fs';
 import { LevelGraphStore } from '../../graph/levelgraph-store.js';
 import { detectCycles } from '../../analysis/cycle-detector.js';
 import { validateArchitecture } from '../../analysis/architecture-validator.js';
+import { SnapshotManager } from '../../analysis/snapshot-manager.js';
+import { computeDiff } from '../../analysis/diff-computer.js';
 import type { ArchitectureConfig } from '../../contracts/architecture.js';
 
 export async function startGraphServer(
@@ -80,6 +82,21 @@ export async function startGraphServer(
       const config: ArchitectureConfig = JSON.parse(await readFile(archPath, 'utf-8'));
       const violations = await validateArchitecture(graphStore, config);
       res.json(violations);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // GET /api/diff?sha=<sha> — interface diff against a snapshot
+  app.get('/api/diff', async (req, res) => {
+    try {
+      const sha = req.query.sha as string;
+      if (!sha) return res.status(400).json({ error: 'sha required' });
+      const snapshotMgr = new SnapshotManager(join(flowlensDir, 'snapshots'));
+      const snapshot = await snapshotMgr.loadSnapshot(sha);
+      if (!snapshot) return res.status(404).json({ error: 'Snapshot not found' });
+      const diff = await computeDiff(graphStore, snapshot);
+      res.json(diff);
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

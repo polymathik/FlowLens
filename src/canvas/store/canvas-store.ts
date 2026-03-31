@@ -33,6 +33,10 @@ interface CanvasState {
   activeOverlay: OverlayType;
   setOverlay: (overlay: OverlayType) => void;
 
+  // Interface diff
+  diffSha: string;
+  setDiffSha: (sha: string) => void;
+
   // Search
   searchQuery: string;
   setSearch: (query: string) => void;
@@ -63,6 +67,9 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
   activeOverlay: null,
   setOverlay: (overlay) => set({ activeOverlay: overlay }),
+
+  diffSha: '',
+  setDiffSha: (sha) => set({ diffSha: sha }),
 
   searchQuery: '',
   setSearch: (query) => set({ searchQuery: query }),

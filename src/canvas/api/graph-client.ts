@@ -87,3 +87,7 @@ export async function fetchCycles(): Promise<unknown[]> {
 export async function fetchViolations(): Promise<unknown[]> {
   return fetchJSON<unknown[]>('/violations');
 }
+
+export async function fetchDiff(sha: string): Promise<{ changes?: unknown[] }> {
+  return fetchJSON<{ changes?: unknown[] }>(`/diff?sha=${encodeURIComponent(sha)}`);
+}

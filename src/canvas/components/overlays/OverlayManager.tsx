@@ -3,13 +3,27 @@
  *
  * This is a pure function (not a React component). It takes the current
  * node array and overlay mode and returns nodes with adjusted styles.
+ *
+ * Supported overlays:
+ * - complexity-heatmap: quality-score traffic light
+ * - churn-heatmap: blue-to-red churn gradient
+ * - hotspot: node scaling by hotspot score
+ * - cycles: dashed red border for cycle members
+ * - architecture-violations: red border for violating entities
+ * - interface-diff: colored border by change type
  */
 import type { Node } from '@xyflow/react';
-import { qualityColor, churnColor } from '../../utils/color-scales';
+import { qualityColor, churnColor, hotspotSize } from '../../utils/color-scales';
+
+export interface DiffChange {
+  entity_id: string;
+  change_type: string;
+}
 
 export interface OverlayExtraData {
   cycles?: Array<{ entities?: string[] }>;
   violations?: Array<{ entity_from?: string; entity_to?: string }>;
+  diffChanges?: DiffChange[];
 }
 
 export function applyOverlay(
@@ -26,11 +40,17 @@ export function applyOverlay(
     case 'churn-heatmap':
       return applyChurnHeatmap(nodes);
 
+    case 'hotspot':
+      return applyHotspotOverlay(nodes);
+
     case 'cycles':
       return applyCyclesOverlay(nodes, extraData?.cycles ?? []);
 
     case 'architecture-violations':
       return applyViolationsOverlay(nodes, extraData?.violations ?? []);
+
+    case 'interface-diff':
+      return applyInterfaceDiffOverlay(nodes, extraData?.diffChanges ?? []);
 
     default:
       return nodes;
@@ -107,4 +127,57 @@ function applyViolationsOverlay(
         : {}),
     },
   }));
+}
+
+function applyHotspotOverlay(nodes: Node[]): Node[] {
+  const maxScore = Math.max(
+    ...nodes.map((n) => (n.data?.hotspotScore as number) ?? 0),
+    0.001,
+  );
+  return nodes.map((n) => {
+    const score = (n.data?.hotspotScore as number) ?? 0;
+    if (score === 0) return n;
+    const scale = hotspotSize(score, maxScore);
+    return {
+      ...n,
+      style: {
+        ...n.style,
+        transform: `scale(${scale})`,
+        borderColor: qualityColor(100 - Math.min(score * 50, 100)),
+        borderWidth: 3,
+      },
+    };
+  });
+}
+
+const DIFF_COLORS: Record<string, string> = {
+  added: '#22c55e',
+  removed: '#ef4444',
+  modified: '#eab308',
+  visibility: '#f59e0b',
+  parameter_added: '#ef4444',
+  parameter_removed: '#ef4444',
+  type_changed: '#ef4444',
+  return_changed: '#ef4444',
+};
+
+function applyInterfaceDiffOverlay(
+  nodes: Node[],
+  diffChanges: DiffChange[],
+): Node[] {
+  const diffEntities = new Map(
+    diffChanges.map((c) => [c.entity_id, c]),
+  );
+  return nodes.map((n) => {
+    const change = diffEntities.get(n.id);
+    if (!change) return n;
+    return {
+      ...n,
+      style: {
+        ...n.style,
+        borderColor: DIFF_COLORS[change.change_type] ?? '#94a3b8',
+        borderWidth: 3,
+      },
+    };
+  });
 }
