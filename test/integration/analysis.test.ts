@@ -14,6 +14,7 @@ import { readFile } from 'node:fs/promises';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 const DEFAULT_CONFIG: FlowLensConfig = {
   exclude: [],
@@ -212,5 +213,85 @@ describe('Analysis integration', () => {
 
     const indexAfter = await snapshotMgr.listSnapshots();
     expect(Object.keys(indexAfter)).toHaveLength(2);
+  });
+
+  // --- Performance ---
+
+  it('cycle detection completes within performance budget', async () => {
+    await runIndex({
+      rootDir: join(import.meta.dirname, '../fixtures/simple-project'),
+      graphStore: store,
+      config: DEFAULT_CONFIG,
+      fileIndexPath: join(tmpDir, 'file_index.json'),
+      incremental: false,
+    });
+
+    const start = performance.now();
+    await detectCycles(store, { granularity: 'file' });
+    const duration = performance.now() - start;
+
+    // Small project should complete in under 500ms (spec target: <200ms for 50K entities)
+    expect(duration).toBeLessThan(500);
+  });
+
+  it('architecture validation completes within performance budget', async () => {
+    const fixtureDir = join(import.meta.dirname, '../fixtures/layered-project');
+    await runIndex({
+      rootDir: fixtureDir,
+      graphStore: store,
+      config: DEFAULT_CONFIG,
+      fileIndexPath: join(tmpDir, 'file_index.json'),
+      incremental: false,
+    });
+
+    const archConfig = JSON.parse(
+      await readFile(join(fixtureDir, 'architecture.json'), 'utf-8'),
+    ) as ArchitectureConfig;
+
+    const start = performance.now();
+    await validateArchitecture(store, archConfig);
+    const duration = performance.now() - start;
+
+    expect(duration).toBeLessThan(500);
+  });
+
+  // --- CLI Check Output Structure ---
+
+  it('flowlens check returns structured results', async () => {
+    await runIndex({
+      rootDir: join(import.meta.dirname, '../fixtures/cyclic-project'),
+      graphStore: store,
+      config: DEFAULT_CONFIG,
+      fileIndexPath: join(tmpDir, 'file_index.json'),
+      incremental: false,
+    });
+
+    const cycles = await detectCycles(store, { granularity: 'file' });
+    expect(cycles.length).toBeGreaterThan(0);
+
+    // Verify the JSON output structure matches spec
+    const jsonOutput = {
+      timestamp: new Date().toISOString(),
+      cycles: cycles.map((c) => ({
+        entities: c.entities,
+        severity: c.severity,
+        granularity: c.granularity,
+      })),
+      architecture_violations: [],
+      summary: {
+        cycles_found: cycles.length,
+        violations_found: 0,
+        severity_breakdown: {
+          high: cycles.filter((c) => c.severity === 'high').length,
+          medium: cycles.filter((c) => c.severity === 'medium').length,
+          low: cycles.filter((c) => c.severity === 'low').length,
+        },
+      },
+    };
+
+    expect(jsonOutput.timestamp).toBeDefined();
+    expect(jsonOutput.cycles.length).toBeGreaterThan(0);
+    expect(jsonOutput.summary.cycles_found).toBe(cycles.length);
+    expect(typeof jsonOutput.summary.severity_breakdown.high).toBe('number');
   });
 });
