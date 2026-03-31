@@ -24,10 +24,15 @@ export async function computeElkLayout(
     layoutOptions: {
       'elk.algorithm': options.algorithm ?? 'layered',
       'elk.direction': options.direction ?? 'DOWN',
-      'elk.spacing.nodeNode': String(options.nodeSpacing ?? 50),
+      'elk.spacing.nodeNode': String(options.nodeSpacing ?? 30),
+      'elk.spacing.edgeNode': '20',
       'elk.layered.spacing.nodeNodeBetweenLayers': String(
-        options.layerSpacing ?? 80,
+        options.layerSpacing ?? 60,
       ),
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      'elk.edgeRouting': 'SPLINES',
     },
     children: nodes.map((n) => ({
       id: n.id,

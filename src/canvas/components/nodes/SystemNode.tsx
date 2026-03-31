@@ -29,17 +29,18 @@ export const SystemNode = React.memo(
         style={{
           padding: '12px 16px',
           borderRadius: 8,
-          border: `2px solid ${selected ? '#6366f1' : '#e2e8f0'}`,
-          backgroundColor: selected ? '#eef2ff' : '#f8fafc',
+          border: `2px solid ${selected ? '#818cf8' : '#4f46e5'}`,
+          backgroundColor: selected ? '#6366f1' : '#4f46e5',
           minWidth: 140,
           textAlign: 'center',
+          color: '#ffffff',
         }}
       >
         <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
-        <div style={{ fontWeight: 700, fontSize: showExpanded ? 16 : 14 }}>
+        <div style={{ fontWeight: 700, fontSize: showExpanded ? 16 : 14, color: '#ffffff' }}>
           {showExpanded ? `/${data.label}` : data.label}
         </div>
-        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+        <div style={{ fontSize: 11, color: '#c7d2fe', marginTop: 4 }}>
           {data.entityCount} entities
           {(showExpanded || data.qualityScore !== undefined) &&
             data.qualityScore !== undefined && (

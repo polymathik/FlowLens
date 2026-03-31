@@ -51,26 +51,8 @@ function avgQuality(entities: Entity[]): number | undefined {
 /** Map of entity-id to annotations, built from API data. */
 type AnnotationMap = Map<string, NodeAnnotation[]>;
 
-/**
- * Arrange items in a grid and return position for a given index.
- * Used for laying out file nodes within a system and entity nodes within a file.
- */
-function gridPosition(
-  index: number,
-  totalCount: number,
-  cellW: number,
-  cellH: number,
-  offsetX: number,
-  offsetY: number,
-): { x: number; y: number } {
-  const cols = Math.max(1, Math.ceil(Math.sqrt(totalCount)));
-  const col = index % cols;
-  const row = Math.floor(index / cols);
-  return {
-    x: offsetX + col * cellW,
-    y: offsetY + row * cellH,
-  };
-}
+/** All initial positions are (0,0); ELK computes the real layout. */
+const ORIGIN = { x: 0, y: 0 };
 
 export function transformEntitiesToNodes(
   entities: Entity[],
@@ -105,11 +87,8 @@ export function transformEntitiesToNodes(
   }
 
   // --- System-level nodes (flat, compact) ---
-  let systemIdx = 0;
-  const systemCount = dirs.size;
   for (const [dir, dirEntities] of dirs) {
     const systemId = `system:${dir}`;
-    const pos = gridPosition(systemIdx, systemCount, 240, 100, 0, 0);
 
     const systemData: SystemNodeData = {
       label: dir,
@@ -119,7 +98,7 @@ export function transformEntitiesToNodes(
     nodes.push({
       id: systemId,
       type: 'system',
-      position: pos,
+      position: ORIGIN,
       data: systemData,
       style: { width: 180, height: 60 },
     });
@@ -133,11 +112,8 @@ export function transformEntitiesToNodes(
     }
 
     // --- File-level nodes (flat, parent ref in data) ---
-    let fileIdx = 0;
-    const fileCount = files.size;
     for (const [filePath, fileEntities] of files) {
       const fileId = `file:${filePath}`;
-      const filePos = gridPosition(fileIdx, fileCount, 200, 70, 0, 0);
 
       const fileData: FileNodeData = {
         label: fileName(filePath),
@@ -149,16 +125,13 @@ export function transformEntitiesToNodes(
       nodes.push({
         id: fileId,
         type: 'file',
-        position: filePos,
+        position: ORIGIN,
         data: fileData,
         style: { width: 160, height: 50 },
       });
 
       // --- Entity-level nodes (flat, parent ref in data) ---
-      let entIdx = 0;
-      const entCount = fileEntities.length;
       for (const entity of fileEntities) {
-        const entPos = gridPosition(entIdx, entCount, 180, 55, 0, 0);
 
         const entityData: EntityNodeData = {
           label: entity.name,
@@ -172,17 +145,12 @@ export function transformEntitiesToNodes(
         nodes.push({
           id: entity.id,
           type: 'entity',
-          position: entPos,
+          position: ORIGIN,
           data: entityData,
           style: { width: 150, height: 40 },
         });
-        entIdx++;
       }
-
-      fileIdx++;
     }
-
-    systemIdx++;
   }
 
   return nodes;

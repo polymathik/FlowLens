@@ -33,8 +33,8 @@ export const FileNode = React.memo(
         style={{
           padding: '8px 12px',
           borderRadius: 6,
-          border: `1.5px solid ${selected ? '#3b82f6' : '#cbd5e1'}`,
-          backgroundColor: selected ? '#eff6ff' : 'white',
+          border: `1.5px solid ${selected ? '#3b82f6' : '#1e40af'}`,
+          backgroundColor: selected ? '#dbeafe' : '#eff6ff',
           minWidth: 120,
           fontSize: 12,
         }}

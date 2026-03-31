@@ -28,11 +28,26 @@ export type EntityNodeData = {
 
 export type EntityNodeType = Node<EntityNodeData, 'entity'>;
 
+const KIND_BORDER_COLORS: Record<string, string> = {
+  class: '#6366f1',
+  function: '#22c55e',
+  interface: '#f59e0b',
+  method: '#06b6d4',
+  variable: '#94a3b8',
+  field: '#94a3b8',
+  enum: '#ec4899',
+  type: '#8b5cf6',
+  module: '#14b8a6',
+};
+
+const DEFAULT_KIND_COLOR = '#64748b';
+
 export const EntityNode = React.memo(
   ({ data, selected }: NodeProps<EntityNodeType>) => {
     const zoomLevel = useCanvasStore((s) => s.currentZoomLevel);
     const isCompact = zoomLevel === 'system' || zoomLevel === 'module';
     const isFullDetail = zoomLevel === 'entity';
+    const borderColor = KIND_BORDER_COLORS[data.kind] ?? DEFAULT_KIND_COLOR;
 
     return (
       <div
@@ -40,7 +55,8 @@ export const EntityNode = React.memo(
           padding: '6px 10px',
           borderRadius: 4,
           border: `1px solid ${selected ? '#8b5cf6' : '#e2e8f0'}`,
-          backgroundColor: selected ? '#f5f3ff' : 'white',
+          borderLeft: `4px solid ${borderColor}`,
+          backgroundColor: selected ? '#f5f3ff' : '#ffffff',
           fontSize: 11,
           minWidth: 100,
         }}

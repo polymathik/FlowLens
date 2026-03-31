@@ -51,7 +51,8 @@ export function transformRelationsToEdges(
         id: rel.id,
         source: rel.from,
         target: rel.to,
-        type: 'relation',
+        type: 'smoothstep',
+        label: rel.type,
         style: { stroke: RELATION_COLORS[rel.type] ?? DEFAULT_COLOR },
         data: { relation: rel },
       });
@@ -74,7 +75,7 @@ export function transformRelationsToEdges(
           id: `agg-file:${key}`,
           source: sourceFileId,
           target: targetFileId,
-          type: 'relation',
+          type: 'smoothstep',
           style: {
             stroke: RELATION_COLORS[rel.type] ?? DEFAULT_COLOR,
             strokeWidth: 2,
@@ -99,12 +100,11 @@ export function transformRelationsToEdges(
             id: `agg-sys:${key}`,
             source: sourceSystemId,
             target: targetSystemId,
-            type: 'relation',
+            type: 'smoothstep',
             style: {
               stroke: RELATION_COLORS[rel.type] ?? DEFAULT_COLOR,
               strokeWidth: 2.5,
             },
-            label: rel.type,
             data: { relation: rel, aggregated: true },
           });
         }
