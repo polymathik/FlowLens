@@ -23,11 +23,9 @@ import {
   Controls,
   MiniMap,
   useNodesState,
-  useEdgesState,
   BackgroundVariant,
   PanOnScrollMode,
   type Node,
-  type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useGraphData } from '../hooks/useGraphData';
@@ -50,6 +48,7 @@ import { OverlayLegend } from './overlays/OverlayLegend';
 import { applyOverlay, type OverlayExtraData } from './overlays/OverlayManager';
 import { fetchCycles, fetchViolations, fetchDiff } from '../api/graph-client';
 import { exportToSVG, exportToPNG } from '../utils/export-utils';
+import { transformRelationsToEdges } from '../utils/edge-transformer';
 
 const nodeTypes = {
   system: SystemNode,
@@ -103,13 +102,12 @@ function getVisibleNodes(
 function CanvasInner() {
   const {
     nodes: initialNodes,
-    edges: initialEdges,
     entities,
+    relations: rawRelations,
     loading,
     error,
   } = useGraphData();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { runLayout } = useLayout();
 
   // Zustand state
@@ -178,9 +176,8 @@ function CanvasInner() {
   useEffect(() => {
     if (initialNodes.length > 0) {
       setNodes(initialNodes);
-      setEdges(initialEdges);
     }
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
+  }, [initialNodes, setNodes]);
 
   // Apply overlay styles to nodes
   const overlayNodes = useMemo(
@@ -194,22 +191,29 @@ function CanvasInner() {
     [overlayNodes, drillPath],
   );
 
-  // Filter edges: only show edges whose relation type is visible (Issue 1)
-  // and whose endpoints exist in the visible node set.
-  const filteredEdges = useMemo(() => {
+  // Recompute edges reactively based on visible nodes + raw relations.
+  // This ensures drill-down creates proper file-level / entity-level edges.
+  const computedEdges = useMemo(() => {
+    if (!rawRelations || rawRelations.length === 0) return [];
     const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
-    return edges.filter((e) => {
-      // Relation type filter
-      const relType = (e.data as Record<string, unknown> | undefined)?.relation as
-        | { type?: string }
-        | undefined;
-      if (relType?.type && !visibleTypes.has(relType.type)) return false;
-      // Only show edges between visible nodes
-      if (!visibleNodeIds.has(e.source) || !visibleNodeIds.has(e.target))
-        return false;
+    return transformRelationsToEdges(rawRelations, visibleNodeIds, entities);
+  }, [visibleNodes, rawRelations, entities]);
+
+  // Filter edges by visible relation types
+  const filteredEdges = useMemo(() => {
+    return computedEdges.filter((e) => {
+      const data = e.data as Record<string, unknown> | undefined;
+      // Entity-level edges have a relation object with a type
+      const relation = data?.relation as { type?: string } | undefined;
+      if (relation?.type) return visibleTypes.has(relation.type);
+      // Aggregated edges have a types array
+      const types = data?.types as string[] | undefined;
+      if (types && types.length > 0) {
+        return types.some((t) => visibleTypes.has(t));
+      }
       return true;
     });
-  }, [edges, visibleTypes, visibleNodes]);
+  }, [computedEdges, visibleTypes]);
 
   // Drill-down on double-click
   const handleNodeDoubleClick = useCallback(
@@ -284,7 +288,6 @@ function CanvasInner() {
         nodes={visibleNodes}
         edges={filteredEdges}
         onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeDoubleClick={handleNodeDoubleClick}

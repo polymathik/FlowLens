@@ -11,6 +11,7 @@ import {
   fetchRelations,
   fetchAnnotations,
   type Entity,
+  type Relation,
 } from '../api/graph-client';
 import { transformEntitiesToNodes } from '../utils/node-transformer';
 import { transformRelationsToEdges } from '../utils/edge-transformer';
@@ -19,6 +20,7 @@ export interface GraphData {
   nodes: Node[];
   edges: Edge[];
   entities: Entity[];
+  relations: Relation[];
   loading: boolean;
   error: string | null;
 }
@@ -27,6 +29,7 @@ export function useGraphData(): GraphData {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [relations, setRelations] = useState<Relation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +51,7 @@ export function useGraphData(): GraphData {
         const rfEdges = transformRelationsToEdges(relations, nodeIds, rawEntities);
 
         setEntities(rawEntities);
+        setRelations(relations);
         setNodes(rfNodes);
         setEdges(rfEdges);
       } catch (err) {
@@ -62,5 +66,5 @@ export function useGraphData(): GraphData {
     return () => { cancelled = true; };
   }, []);
 
-  return { nodes, edges, entities, loading, error };
+  return { nodes, edges, entities, relations, loading, error };
 }

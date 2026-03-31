@@ -24,13 +24,46 @@ const RELATION_COLORS: Record<string, string> = {
 
 const DEFAULT_COLOR = '#94a3b8';
 
+type PairInfo = { count: number; types: Map<string, number> };
+
+/** Increment count for an aggregated edge pair, tracking relation types. */
+function accumulatePairCount(
+  map: Map<string, PairInfo>,
+  key: string,
+  relType: string,
+): void {
+  const existing = map.get(key);
+  if (existing) {
+    existing.count += 1;
+    existing.types.set(relType, (existing.types.get(relType) ?? 0) + 1);
+  } else {
+    const types = new Map<string, number>();
+    types.set(relType, 1);
+    map.set(key, { count: 1, types });
+  }
+}
+
+/** Return the relation type with the highest count in the pair. */
+function getDominantType(types: Map<string, number>): string {
+  let best = '';
+  let bestCount = 0;
+  for (const [t, c] of types) {
+    if (c > bestCount) {
+      best = t;
+      bestCount = c;
+    }
+  }
+  return best;
+}
+
 export function transformRelationsToEdges(
   relations: Relation[],
   nodeIds: Set<string>,
   entities: Entity[],
 ): Edge[] {
   const edges: Edge[] = [];
-  const seen = new Set<string>(); // dedup aggregated edges
+  const filePairCounts = new Map<string, PairInfo>();
+  const systemPairCounts = new Map<string, PairInfo>();
 
   // Build entity -> file and file -> dir lookups
   const entityToFile = new Map<string, string>();
@@ -59,7 +92,7 @@ export function transformRelationsToEdges(
       continue;
     }
 
-    // File-level aggregated edge
+    // File-level aggregated edge — collect counts per pair
     const sourceFileId = `file:${sourceFile}`;
     const targetFileId = targetFile ? `file:${targetFile}` : null;
     if (
@@ -69,24 +102,11 @@ export function transformRelationsToEdges(
       sourceFileId !== targetFileId
     ) {
       const key = `${sourceFileId}->${targetFileId}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        edges.push({
-          id: `agg-file:${key}`,
-          source: sourceFileId,
-          target: targetFileId,
-          type: 'smoothstep',
-          style: {
-            stroke: RELATION_COLORS[rel.type] ?? DEFAULT_COLOR,
-            strokeWidth: 2,
-          },
-          data: { relation: rel, aggregated: true },
-        });
-      }
+      accumulatePairCount(filePairCounts, key, rel.type);
       continue;
     }
 
-    // System-level aggregated edge
+    // System-level aggregated edge — collect counts per pair
     const sourceDir = fileToDir.get(sourceFile);
     const targetDir = targetFile ? fileToDir.get(targetFile) : null;
     if (sourceDir && targetDir && sourceDir !== targetDir) {
@@ -94,22 +114,45 @@ export function transformRelationsToEdges(
       const targetSystemId = `system:${targetDir}`;
       if (nodeIds.has(sourceSystemId) && nodeIds.has(targetSystemId)) {
         const key = `${sourceSystemId}->${targetSystemId}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          edges.push({
-            id: `agg-sys:${key}`,
-            source: sourceSystemId,
-            target: targetSystemId,
-            type: 'smoothstep',
-            style: {
-              stroke: RELATION_COLORS[rel.type] ?? DEFAULT_COLOR,
-              strokeWidth: 2.5,
-            },
-            data: { relation: rel, aggregated: true },
-          });
-        }
+        accumulatePairCount(systemPairCounts, key, rel.type);
       }
     }
+  }
+
+  // Emit file-level aggregated edges with relation counts
+  for (const [key, info] of filePairCounts) {
+    const [source, target] = key.split('->');
+    const dominantType = getDominantType(info.types);
+    edges.push({
+      id: `agg-file:${key}`,
+      source,
+      target,
+      type: 'smoothstep',
+      label: info.count > 1 ? `${info.count}` : undefined,
+      style: {
+        stroke: RELATION_COLORS[dominantType] ?? DEFAULT_COLOR,
+        strokeWidth: 2,
+      },
+      data: { aggregated: true, count: info.count, types: [...info.types.keys()] },
+    });
+  }
+
+  // Emit system-level aggregated edges with relation counts
+  for (const [key, info] of systemPairCounts) {
+    const [source, target] = key.split('->');
+    const dominantType = getDominantType(info.types);
+    edges.push({
+      id: `agg-sys:${key}`,
+      source,
+      target,
+      type: 'smoothstep',
+      label: info.count > 1 ? `${info.count}` : undefined,
+      style: {
+        stroke: RELATION_COLORS[dominantType] ?? DEFAULT_COLOR,
+        strokeWidth: 2.5,
+      },
+      data: { aggregated: true, count: info.count, types: [...info.types.keys()] },
+    });
   }
 
   return edges;
