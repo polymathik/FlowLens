@@ -23,6 +23,8 @@ export interface LayerDetail {
 }
 
 export interface GetLayerMapResult {
+  version: number;
+  inferred_by: string;
   layers: LayerDetail[];
   unassigned_count: number;
   summary: {
@@ -93,6 +95,8 @@ export async function handleGetLayerMap(
   const totalAssigned = layers.reduce((sum, l) => sum + l.entity_count, 0);
 
   const data: GetLayerMapResult = {
+    version: archConfig.version,
+    inferred_by: archConfig.inferred_by,
     layers,
     unassigned_count: unassignedCount,
     summary: {

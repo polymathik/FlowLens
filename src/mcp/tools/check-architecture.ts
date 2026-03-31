@@ -31,7 +31,7 @@ export interface CheckArchitectureResult {
   layers: LayerInfo[];
   summary: {
     total_violations: number;
-    layers_with_violations: number;
+    layers_with_violations: string[];
   };
 }
 
@@ -89,7 +89,9 @@ export async function handleCheckArchitecture(
     violation_count: layerViolationCounts.get(l.name) ?? 0,
   }));
 
-  const layersWithViolations = layers.filter(l => l.violation_count > 0).length;
+  const layersWithViolations = layers
+    .filter(l => l.violation_count > 0)
+    .map(l => l.name);
   const totalViolations = violations.length;
   const truncated = violations.slice(0, maxResults);
 

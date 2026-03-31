@@ -17,6 +17,7 @@ import { getLastIndexed } from '../last-indexed.js';
 export interface GetDependentsInput {
   entity: string;
   include_transitive?: boolean;
+  relation_types?: string[];
   max_results?: number;
 }
 
@@ -48,9 +49,15 @@ export async function handleGetDependents(
   const { entity } = outcome;
   const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
   const includeTransitive = args.include_transitive ?? false;
+  const relationTypeFilter = args.relation_types
+    ? new Set(args.relation_types)
+    : null;
 
   // Collect direct inbound edges
-  const directEdges = await deps.graph.getEdgesTo(entity.id);
+  let directEdges = await deps.graph.getEdgesTo(entity.id);
+  if (relationTypeFilter) {
+    directEdges = directEdges.filter(r => relationTypeFilter.has(r.type));
+  }
   const dependents: DependentEntry[] = [];
   const visited = new Set<string>([entity.id]);
 
@@ -77,7 +84,10 @@ export async function handleGetDependents(
       for (const nodeId of queue) {
         if (dependents.length >= maxResults) break;
 
-        const edges = await deps.graph.getEdgesTo(nodeId);
+        let edges = await deps.graph.getEdgesTo(nodeId);
+        if (relationTypeFilter) {
+          edges = edges.filter(r => relationTypeFilter.has(r.type));
+        }
         for (const rel of edges) {
           if (dependents.length >= maxResults) break;
           if (visited.has(rel.from)) continue;
@@ -125,6 +135,7 @@ export function registerGetDependents(server: McpServer, deps: ServerDependencie
       inputSchema: {
         entity: z.string().describe('Entity identifier: qualified name, ID, or file path'),
         include_transitive: z.boolean().optional().default(false).describe('Include transitive dependents'),
+        relation_types: z.array(z.string()).optional().describe('Filter by relation types (e.g. ["import", "call"])'),
         max_results: z.number().optional().default(50).describe('Max results (default 50, max 250)'),
       },
       annotations: { readOnlyHint: true },

@@ -16,15 +16,13 @@ import { buildResponse, toMCPContent } from '../response-builder.js';
 import { getLastIndexed } from '../last-indexed.js';
 
 export interface GetSummaryResult {
-  entities_by_kind: Record<string, number>;
-  relations_by_type: Record<string, number>;
-  language_breakdown: Record<string, number>;
-  top_modules: Array<{ name: string; entity_count: number }>;
-  avg_quality_score: number | null;
-  layer_structure: string[];
+  entities: Record<string, number>;
+  relations: Record<string, number>;
+  languages: Record<string, { files: number; entities: number }>;
+  top_modules: Array<{ path: string; entity_count: number }>;
+  average_quality_score: number;
+  layers: Array<{ name: string; entity_count: number }>;
   cycle_count: number;
-  total_entities: number;
-  total_relations: number;
   last_indexed: string;
 }
 
@@ -40,22 +38,26 @@ export async function handleGetSummary(
   ]);
 
   // Count entities by kind
-  const entitiesByKind: Record<string, number> = {};
+  const entities: Record<string, number> = {};
   for (const entity of allNodes) {
-    entitiesByKind[entity.kind] = (entitiesByKind[entity.kind] ?? 0) + 1;
+    entities[entity.kind] = (entities[entity.kind] ?? 0) + 1;
   }
 
   // Count relations by type
-  const relationsByType: Record<string, number> = {};
+  const relations: Record<string, number> = {};
   for (const edge of allEdges) {
-    relationsByType[edge.type] = (relationsByType[edge.type] ?? 0) + 1;
+    relations[edge.type] = (relations[edge.type] ?? 0) + 1;
   }
 
-  // Language breakdown: group file entities by language
-  const languageBreakdown: Record<string, number> = {};
+  // Language breakdown: compute files and entities per language
+  const languages: Record<string, { files: number; entities: number }> = {};
   for (const entity of allNodes) {
+    if (!languages[entity.language]) {
+      languages[entity.language] = { files: 0, entities: 0 };
+    }
+    languages[entity.language].entities += 1;
     if (entity.kind === 'file') {
-      languageBreakdown[entity.language] = (languageBreakdown[entity.language] ?? 0) + 1;
+      languages[entity.language].files += 1;
     }
   }
 
@@ -63,22 +65,22 @@ export async function handleGetSummary(
   const moduleCounts = new Map<string, number>();
   for (const entity of allNodes) {
     const parts = entity.file.split('/');
-    const moduleName = parts.length > 1 ? parts[0] : entity.file;
-    moduleCounts.set(moduleName, (moduleCounts.get(moduleName) ?? 0) + 1);
+    const modulePath = parts.length > 1 ? parts[0] : entity.file;
+    moduleCounts.set(modulePath, (moduleCounts.get(modulePath) ?? 0) + 1);
   }
   const topModules = [...moduleCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
-    .map(([name, entity_count]) => ({ name, entity_count }));
+    .map(([path, entity_count]) => ({ path, entity_count }));
 
   // Average quality score
   const withQuality = allNodes.filter(e => e.metrics?.quality_score !== undefined);
-  const avgQualityScore = withQuality.length > 0
+  const averageQualityScore = withQuality.length > 0
     ? Math.round(withQuality.reduce((sum, e) => sum + (e.metrics!.quality_score ?? 0), 0) / withQuality.length * 10) / 10
-    : null;
+    : 0;
 
-  // Layer structure from architecture.json
-  const layerStructure = await loadLayerNames(deps.flowlensDir);
+  // Layers from architecture.json
+  const layers = await loadLayerInfo(deps.flowlensDir, deps.graph);
 
   // Cycle count
   let cycleCount = 0;
@@ -90,28 +92,46 @@ export async function handleGetSummary(
   }
 
   const data: GetSummaryResult = {
-    entities_by_kind: entitiesByKind,
-    relations_by_type: relationsByType,
-    language_breakdown: languageBreakdown,
+    entities,
+    relations,
+    languages,
     top_modules: topModules,
-    avg_quality_score: avgQualityScore,
-    layer_structure: layerStructure,
+    average_quality_score: averageQualityScore,
+    layers,
     cycle_count: cycleCount,
-    total_entities: allNodes.length,
-    total_relations: allEdges.length,
     last_indexed: lastIndexed,
   };
 
   return toMCPContent(buildResponse(data, lastIndexed));
 }
 
-async function loadLayerNames(flowlensDir: string): Promise<string[]> {
-  const path = join(flowlensDir, 'architecture.json');
-  if (!existsSync(path)) return [];
+async function loadLayerInfo(
+  flowlensDir: string,
+  graph: ServerDependencies['graph'],
+): Promise<Array<{ name: string; entity_count: number }>> {
+  const archPath = join(flowlensDir, 'architecture.json');
+  if (!existsSync(archPath)) return [];
   try {
-    const content = await readFile(path, 'utf-8');
+    const content = await readFile(archPath, 'utf-8');
     const config = JSON.parse(content) as ArchitectureConfig;
-    return config.layers.map(l => l.name);
+    const { resolveLayer } = await import('../../analysis/architecture-validator.js');
+    const allEntities = await graph.getAllNodes();
+
+    const layerCounts = new Map<string, number>();
+    for (const l of config.layers) {
+      layerCounts.set(l.name, 0);
+    }
+    for (const entity of allEntities) {
+      const layer = resolveLayer(entity, config);
+      if (layer) {
+        layerCounts.set(layer, (layerCounts.get(layer) ?? 0) + 1);
+      }
+    }
+
+    return config.layers.map(l => ({
+      name: l.name,
+      entity_count: layerCounts.get(l.name) ?? 0,
+    }));
   } catch {
     return [];
   }

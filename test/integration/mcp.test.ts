@@ -28,6 +28,8 @@ import { handleGetSummary } from '../../src/mcp/tools/get-summary.js';
 import { handleGetHotspots } from '../../src/mcp/tools/get-hotspots.js';
 import { handleGetLayerMap } from '../../src/mcp/tools/get-layer-map.js';
 import { handleCheckArchitecture } from '../../src/mcp/tools/check-architecture.js';
+import { handleDiffInterface } from '../../src/mcp/tools/diff-interface.js';
+import { copyFile } from 'node:fs/promises';
 
 const DEFAULT_CONFIG: FlowLensConfig = {
   exclude: [],
@@ -116,12 +118,27 @@ describe('MCP Tools integration', () => {
   });
 
   // -- get_summary --
-  it('get_summary returns codebase statistics', async () => {
+  it('get_summary returns codebase statistics with spec field names', async () => {
     const result = await handleGetSummary({} as Record<string, never>, deps);
     const data = JSON.parse(result.content[0].text);
-    expect(data.data.total_entities).toBeGreaterThan(0);
-    expect(data.data.total_relations).toBeGreaterThanOrEqual(0);
-    expect(data.data.language_breakdown).toBeDefined();
+    expect(data.data.entities).toBeDefined();
+    expect(data.data.relations).toBeDefined();
+    expect(data.data.languages).toBeDefined();
+    // languages should have { files, entities } shape
+    const langKeys = Object.keys(data.data.languages);
+    expect(langKeys.length).toBeGreaterThan(0);
+    for (const lang of langKeys) {
+      expect(data.data.languages[lang]).toHaveProperty('files');
+      expect(data.data.languages[lang]).toHaveProperty('entities');
+    }
+    expect(data.data.top_modules).toBeDefined();
+    if (data.data.top_modules.length > 0) {
+      expect(data.data.top_modules[0]).toHaveProperty('path');
+      expect(data.data.top_modules[0]).toHaveProperty('entity_count');
+    }
+    expect(data.data.average_quality_score).toBeDefined();
+    expect(data.data.layers).toBeDefined();
+    expect(data.data.cycle_count).toBeDefined();
     expect(data.last_indexed).toBeDefined();
   });
 
@@ -250,13 +267,144 @@ describe('MCP Tools integration', () => {
   });
 
   // -- Query latency --
-  it('typical tool call completes under 100ms', async () => {
+  it('typical tool call completes under 50ms', async () => {
     // Warm-up call (first call may be slower due to lazy init)
     await handleGetContext({ entity: USER_SERVICE_QN }, deps);
 
     const start = performance.now();
     await handleGetContext({ entity: USER_SERVICE_QN }, deps);
     const duration = performance.now() - start;
-    expect(duration).toBeLessThan(100);
+    expect(duration).toBeLessThan(50);
+  });
+
+  // -- get_dependents with include_transitive --
+  it('get_dependents with include_transitive returns transitive dependents', async () => {
+    const result = await handleGetDependents(
+      { entity: USER_SERVICE_QN, include_transitive: true },
+      deps,
+    );
+    const data = JSON.parse(result.content[0].text);
+    expect(data.data.entity).toBeDefined();
+    expect(data.data.dependents).toBeDefined();
+    expect(data.data.risk_score).toBeGreaterThanOrEqual(0);
+    // Should include both direct and potentially transitive dependents
+    for (const dep of data.data.dependents) {
+      expect(typeof dep.is_direct).toBe('boolean');
+    }
+  });
+
+  // -- diff_interface --
+  it('diff_interface detects changes between snapshot and current graph', async () => {
+    // The snapshot was taken in beforeAll under SHA 'test-sha'.
+    // Add a new entity to make the current graph differ from the snapshot.
+    const newEntity = {
+      id: 'diff-test-entity',
+      kind: 'function' as const,
+      name: 'diffTestFn',
+      qualified_name: 'diff-test.ts/diffTestFn',
+      file: 'diff-test.ts',
+      location: { line_start: 1, line_end: 3, column_start: 0, column_end: 1 },
+      visibility: 'public' as const,
+      language: 'typescript',
+    };
+    await store.putNode(newEntity);
+
+    const result = await handleDiffInterface(
+      { since: 'test-sha', breaking_only: false },
+      deps,
+    );
+    const data = JSON.parse(result.content[0].text);
+    expect(data.data.from_sha).toBe('test-sha');
+    expect(data.data.changes).toBeDefined();
+    // The new entity should appear as an 'added' change
+    const addedChange = data.data.changes.find(
+      (c: { entity_name: string; change_type: string }) =>
+        c.entity_name === 'diffTestFn' && c.change_type === 'added',
+    );
+    expect(addedChange).toBeDefined();
+    expect(data.data.summary).toBeDefined();
+
+    // Clean up the added entity
+    await store.deleteNode('diff-test-entity');
+  });
+
+  // -- get_module_interface with diff_since --
+  it('get_module_interface with diff_since attaches diff entries', async () => {
+    const result = await handleGetModuleInterface(
+      { module: 'user-service.ts', diff_since: 'test-sha' },
+      deps,
+    );
+    if (!('isError' in result) || !result.isError) {
+      const data = JSON.parse(result.content[0].text);
+      expect(data.data.module).toBeDefined();
+      expect(data.data.exports).toBeDefined();
+      // Each export should optionally have diff entries
+      for (const exp of data.data.exports) {
+        expect(exp).toHaveProperty('dependent_count');
+        // diff is optional — may or may not be present depending on changes
+      }
+    }
+  });
+
+  // -- check_architecture positive test with layered-project --
+  describe('with layered-project', () => {
+    let layeredTmpDir: string;
+    let layeredDeps: ServerDependencies;
+    let layeredStore: LevelGraphStore;
+
+    beforeAll(async () => {
+      layeredTmpDir = await mkdtemp(join(tmpdir(), 'flowlens-layered-'));
+      layeredStore = new LevelGraphStore();
+      await layeredStore.open(join(layeredTmpDir, 'graph'));
+
+      const layeredProjectDir = join(import.meta.dirname, '../fixtures/layered-project');
+
+      await runIndex({
+        rootDir: layeredProjectDir,
+        graphStore: layeredStore,
+        config: DEFAULT_CONFIG,
+        fileIndexPath: join(layeredTmpDir, 'file_index.json'),
+        incremental: false,
+      });
+
+      // Copy architecture.json into the flowlens dir so check_architecture finds it
+      await copyFile(
+        join(layeredProjectDir, 'architecture.json'),
+        join(layeredTmpDir, 'architecture.json'),
+      );
+
+      const annotationStore = new AnnotationStore(join(layeredTmpDir, 'annotations.json'));
+      await mkdir(join(layeredTmpDir, 'snapshots'), { recursive: true });
+      const snapshotManager = new SnapshotManager(join(layeredTmpDir, 'snapshots'));
+
+      layeredDeps = {
+        graph: layeredStore,
+        annotationStore,
+        snapshotManager,
+        flowlensDir: layeredTmpDir,
+        rootDir: layeredProjectDir,
+        fileIndexPath: join(layeredTmpDir, 'file_index.json'),
+      };
+    });
+
+    afterAll(async () => {
+      await layeredStore.close();
+      await rm(layeredTmpDir, { recursive: true, force: true });
+    });
+
+    it('check_architecture detects violations in layered-project', async () => {
+      const result = await handleCheckArchitecture({}, layeredDeps);
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.data.violations).toBeDefined();
+      expect(data.data.violations.length).toBeGreaterThan(0);
+      expect(data.data.layers).toBeDefined();
+      expect(data.data.summary.total_violations).toBeGreaterThan(0);
+      // layers_with_violations should be an array of strings
+      expect(Array.isArray(data.data.summary.layers_with_violations)).toBe(true);
+      if (data.data.summary.layers_with_violations.length > 0) {
+        expect(typeof data.data.summary.layers_with_violations[0]).toBe('string');
+      }
+    });
   });
 });

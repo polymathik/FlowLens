@@ -24,6 +24,7 @@ export interface GetModuleInterfaceInput {
 
 export interface ExportEntry {
   entity: Entity;
+  type_signature?: string;
   dependent_count: number;
   diff?: InterfaceDiffEntry[];
 }
@@ -58,7 +59,7 @@ export async function handleGetModuleInterface(
     ? fileEntities
     : fileEntities.filter(e => e.visibility === 'public');
 
-  // For each export, count dependents
+  // For each export, count dependents and compute type_signature
   const exports: ExportEntry[] = [];
   for (const e of filtered) {
     if (exports.length >= maxResults) break;
@@ -68,6 +69,21 @@ export async function handleGetModuleInterface(
       entity: e,
       dependent_count: inbound.length,
     };
+
+    // Build type_signature based on entity kind
+    if (e.kind === 'function' || e.kind === 'method') {
+      // Look up child parameter entities from the graph
+      const allFileEntities = await deps.graph.getNodesByFile(e.file);
+      const params = allFileEntities
+        .filter(p => p.kind === 'parameter' && p.qualified_name.startsWith(e.qualified_name + '.'))
+        .map(p => p.name);
+      entry.type_signature = `(${params.join(', ')})`;
+    } else if (e.kind === 'class') {
+      entry.type_signature = `class ${e.name}`;
+    } else if (e.kind === 'interface') {
+      entry.type_signature = `interface ${e.name}`;
+    }
+
     exports.push(entry);
   }
 
