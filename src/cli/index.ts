@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { indexCommand } from './commands/index-cmd.js';
+import { checkCommand } from './commands/check.js';
 
 const program = new Command();
 
@@ -13,5 +14,6 @@ program
 
 program.addCommand(initCommand);
 program.addCommand(indexCommand);
+program.addCommand(checkCommand);
 
 program.parse();

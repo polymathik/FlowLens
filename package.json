@@ -39,7 +39,8 @@
     "commander": "^14.0.3",
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
-    "levelgraph": "^4.0.0"
+    "levelgraph": "^4.0.0",
+    "minimatch": "^10.2.4"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

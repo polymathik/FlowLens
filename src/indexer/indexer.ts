@@ -19,6 +19,7 @@ import { buildUpdatedIndex } from './incremental.js';
 import { LANGUAGE_EXTENSIONS } from '../utils/paths.js';
 import { hashContent } from '../utils/hash.js';
 import { generateEntityId } from '../utils/id.js';
+import { computeChurn } from '../analysis/churn-analyzer.js';
 
 /* ---------- Public types ---------- */
 
@@ -86,7 +87,10 @@ export async function runIndex(options: IndexOptions): Promise<IndexResult> {
   const fileIndexManager = new FileIndexManager();
   await fileIndexManager.save(fileIndexPath, newIndex);
 
-  // --- Step 7: Return summary ---
+  // --- Step 7: Enrich entities with git churn metrics ---
+  await enrichWithChurnMetrics(rootDir, graphStore);
+
+  // --- Step 8: Return summary ---
   return {
     filesDiscovered: discovered.length,
     filesIndexed: changed.length,
@@ -253,4 +257,36 @@ async function createModuleEntities(
   }
 
   return moduleEntities.length;
+}
+
+/* ---------- Step 7: Churn enrichment ---------- */
+
+/**
+ * Compute git churn for the repository and update entity metrics in the graph
+ * with `churn_rate` and `hotspot_score` (churn_rate × cognitive_complexity).
+ *
+ * Silently skips if the directory is not a git repository.
+ */
+async function enrichWithChurnMetrics(
+  rootDir: string,
+  graphStore: GraphStore,
+): Promise<void> {
+  const churnData = await computeChurn(rootDir, { period_days: 90 });
+  if (churnData.size === 0) return;
+
+  for (const [filePath, churnInfo] of churnData) {
+    const fileEntities = await graphStore.getNodesByFile(filePath);
+    for (const entity of fileEntities) {
+      if (!entity.metrics) continue;
+
+      entity.metrics.churn_rate = churnInfo.churn_rate;
+
+      const cognitiveComplexity = entity.metrics.cognitive_complexity;
+      if (typeof cognitiveComplexity === 'number') {
+        entity.metrics.hotspot_score = churnInfo.churn_rate * cognitiveComplexity;
+      }
+
+      await graphStore.putNode(entity);
+    }
+  }
 }
