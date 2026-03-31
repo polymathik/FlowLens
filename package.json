@@ -34,13 +34,15 @@
     "@ast-grep/lang-swift": "^0.0.8",
     "@ast-grep/lang-yaml": "^0.0.6",
     "@ast-grep/napi": "^0.42.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "^5.6.2",
     "classic-level": "^3.0.0",
     "commander": "^14.0.3",
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
     "levelgraph": "^4.0.0",
-    "minimatch": "^10.2.4"
+    "minimatch": "^10.2.4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
