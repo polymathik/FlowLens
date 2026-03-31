@@ -18,3 +18,9 @@ html, body, #root {
 .react-flow__edge-path {
   stroke-width: 1.5;
 }
+
+@keyframes dashmove {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
