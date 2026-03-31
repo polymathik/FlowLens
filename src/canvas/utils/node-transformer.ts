@@ -1,13 +1,13 @@
 /**
  * Transforms Entity[] from the graph API into React Flow Node[].
  *
- * Hierarchy strategy (compound nodes):
- *   1. System nodes (top-level directories) — no parentId
- *   2. File nodes — parentId points to system node
- *   3. Entity nodes — parentId points to file node
+ * Flat node strategy (no compound nesting):
+ *   1. System nodes — compact boxes, one per top-level directory
+ *   2. File nodes — store parentSystem in data (not parentId)
+ *   3. Entity nodes — store parentFile in data (not parentId)
  *
- * Parent nodes are always emitted BEFORE their children (React Flow requirement).
- * Child positions are RELATIVE to parent. Parent nodes are sized dynamically.
+ * Each zoom/drill level shows a flat set of appropriately-sized nodes.
+ * Drill-down filtering in Canvas.tsx uses data.parentSystem / data.parentFile.
  *
  * Skips parameter, enum_member, and decorator entities (too granular).
  */
@@ -48,25 +48,29 @@ function avgQuality(entities: Entity[]): number | undefined {
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
 }
 
-/** Container padding for compound nodes. */
-const CONTAINER_PAD = 40;
-/** Spacing between child nodes inside a container. */
-const CHILD_GAP_X = 200;
-const CHILD_GAP_Y = 60;
-/** Min container dimensions. */
-const MIN_CONTAINER_W = 300;
-const MIN_CONTAINER_H = 200;
-
-/** Size a parent node to fit its children count. */
-function containerSize(childCount: number): { width: number; height: number } {
-  return {
-    width: Math.max(MIN_CONTAINER_W, childCount * 80),
-    height: Math.max(MIN_CONTAINER_H, childCount * 60),
-  };
-}
-
 /** Map of entity-id to annotations, built from API data. */
 type AnnotationMap = Map<string, NodeAnnotation[]>;
+
+/**
+ * Arrange items in a grid and return position for a given index.
+ * Used for laying out file nodes within a system and entity nodes within a file.
+ */
+function gridPosition(
+  index: number,
+  totalCount: number,
+  cellW: number,
+  cellH: number,
+  offsetX: number,
+  offsetY: number,
+): { x: number; y: number } {
+  const cols = Math.max(1, Math.ceil(Math.sqrt(totalCount)));
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  return {
+    x: offsetX + col * cellW,
+    y: offsetY + row * cellH,
+  };
+}
 
 export function transformEntitiesToNodes(
   entities: Entity[],
@@ -100,10 +104,25 @@ export function transformEntitiesToNodes(
     dirs.get(dir)!.push(e);
   }
 
-  let systemX = 0;
-
+  // --- System-level nodes (flat, compact) ---
+  let systemIdx = 0;
+  const systemCount = dirs.size;
   for (const [dir, dirEntities] of dirs) {
     const systemId = `system:${dir}`;
+    const pos = gridPosition(systemIdx, systemCount, 240, 100, 0, 0);
+
+    const systemData: SystemNodeData = {
+      label: dir,
+      entityCount: dirEntities.length,
+      qualityScore: avgQuality(dirEntities),
+    };
+    nodes.push({
+      id: systemId,
+      type: 'system',
+      position: pos,
+      data: systemData,
+      style: { width: 180, height: 60 },
+    });
 
     // Group non-file entities by their file path.
     const files = new Map<string, Entity[]>();
@@ -113,60 +132,34 @@ export function transformEntitiesToNodes(
       files.get(e.file)!.push(e);
     }
 
-    // Pre-calculate system container size based on file children count.
+    // --- File-level nodes (flat, parent ref in data) ---
+    let fileIdx = 0;
     const fileCount = files.size;
-    const systemSize = containerSize(fileCount);
-
-    // --- System-level node (container) ---
-    const systemData: SystemNodeData = {
-      label: dir,
-      entityCount: dirEntities.length,
-      qualityScore: avgQuality(dirEntities),
-    };
-    nodes.push({
-      id: systemId,
-      type: 'system',
-      position: { x: systemX, y: 0 },
-      data: systemData,
-      style: {
-        width: systemSize.width,
-        height: systemSize.height,
-        padding: CONTAINER_PAD,
-      },
-    });
-
-    // --- File-level nodes (children of system) ---
-    let fileX = 20;
-    let fileY = 50;
     for (const [filePath, fileEntities] of files) {
       const fileId = `file:${filePath}`;
-      const entityCount = fileEntities.length;
-      const fileSize = containerSize(entityCount);
+      const filePos = gridPosition(fileIdx, fileCount, 200, 70, 0, 0);
 
       const fileData: FileNodeData = {
         label: fileName(filePath),
-        entityCount,
+        entityCount: fileEntities.length,
         filePath,
         qualityScore: avgQuality(fileEntities),
+        parentSystem: systemId,
       };
       nodes.push({
         id: fileId,
         type: 'file',
-        parentId: systemId,
-        extent: 'parent' as const,
-        position: { x: fileX, y: fileY },
+        position: filePos,
         data: fileData,
-        style: {
-          width: fileSize.width,
-          height: fileSize.height,
-          padding: CONTAINER_PAD,
-        },
+        style: { width: 160, height: 50 },
       });
 
-      // --- Entity-level nodes (children of file) ---
-      let entX = 10;
-      let entY = 30;
+      // --- Entity-level nodes (flat, parent ref in data) ---
+      let entIdx = 0;
+      const entCount = fileEntities.length;
       for (const entity of fileEntities) {
+        const entPos = gridPosition(entIdx, entCount, 180, 55, 0, 0);
+
         const entityData: EntityNodeData = {
           label: entity.name,
           kind: entity.kind,
@@ -174,23 +167,22 @@ export function transformEntitiesToNodes(
           cognitiveComplexity: entity.metrics?.cognitive_complexity,
           visibility: entity.visibility,
           annotations: annMap.get(entity.id),
+          parentFile: fileId,
         };
         nodes.push({
           id: entity.id,
           type: 'entity',
-          parentId: fileId,
-          extent: 'parent' as const,
-          position: { x: entX, y: entY },
+          position: entPos,
           data: entityData,
-          style: { width: 160, height: 40 },
+          style: { width: 150, height: 40 },
         });
-        entY += CHILD_GAP_Y;
+        entIdx++;
       }
 
-      fileY += fileSize.height + 20;
+      fileIdx++;
     }
 
-    systemX += systemSize.width + CHILD_GAP_X;
+    systemIdx++;
   }
 
   return nodes;

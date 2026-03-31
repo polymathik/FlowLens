@@ -45,7 +45,7 @@ export function useGraphData(): GraphData {
 
         const rfNodes = transformEntitiesToNodes(rawEntities, annotations);
         const nodeIds = new Set(rfNodes.map((n) => n.id));
-        const rfEdges = transformRelationsToEdges(relations, nodeIds);
+        const rfEdges = transformRelationsToEdges(relations, nodeIds, rawEntities);
 
         setEntities(rawEntities);
         setNodes(rfNodes);

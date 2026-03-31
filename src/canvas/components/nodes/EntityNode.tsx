@@ -22,6 +22,8 @@ export type EntityNodeData = {
   cognitiveComplexity?: number;
   visibility: string;
   annotations?: NodeAnnotation[];
+  /** File node this entity belongs to (used for drill-down filtering). */
+  parentFile?: string;
 };
 
 export type EntityNodeType = Node<EntityNodeData, 'entity'>;

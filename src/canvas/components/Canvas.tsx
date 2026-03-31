@@ -25,6 +25,7 @@ import {
   useNodesState,
   useEdgesState,
   BackgroundVariant,
+  PanOnScrollMode,
   type Node,
   type Edge,
 } from '@xyflow/react';
@@ -66,17 +67,20 @@ const edgeTypes = {
  * Given all nodes and the current drill state, return only the nodes
  * that should be visible.
  *
- * - No drill: show only system-level nodes (no parentId).
- * - Drilled into a system node: show that node + its file children.
- * - Drilled into a file node: show that node + its entity children.
+ * Flat node strategy — no parentId nesting. Parent references are stored
+ * in node data: data.parentSystem (file nodes) and data.parentFile (entity nodes).
+ *
+ * - No drill: show only system-level nodes (type === 'system').
+ * - Drilled into a system node: show file nodes whose data.parentSystem matches.
+ * - Drilled into a file node: show entity nodes whose data.parentFile matches.
  */
 function getVisibleNodes(
   allNodes: Node[],
   drillPath: string[],
 ): Node[] {
   if (drillPath.length === 0) {
-    // Top-level view: only system nodes (no parentId)
-    return allNodes.filter((n) => !n.parentId);
+    // Top-level view: only system nodes
+    return allNodes.filter((n) => n.type === 'system');
   }
 
   const currentDrill = drillPath[drillPath.length - 1];
@@ -84,10 +88,14 @@ function getVisibleNodes(
   return allNodes.filter((n) => {
     // The drilled-into node itself
     if (n.id === currentDrill) return true;
-    // Direct children of the drilled-into node
-    if (n.parentId === currentDrill) return true;
+    // File nodes whose parentSystem matches the drilled system node
+    const parentSystem = (n.data as Record<string, unknown>)?.parentSystem;
+    if (parentSystem === currentDrill) return true;
+    // Entity nodes whose parentFile matches the drilled file node
+    const parentFile = (n.data as Record<string, unknown>)?.parentFile;
+    if (parentFile === currentDrill) return true;
     // Show sibling system nodes for context when at first drill level
-    if (!n.parentId && drillPath.length === 1) return true;
+    if (n.type === 'system' && drillPath.length === 1) return true;
     return false;
   });
 }
@@ -285,6 +293,10 @@ function CanvasInner() {
         fitView
         minZoom={0.1}
         maxZoom={4}
+        zoomOnPinch
+        panOnScroll
+        panOnScrollMode={PanOnScrollMode.Free}
+        zoomOnScroll={false}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls />

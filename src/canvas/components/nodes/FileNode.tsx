@@ -16,6 +16,8 @@ export type FileNodeData = {
   entityCount: number;
   filePath: string;
   qualityScore?: number;
+  /** System node this file belongs to (used for drill-down filtering). */
+  parentSystem?: string;
 };
 
 export type FileNodeType = Node<FileNodeData, 'file'>;
