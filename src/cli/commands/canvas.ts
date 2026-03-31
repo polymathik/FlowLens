@@ -33,7 +33,7 @@ export const canvasCommand = new Command('canvas')
           port: parseInt(opts.port),
           open: opts.open !== false,
           proxy: {
-            '/api': {
+            '/flowlens-api': {
               target: `http://localhost:${opts.apiPort}`,
               changeOrigin: true,
             },

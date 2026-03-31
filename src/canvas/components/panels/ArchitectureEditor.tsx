@@ -39,7 +39,7 @@ export function ArchitectureEditor({
   if (!open || !config) return null;
 
   const saveConfig = async () => {
-    await fetch('/api/architecture', {
+    await fetch('/flowlens-api/architecture', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),

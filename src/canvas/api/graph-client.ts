@@ -53,7 +53,7 @@ export type Relation = {
   confidence: number;
 };
 
-const API_BASE = '/api';
+const API_BASE = '/flowlens-api';
 
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`);

@@ -21,8 +21,8 @@ export async function startGraphServer(
   const graphStore = new LevelGraphStore();
   await graphStore.open(join(flowlensDir, 'graph'));
 
-  // GET /api/entities — all entities
-  app.get('/api/entities', async (_req, res) => {
+  // GET /flowlens-api/entities — all entities
+  app.get('/flowlens-api/entities', async (_req, res) => {
     try {
       const entities = await graphStore.getAllNodes();
       res.json(entities);
@@ -31,8 +31,8 @@ export async function startGraphServer(
     }
   });
 
-  // GET /api/relations — all relations
-  app.get('/api/relations', async (_req, res) => {
+  // GET /flowlens-api/relations — all relations
+  app.get('/flowlens-api/relations', async (_req, res) => {
     try {
       const relations = await graphStore.getAllEdges();
       res.json(relations);
@@ -41,31 +41,31 @@ export async function startGraphServer(
     }
   });
 
-  // GET /api/architecture — architecture.json
-  app.get('/api/architecture', async (_req, res) => {
+  // GET /flowlens-api/architecture — architecture.json
+  app.get('/flowlens-api/architecture', async (_req, res) => {
     const archPath = join(flowlensDir, 'architecture.json');
     if (!existsSync(archPath)) return res.json({ layers: [] });
     const content = await readFile(archPath, 'utf-8');
     res.json(JSON.parse(content));
   });
 
-  // POST /api/architecture — save architecture.json
-  app.post('/api/architecture', async (req, res) => {
+  // POST /flowlens-api/architecture — save architecture.json
+  app.post('/flowlens-api/architecture', async (req, res) => {
     const archPath = join(flowlensDir, 'architecture.json');
     await writeFile(archPath, JSON.stringify(req.body, null, 2));
     res.json({ ok: true });
   });
 
-  // GET /api/annotations — annotations.json
-  app.get('/api/annotations', async (_req, res) => {
+  // GET /flowlens-api/annotations — annotations.json
+  app.get('/flowlens-api/annotations', async (_req, res) => {
     const annPath = join(flowlensDir, 'annotations.json');
     if (!existsSync(annPath)) return res.json({ annotations: [] });
     const content = await readFile(annPath, 'utf-8');
     res.json(JSON.parse(content));
   });
 
-  // GET /api/cycles — cycle detection
-  app.get('/api/cycles', async (_req, res) => {
+  // GET /flowlens-api/cycles — cycle detection
+  app.get('/flowlens-api/cycles', async (_req, res) => {
     try {
       const cycles = await detectCycles(graphStore, { granularity: 'file' });
       res.json(cycles);
@@ -74,8 +74,8 @@ export async function startGraphServer(
     }
   });
 
-  // GET /api/violations — architecture violations
-  app.get('/api/violations', async (_req, res) => {
+  // GET /flowlens-api/violations — architecture violations
+  app.get('/flowlens-api/violations', async (_req, res) => {
     try {
       const archPath = join(flowlensDir, 'architecture.json');
       if (!existsSync(archPath)) return res.json([]);
@@ -87,8 +87,8 @@ export async function startGraphServer(
     }
   });
 
-  // GET /api/diff?sha=<sha> — interface diff against a snapshot
-  app.get('/api/diff', async (req, res) => {
+  // GET /flowlens-api/diff?sha=<sha> — interface diff against a snapshot
+  app.get('/flowlens-api/diff', async (req, res) => {
     try {
       const sha = req.query.sha as string;
       if (!sha) return res.status(400).json({ error: 'sha required' });
