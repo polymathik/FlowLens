@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { LevelGraphStore } from '../../../src/graph/levelgraph-store.js';
 import { computeDiff } from '../../../src/analysis/diff-computer.js';
 import type { Entity, Visibility } from '../../../src/contracts/entities.js';
-import type { Relation } from '../../../src/contracts/relations.js';
+import type { Relation, RelationType } from '../../../src/contracts/relations.js';
 import type { SnapshotData } from '../../../src/contracts/analysis/snapshots.js';
 
 /* ---------- helpers ---------- */
@@ -30,12 +30,17 @@ function makeEntity(
   };
 }
 
-function makeRelation(id: string, from: string, to: string): Relation {
+function makeRelation(
+  id: string,
+  from: string,
+  to: string,
+  type: RelationType = 'import',
+): Relation {
   return {
     id,
     from,
     to,
-    type: 'import',
+    type,
     location: { file: 'src/test.ts', line: 1, column: 0 },
     weight: 1,
     confidence: 1.0,
@@ -294,5 +299,181 @@ describe('DiffComputer', () => {
       const file = change.before?.file ?? change.after?.file ?? '';
       expect(file.startsWith('src')).toBe(true);
     }
+  });
+
+  /* ---------- parameter_added ---------- */
+
+  it('detects parameter_added when function gains a parameter', async () => {
+    // Current: function foo(a, b) — snapshot: function foo(a)
+    const func = makeEntity('f1', 'foo', 'src/a.ts', {
+      kind: 'function',
+      qualified_name: 'src/a.ts/foo',
+    });
+    const paramA = makeEntity('p1', 'a', 'src/a.ts', {
+      kind: 'parameter',
+      qualified_name: 'src/a.ts/foo.a',
+    });
+    const paramB = makeEntity('p2', 'b', 'src/a.ts', {
+      kind: 'parameter',
+      qualified_name: 'src/a.ts/foo.b',
+    });
+
+    await store.putNodes([func, paramA, paramB]);
+
+    const snapshot = makeSnapshot([func, paramA]); // no paramB in snapshot
+
+    const diff = await computeDiff(store, snapshot);
+
+    const added = diff.changes.filter(c => c.change_type === 'parameter_added');
+    expect(added).toHaveLength(1);
+    expect(added[0].entity_name).toBe('foo');
+    expect(added[0].severity).toBe('breaking');
+    expect(added[0].details).toContain("'b'");
+  });
+
+  /* ---------- parameter_removed ---------- */
+
+  it('detects parameter_removed when function loses a parameter', async () => {
+    // Current: function foo(a) — snapshot: function foo(a, b)
+    const func = makeEntity('f1', 'foo', 'src/a.ts', {
+      kind: 'function',
+      qualified_name: 'src/a.ts/foo',
+    });
+    const paramA = makeEntity('p1', 'a', 'src/a.ts', {
+      kind: 'parameter',
+      qualified_name: 'src/a.ts/foo.a',
+    });
+    const paramB = makeEntity('p2', 'b', 'src/a.ts', {
+      kind: 'parameter',
+      qualified_name: 'src/a.ts/foo.b',
+    });
+
+    await store.putNodes([func, paramA]); // current has only paramA
+
+    const snapshot = makeSnapshot([func, paramA, paramB]); // snapshot has both
+
+    const diff = await computeDiff(store, snapshot);
+
+    const removed = diff.changes.filter(c => c.change_type === 'parameter_removed');
+    expect(removed).toHaveLength(1);
+    expect(removed[0].entity_name).toBe('foo');
+    expect(removed[0].severity).toBe('breaking');
+    expect(removed[0].details).toContain("'b'");
+  });
+
+  /* ---------- return_changed ---------- */
+
+  it('detects return_changed when return relations differ', async () => {
+    const func = makeEntity('f1', 'foo', 'src/a.ts', {
+      kind: 'function',
+      qualified_name: 'src/a.ts/foo',
+    });
+    const typeA = makeEntity('t1', 'TypeA', 'src/types.ts', {
+      kind: 'type',
+      qualified_name: 'src/types.ts/TypeA',
+    });
+    const typeB = makeEntity('t2', 'TypeB', 'src/types.ts', {
+      kind: 'type',
+      qualified_name: 'src/types.ts/TypeB',
+    });
+
+    // Current graph: foo returns TypeB
+    await store.putNodes([func, typeA, typeB]);
+    await store.putEdges([
+      makeRelation('ret1', 'f1', 't2', 'return'),
+    ]);
+
+    // Snapshot: foo returned TypeA
+    const snapshot = makeSnapshot(
+      [func, typeA, typeB],
+      [makeRelation('ret0', 'f1', 't1', 'return')],
+    );
+
+    const diff = await computeDiff(store, snapshot);
+
+    const returnChanges = diff.changes.filter(c => c.change_type === 'return_changed');
+    expect(returnChanges).toHaveLength(1);
+    expect(returnChanges[0].entity_name).toBe('foo');
+    expect(returnChanges[0].severity).toBe('breaking');
+  });
+
+  /* ---------- type_changed ---------- */
+
+  it('detects type_changed for modified type alias', async () => {
+    // Snapshot: type Foo spans lines 1-3; Current: type Foo spans lines 1-10
+    const oldType = makeEntity('t1', 'Foo', 'src/types.ts', {
+      kind: 'type',
+      qualified_name: 'src/types.ts/Foo',
+      location: { line_start: 1, line_end: 3, column_start: 0, column_end: 0 },
+    });
+    const currType = makeEntity('t1', 'Foo', 'src/types.ts', {
+      kind: 'type',
+      qualified_name: 'src/types.ts/Foo',
+      location: { line_start: 1, line_end: 10, column_start: 0, column_end: 0 },
+    });
+
+    await store.putNodes([currType]);
+
+    const snapshot = makeSnapshot([oldType]);
+
+    const diff = await computeDiff(store, snapshot);
+
+    const typeChanges = diff.changes.filter(c => c.change_type === 'type_changed');
+    expect(typeChanges).toHaveLength(1);
+    expect(typeChanges[0].entity_name).toBe('Foo');
+    expect(typeChanges[0].severity).toBe('breaking');
+    expect(typeChanges[0].details).toContain('definition changed');
+  });
+
+  /* ---------- modified (catch-all) ---------- */
+
+  it('detects modified for significant structural change', async () => {
+    // Snapshot: class Foo has 10 lines; Current: class Foo has 50 lines (>50% change)
+    const oldClass = makeEntity('c1', 'Foo', 'src/foo.ts', {
+      kind: 'class',
+      qualified_name: 'src/foo.ts/Foo',
+      metrics: { line_count: 10 },
+    });
+    const currClass = makeEntity('c1', 'Foo', 'src/foo.ts', {
+      kind: 'class',
+      qualified_name: 'src/foo.ts/Foo',
+      metrics: { line_count: 50 },
+    });
+
+    await store.putNodes([currClass]);
+
+    const snapshot = makeSnapshot([oldClass]);
+
+    const diff = await computeDiff(store, snapshot);
+
+    const modified = diff.changes.filter(c => c.change_type === 'modified');
+    expect(modified).toHaveLength(1);
+    expect(modified[0].entity_name).toBe('Foo');
+    expect(modified[0].severity).toBe('non-breaking');
+    expect(modified[0].details).toContain('10');
+    expect(modified[0].details).toContain('50');
+  });
+
+  it('does not flag modified for small line count changes', async () => {
+    // 10 lines → 12 lines is only a 20% change — should not be flagged
+    const oldClass = makeEntity('c1', 'Bar', 'src/bar.ts', {
+      kind: 'class',
+      qualified_name: 'src/bar.ts/Bar',
+      metrics: { line_count: 10 },
+    });
+    const currClass = makeEntity('c1', 'Bar', 'src/bar.ts', {
+      kind: 'class',
+      qualified_name: 'src/bar.ts/Bar',
+      metrics: { line_count: 12 },
+    });
+
+    await store.putNodes([currClass]);
+
+    const snapshot = makeSnapshot([oldClass]);
+
+    const diff = await computeDiff(store, snapshot);
+
+    const modified = diff.changes.filter(c => c.change_type === 'modified');
+    expect(modified).toHaveLength(0);
   });
 });
