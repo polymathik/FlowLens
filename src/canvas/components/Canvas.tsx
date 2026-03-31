@@ -3,6 +3,7 @@
  *
  * Wraps the graph in a ReactFlowProvider and renders Background, Controls,
  * and MiniMap alongside the nodes/edges loaded from the graph API.
+ * Uses custom node types (System, File, Entity) and ELK.js auto-layout.
  */
 import React from 'react';
 import {
@@ -19,11 +20,22 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useGraphData } from '../hooks/useGraphData';
+import { useLayout } from '../hooks/useLayout';
+import { SystemNode } from './nodes/SystemNode';
+import { FileNode } from './nodes/FileNode';
+import { EntityNode } from './nodes/EntityNode';
+
+const nodeTypes = {
+  system: SystemNode,
+  file: FileNode,
+  entity: EntityNode,
+};
 
 function CanvasInner() {
   const { nodes: initialNodes, edges: initialEdges, loading, error } = useGraphData();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const { runLayout } = useLayout();
 
   // Sync hook data into React Flow's controlled state once loaded.
   React.useEffect(() => {
@@ -55,6 +67,7 @@ function CanvasInner() {
       edges={edges}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
+      nodeTypes={nodeTypes}
       fitView
       minZoom={0.1}
       maxZoom={4}
