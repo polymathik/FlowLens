@@ -11,6 +11,8 @@
  * - Breadcrumb drill-down navigation
  * - Overlay system (complexity, churn, cycles, violations)
  * - Custom edge types (relation, violation, cycle)
+ * - Panels: toolbar, filter, search, detail, architecture editor
+ * - SVG/PNG export
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -37,9 +39,15 @@ import { RelationEdge } from './edges/RelationEdge';
 import { ViolationEdge } from './edges/ViolationEdge';
 import { CycleEdge } from './edges/CycleEdge';
 import { BreadcrumbBar } from './panels/BreadcrumbBar';
+import { Toolbar } from './panels/Toolbar';
+import { FilterPanel } from './panels/FilterPanel';
+import { SearchPanel } from './panels/SearchPanel';
+import { DetailPanel } from './panels/DetailPanel';
+import { ArchitectureEditor } from './panels/ArchitectureEditor';
 import { OverlayLegend } from './overlays/OverlayLegend';
 import { applyOverlay, type OverlayExtraData } from './overlays/OverlayManager';
 import { fetchCycles, fetchViolations } from '../api/graph-client';
+import { exportToSVG, exportToPNG } from '../utils/export-utils';
 
 const nodeTypes = {
   system: SystemNode,
@@ -54,17 +62,28 @@ const edgeTypes = {
 };
 
 function CanvasInner() {
-  const { nodes: initialNodes, edges: initialEdges, loading, error } = useGraphData();
+  const {
+    nodes: initialNodes,
+    edges: initialEdges,
+    entities,
+    loading,
+    error,
+  } = useGraphData();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { runLayout } = useLayout();
 
   // Zustand state
   const drillInto = useCanvasStore((s) => s.drillInto);
+  const selectNode = useCanvasStore((s) => s.selectNode);
   const activeOverlay = useCanvasStore((s) => s.activeOverlay);
 
   // Semantic zoom — keeps store in sync with viewport zoom level
   useSemanticZoom();
+
+  // Panel visibility toggles
+  const [showFilter, setShowFilter] = useState(false);
+  const [showArchEditor, setShowArchEditor] = useState(false);
 
   // Extra data for overlays that need external data (cycles, violations)
   const [overlayData, setOverlayData] = useState<OverlayExtraData>({});
@@ -76,7 +95,8 @@ function CanvasInner() {
     if (activeOverlay === 'cycles') {
       fetchCycles()
         .then((data) => {
-          if (!cancelled) setOverlayData({ cycles: data as OverlayExtraData['cycles'] });
+          if (!cancelled)
+            setOverlayData({ cycles: data as OverlayExtraData['cycles'] });
         })
         .catch(() => {
           /* overlay data is optional */
@@ -84,7 +104,10 @@ function CanvasInner() {
     } else if (activeOverlay === 'architecture-violations') {
       fetchViolations()
         .then((data) => {
-          if (!cancelled) setOverlayData({ violations: data as OverlayExtraData['violations'] });
+          if (!cancelled)
+            setOverlayData({
+              violations: data as OverlayExtraData['violations'],
+            });
         })
         .catch(() => {
           /* overlay data is optional */
@@ -120,9 +143,29 @@ function CanvasInner() {
     [drillInto],
   );
 
+  // Select node on single-click
+  const handleNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      selectNode(node.id);
+    },
+    [selectNode],
+  );
+
+  // Deselect when clicking on the pane
+  const handlePaneClick = useCallback(() => {
+    selectNode(null);
+  }, [selectNode]);
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+        }}
+      >
         <p>Loading graph data...</p>
       </div>
     );
@@ -130,7 +173,15 @@ function CanvasInner() {
 
   if (error) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'red' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          color: 'red',
+        }}
+      >
         <p>Error: {error}</p>
       </div>
     );
@@ -138,7 +189,20 @@ function CanvasInner() {
 
   return (
     <>
+      <Toolbar
+        onExportSVG={exportToSVG}
+        onExportPNG={exportToPNG}
+        onToggleFilter={() => setShowFilter((v) => !v)}
+        onToggleArchEditor={() => setShowArchEditor((v) => !v)}
+      />
       <BreadcrumbBar />
+      {showFilter && <FilterPanel />}
+      <SearchPanel entities={entities} />
+      <DetailPanel entities={entities} />
+      <ArchitectureEditor
+        open={showArchEditor}
+        onClose={() => setShowArchEditor(false)}
+      />
       <OverlayLegend />
       <ReactFlow
         nodes={overlayNodes}
@@ -148,6 +212,8 @@ function CanvasInner() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeClick={handleNodeClick}
+        onPaneClick={handlePaneClick}
         fitView
         minZoom={0.1}
         maxZoom={4}

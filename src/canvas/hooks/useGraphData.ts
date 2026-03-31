@@ -4,13 +4,14 @@
  */
 import { useState, useEffect } from 'react';
 import type { Node, Edge } from '@xyflow/react';
-import { fetchEntities, fetchRelations } from '../api/graph-client';
+import { fetchEntities, fetchRelations, type Entity } from '../api/graph-client';
 import { transformEntitiesToNodes } from '../utils/node-transformer';
 import { transformRelationsToEdges } from '../utils/edge-transformer';
 
 export interface GraphData {
   nodes: Node[];
   edges: Edge[];
+  entities: Entity[];
   loading: boolean;
   error: string | null;
 }
@@ -18,6 +19,7 @@ export interface GraphData {
 export function useGraphData(): GraphData {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [entities, setEntities] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,17 +28,18 @@ export function useGraphData(): GraphData {
 
     async function load() {
       try {
-        const [entities, relations] = await Promise.all([
+        const [rawEntities, relations] = await Promise.all([
           fetchEntities(),
           fetchRelations(),
         ]);
 
         if (cancelled) return;
 
-        const rfNodes = transformEntitiesToNodes(entities);
+        const rfNodes = transformEntitiesToNodes(rawEntities);
         const nodeIds = new Set(rfNodes.map((n) => n.id));
         const rfEdges = transformRelationsToEdges(relations, nodeIds);
 
+        setEntities(rawEntities);
         setNodes(rfNodes);
         setEdges(rfEdges);
       } catch (err) {
@@ -51,5 +54,5 @@ export function useGraphData(): GraphData {
     return () => { cancelled = true; };
   }, []);
 
-  return { nodes, edges, loading, error };
+  return { nodes, edges, entities, loading, error };
 }
