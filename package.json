@@ -40,6 +40,7 @@
     "classic-level": "^3.0.0",
     "commander": "^14.0.3",
     "cors": "^2.8.6",
+    "d3-force": "^3.0.0",
     "elkjs": "^0.11.1",
     "express": "^5.2.1",
     "fast-glob": "^3.3.3",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
+    "@types/d3-force": "^3.0.10",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",

@@ -77,17 +77,22 @@ function emitAggregatedEdges(
   for (const [key, info] of pairCounts) {
     const [source, target] = key.split('->');
     const dominantType = getDominantType(info.types);
+    const dominantRel = { type: dominantType };
     edges.push({
       id: `agg-${prefix}:${key}`,
       source,
       target,
-      type: 'smoothstep',
-      label: info.count > 1 ? `${info.count}` : undefined,
+      type: 'relation',
       style: {
         stroke: RELATION_COLORS[dominantType] ?? DEFAULT_COLOR,
         strokeWidth,
       },
-      data: { aggregated: true, count: info.count, types: [...info.types.keys()] },
+      data: {
+        relation: dominantRel,
+        aggregated: true,
+        count: info.count,
+        types: [...info.types.keys()],
+      },
     });
   }
   return edges;
@@ -122,8 +127,7 @@ export function transformRelationsToEdges(
         id: rel.id,
         source: rel.from,
         target: rel.to,
-        type: 'smoothstep',
-        label: rel.type,
+        type: 'relation',
         style: { stroke: RELATION_COLORS[rel.type] ?? DEFAULT_COLOR },
         data: { relation: rel },
       });

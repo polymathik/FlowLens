@@ -3,7 +3,8 @@
  *
  * Wraps the graph in a ReactFlowProvider and renders Background, Controls,
  * and MiniMap alongside the nodes/edges loaded from the graph API.
- * Uses custom node types (System, File, Entity) and ELK.js auto-layout.
+ * Uses custom node types (System, File, Entity) with dual layout:
+ * d3-force for module/system views, ELK.js for file/entity views.
  *
  * Integrations:
  * - Zustand store for state management
@@ -30,13 +31,14 @@ import {
 import '@xyflow/react/dist/style.css';
 import { useGraphData } from '../hooks/useGraphData';
 import { useLayout } from '../hooks/useLayout';
+import { useForceLayout } from '../hooks/useForceLayout';
 import { useSemanticZoom } from '../hooks/useSemanticZoom';
 import { useCanvasStore } from '../store/canvas-store';
 import { SystemNode } from './nodes/SystemNode';
 import { ModuleNode } from './nodes/ModuleNode';
 import { FileNode } from './nodes/FileNode';
 import { EntityNode } from './nodes/EntityNode';
-import { RelationEdge } from './edges/RelationEdge';
+import { RelationEdge, TYPE_COLORS } from './edges/RelationEdge';
 import { ViolationEdge } from './edges/ViolationEdge';
 import { CycleEdge } from './edges/CycleEdge';
 import { BreadcrumbBar } from './panels/BreadcrumbBar';
@@ -144,7 +146,6 @@ function CanvasInner() {
     error,
   } = useGraphData();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const { runLayout } = useLayout();
 
   // Zustand state
   const drillInto = useCanvasStore((s) => s.drillInto);
@@ -153,6 +154,19 @@ function CanvasInner() {
   const visibleTypes = useCanvasStore((s) => s.visibleRelationTypes);
   const drillPath = useCanvasStore((s) => s.drillPath);
   const diffSha = useCanvasStore((s) => s.diffSha);
+
+  // Determine layout mode: force-directed for module/system view, ELK for file/entity
+  const isModuleView =
+    drillPath.length === 0 ||
+    (drillPath.length > 0 &&
+      drillPath[drillPath.length - 1].startsWith('system:'));
+
+  const { runLayout: runForceLayout } = useForceLayout({
+    enabled: isModuleView,
+    strength: -300,
+    distance: 120,
+  });
+  const { runLayout: runElkLayout } = useLayout();
 
   // Semantic zoom — keeps store in sync with viewport zoom level
   useSemanticZoom();
@@ -226,6 +240,17 @@ function CanvasInner() {
     () => getVisibleNodes(overlayNodes, drillPath),
     [overlayNodes, drillPath],
   );
+
+  // Run the appropriate layout after visible nodes change
+  useEffect(() => {
+    if (visibleNodes.length > 0) {
+      if (isModuleView) {
+        runForceLayout();
+      } else {
+        runElkLayout();
+      }
+    }
+  }, [visibleNodes.length, isModuleView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Recompute edges reactively based on visible nodes + raw relations.
   // This ensures drill-down creates proper file-level / entity-level edges.
@@ -338,6 +363,25 @@ function CanvasInner() {
         zoomOnScroll={false}
         zoomOnPinch
       >
+        {/* SVG arrow marker defs for each relation type */}
+        <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+          <defs>
+            {Object.entries(TYPE_COLORS).map(([type, color]) => (
+              <marker
+                key={type}
+                id={`arrow-${type}`}
+                viewBox="0 0 10 10"
+                refX="8"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
+              </marker>
+            ))}
+          </defs>
+        </svg>
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls />
         <MiniMap
