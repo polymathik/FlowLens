@@ -294,12 +294,13 @@ function CanvasInner() {
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
         fitView
-        minZoom={0.1}
+        fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
+        minZoom={0.05}
         maxZoom={4}
-        zoomOnPinch
         panOnScroll
         panOnScrollMode={PanOnScrollMode.Free}
         zoomOnScroll={false}
+        zoomOnPinch
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls />
