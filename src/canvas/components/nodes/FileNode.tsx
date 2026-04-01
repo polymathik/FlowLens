@@ -18,6 +18,8 @@ export type FileNodeData = {
   qualityScore?: number;
   /** System node this file belongs to (used for drill-down filtering). */
   parentSystem?: string;
+  /** Module node this file belongs to (used for drill-down filtering). */
+  parentModule?: string;
 };
 
 export type FileNodeType = Node<FileNodeData, 'file'>;

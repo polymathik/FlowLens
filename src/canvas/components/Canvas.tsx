@@ -33,6 +33,7 @@ import { useLayout } from '../hooks/useLayout';
 import { useSemanticZoom } from '../hooks/useSemanticZoom';
 import { useCanvasStore } from '../store/canvas-store';
 import { SystemNode } from './nodes/SystemNode';
+import { ModuleNode } from './nodes/ModuleNode';
 import { FileNode } from './nodes/FileNode';
 import { EntityNode } from './nodes/EntityNode';
 import { RelationEdge } from './edges/RelationEdge';
@@ -52,6 +53,7 @@ import { transformRelationsToEdges } from '../utils/edge-transformer';
 
 const nodeTypes = {
   system: SystemNode,
+  module: ModuleNode,
   file: FileNode,
   entity: EntityNode,
 };
@@ -67,11 +69,14 @@ const edgeTypes = {
  * that should be visible.
  *
  * Flat node strategy — no parentId nesting. Parent references are stored
- * in node data: data.parentSystem (file nodes) and data.parentFile (entity nodes).
+ * in node data: data.parentSystem (module/file nodes), data.parentModule
+ * (file nodes), and data.parentFile (entity nodes).
  *
+ * 4-level hierarchy:
  * - No drill: show only system-level nodes (type === 'system').
- * - Drilled into a system node: show file nodes whose data.parentSystem matches.
- * - Drilled into a file node: show entity nodes whose data.parentFile matches.
+ * - Drilled into system: show module nodes for that system + root files (no module).
+ * - Drilled into module: show file nodes for that module (+ sibling modules for context).
+ * - Drilled into file: show entity nodes for that file.
  */
 function getVisibleNodes(
   allNodes: Node[],
@@ -83,20 +88,51 @@ function getVisibleNodes(
   }
 
   const currentDrill = drillPath[drillPath.length - 1];
+  const data = (n: Node) => n.data as Record<string, unknown>;
 
-  return allNodes.filter((n) => {
-    // The drilled-into node itself
-    if (n.id === currentDrill) return true;
-    // File nodes whose parentSystem matches the drilled system node
-    const parentSystem = (n.data as Record<string, unknown>)?.parentSystem;
-    if (parentSystem === currentDrill) return true;
-    // Entity nodes whose parentFile matches the drilled file node
-    const parentFile = (n.data as Record<string, unknown>)?.parentFile;
-    if (parentFile === currentDrill) return true;
-    // Show sibling system nodes for context when at first drill level
-    if (n.type === 'system' && drillPath.length === 1) return true;
-    return false;
-  });
+  if (currentDrill.startsWith('system:')) {
+    // Drilled into a system → show module nodes for this system + root files (no module)
+    return allNodes.filter((n) => {
+      // Keep all system nodes for context
+      if (n.type === 'system') return true;
+      // Module nodes belonging to this system
+      if (n.type === 'module' && data(n).parentSystem === currentDrill) return true;
+      // Files directly in this system dir (no module parent)
+      if (
+        n.type === 'file' &&
+        data(n).parentSystem === currentDrill &&
+        !data(n).parentModule
+      ) return true;
+      return false;
+    });
+  }
+
+  if (currentDrill.startsWith('module:')) {
+    // Drilled into a module → show file nodes for this module
+    // Also show sibling modules for context (same parent system)
+    const parentSystem = drillPath.length >= 2 ? drillPath[drillPath.length - 2] : null;
+    return allNodes.filter((n) => {
+      // Sibling modules for context
+      if (
+        n.type === 'module' &&
+        parentSystem &&
+        data(n).parentSystem === parentSystem
+      ) return true;
+      // File nodes belonging to this module
+      if (n.type === 'file' && data(n).parentModule === currentDrill) return true;
+      return false;
+    });
+  }
+
+  if (currentDrill.startsWith('file:')) {
+    // Drilled into a file → show entity nodes for this file
+    return allNodes.filter((n) => {
+      if (n.type === 'entity' && data(n).parentFile === currentDrill) return true;
+      return false;
+    });
+  }
+
+  return allNodes;
 }
 
 function CanvasInner() {

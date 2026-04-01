@@ -61,7 +61,7 @@ export function BreadcrumbBar() {
               color: '#3b82f6',
             }}
           >
-            {id.replace(/^(system|file):/, '')}
+            {id.replace(/^(system|module|file):/, '')}
           </button>
         </React.Fragment>
       ))}

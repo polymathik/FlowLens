@@ -1,10 +1,11 @@
 /**
  * Transforms Relation[] from the graph API into React Flow Edge[].
  *
- * Creates edges at three granularity levels:
+ * Creates edges at four granularity levels:
  *   1. Entity-level: direct edges when both entity nodes are visible.
  *   2. File-level: aggregated edges between file nodes (deduped).
- *   3. System-level: aggregated edges between directory nodes (deduped).
+ *   3. Module-level: aggregated edges between module/subdirectory nodes (deduped).
+ *   4. System-level: aggregated edges between directory nodes (deduped).
  *
  * Only edges whose both endpoints exist in the visible node set are created.
  */
@@ -56,6 +57,42 @@ function getDominantType(types: Map<string, number>): string {
   return best;
 }
 
+/**
+ * Derive the module path (first two directory segments) from a file path.
+ * Returns null if the file is directly inside the top-level dir (no subdirectory).
+ */
+function getModulePath(filePath: string): string | null {
+  const parts = filePath.split('/');
+  if (parts.length < 3) return null;
+  return parts.slice(0, 2).join('/');
+}
+
+/** Emit aggregated edges from a pair-count map. */
+function emitAggregatedEdges(
+  pairCounts: Map<string, PairInfo>,
+  prefix: string,
+  strokeWidth: number,
+): Edge[] {
+  const edges: Edge[] = [];
+  for (const [key, info] of pairCounts) {
+    const [source, target] = key.split('->');
+    const dominantType = getDominantType(info.types);
+    edges.push({
+      id: `agg-${prefix}:${key}`,
+      source,
+      target,
+      type: 'smoothstep',
+      label: info.count > 1 ? `${info.count}` : undefined,
+      style: {
+        stroke: RELATION_COLORS[dominantType] ?? DEFAULT_COLOR,
+        strokeWidth,
+      },
+      data: { aggregated: true, count: info.count, types: [...info.types.keys()] },
+    });
+  }
+  return edges;
+}
+
 export function transformRelationsToEdges(
   relations: Relation[],
   nodeIds: Set<string>,
@@ -63,6 +100,7 @@ export function transformRelationsToEdges(
 ): Edge[] {
   const edges: Edge[] = [];
   const filePairCounts = new Map<string, PairInfo>();
+  const modulePairCounts = new Map<string, PairInfo>();
   const systemPairCounts = new Map<string, PairInfo>();
 
   // Build entity -> file and file -> dir lookups
@@ -106,6 +144,19 @@ export function transformRelationsToEdges(
       continue;
     }
 
+    // Module-level aggregated edge — collect counts per pair
+    const sourceModule = getModulePath(sourceFile);
+    const targetModule = targetFile ? getModulePath(targetFile) : null;
+    if (sourceModule && targetModule && sourceModule !== targetModule) {
+      const sourceModuleId = `module:${sourceModule}`;
+      const targetModuleId = `module:${targetModule}`;
+      if (nodeIds.has(sourceModuleId) && nodeIds.has(targetModuleId)) {
+        const key = `${sourceModuleId}->${targetModuleId}`;
+        accumulatePairCount(modulePairCounts, key, rel.type);
+        continue;
+      }
+    }
+
     // System-level aggregated edge — collect counts per pair
     const sourceDir = fileToDir.get(sourceFile);
     const targetDir = targetFile ? fileToDir.get(targetFile) : null;
@@ -119,41 +170,10 @@ export function transformRelationsToEdges(
     }
   }
 
-  // Emit file-level aggregated edges with relation counts
-  for (const [key, info] of filePairCounts) {
-    const [source, target] = key.split('->');
-    const dominantType = getDominantType(info.types);
-    edges.push({
-      id: `agg-file:${key}`,
-      source,
-      target,
-      type: 'smoothstep',
-      label: info.count > 1 ? `${info.count}` : undefined,
-      style: {
-        stroke: RELATION_COLORS[dominantType] ?? DEFAULT_COLOR,
-        strokeWidth: 2,
-      },
-      data: { aggregated: true, count: info.count, types: [...info.types.keys()] },
-    });
-  }
-
-  // Emit system-level aggregated edges with relation counts
-  for (const [key, info] of systemPairCounts) {
-    const [source, target] = key.split('->');
-    const dominantType = getDominantType(info.types);
-    edges.push({
-      id: `agg-sys:${key}`,
-      source,
-      target,
-      type: 'smoothstep',
-      label: info.count > 1 ? `${info.count}` : undefined,
-      style: {
-        stroke: RELATION_COLORS[dominantType] ?? DEFAULT_COLOR,
-        strokeWidth: 2.5,
-      },
-      data: { aggregated: true, count: info.count, types: [...info.types.keys()] },
-    });
-  }
+  // Emit aggregated edges at each level
+  edges.push(...emitAggregatedEdges(filePairCounts, 'file', 2));
+  edges.push(...emitAggregatedEdges(modulePairCounts, 'mod', 2.25));
+  edges.push(...emitAggregatedEdges(systemPairCounts, 'sys', 2.5));
 
   return edges;
 }
