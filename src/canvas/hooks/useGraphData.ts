@@ -63,7 +63,23 @@ export function useGraphData(): GraphData {
     }
 
     load();
-    return () => { cancelled = true; };
+
+    // Subscribe to the watch-mode SSE stream. When the server pushes a
+    // graph-updated event, re-fetch everything. EventSource is resilient
+    // to reconnects; if the endpoint doesn't exist (no-watch mode), the
+    // browser silently retries and we don't error the UI.
+    const events = new EventSource('/flowlens-api/events');
+    events.addEventListener('graph-updated', () => {
+      if (!cancelled) load();
+    });
+    events.onerror = () => {
+      // Let the browser auto-reconnect; don't surface to UI.
+    };
+
+    return () => {
+      cancelled = true;
+      events.close();
+    };
   }, []);
 
   return { nodes, edges, entities, relations, loading, error };

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Response } from 'express';
 import cors from 'cors';
 import { join } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -10,16 +10,28 @@ import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { computeDiff } from '../../analysis/diff-computer.js';
 import type { ArchitectureConfig } from '../../contracts/architecture.js';
 
+/**
+ * Handle returned by startGraphServer. `broadcast` pushes a named event to
+ * every connected SSE client — used by watch mode so the canvas hears
+ * about graph updates without polling.
+ */
+export interface GraphServer {
+  close: () => void;
+  broadcast: (type: string, payload: unknown) => void;
+}
+
 export async function startGraphServer(
   flowlensDir: string,
   port = 3001,
-): Promise<{ close: () => void }> {
+): Promise<GraphServer> {
   const app = express();
   app.use(cors());
   app.use(express.json());
 
   const graphStore = new LevelGraphStore();
   await graphStore.open(join(flowlensDir, 'graph'));
+
+  const sseClients = new Set<Response>();
 
   // GET /flowlens-api/entities — all entities
   app.get('/flowlens-api/entities', async (_req, res) => {
@@ -111,6 +123,20 @@ export async function startGraphServer(
     }
   });
 
+  // GET /flowlens-api/events — SSE stream for push updates (watch mode)
+  app.get('/flowlens-api/events', (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    // Emit a hello so the client sees the stream is live.
+    res.write(`event: hello\ndata: {}\n\n`);
+    sseClients.add(res);
+    _req.on('close', () => {
+      sseClients.delete(res);
+    });
+  });
+
   // GET /flowlens-api/diff?sha=<sha> — interface diff against a snapshot
   app.get('/flowlens-api/diff', async (req, res) => {
     try {
@@ -126,13 +152,27 @@ export async function startGraphServer(
     }
   });
 
+  function broadcast(type: string, payload: unknown): void {
+    const line = `event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of sseClients) {
+      try {
+        client.write(line);
+      } catch {
+        sseClients.delete(client);
+      }
+    }
+  }
+
   return new Promise((resolve) => {
     const server = app.listen(port, () => {
       resolve({
         close: () => {
+          for (const client of sseClients) client.end();
+          sseClients.clear();
           server.close();
           graphStore.close();
         },
+        broadcast,
       });
     });
   });
