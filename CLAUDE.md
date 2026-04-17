@@ -44,8 +44,8 @@ FlowLens/
 - **Validate before committing.** After any implementation, spawn validation agents to: run the test suite, verify contract compliance, check that `_docs/` is updated, and confirm no regressions in dependent components.
 
 ## Git rules 
-- Each phase will be implemented on respective branch. Create and switch to branch if it isn't present. For each phase, the corresponsing ground truth/reference is in _docs/specs/PHASE-* 
-- Merge the brach to main only after phase implementation is done, validated against the specs in specs folder and the user manually tests it.
+- Each phase will be implemented on respective branch. Create and switch to branch if it isn't present. For each phase, the corresponding ground truth/reference is in `_docs/specs/PHASE-*`.
+- Merge the branch to `main` once phase implementation is done and validated against the specs in the specs folder. The user will test on `main` and roll back if anything is off.
 
 ## Key Technical Decisions
 
