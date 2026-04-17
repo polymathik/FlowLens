@@ -20,6 +20,7 @@ import { LANGUAGE_EXTENSIONS } from '../utils/paths.js';
 import { hashContent } from '../utils/hash.js';
 import { generateEntityId } from '../utils/id.js';
 import { computeChurn } from '../analysis/churn-analyzer.js';
+import { parallelParse, PARALLEL_THRESHOLD } from './parallel-parser.js';
 
 /* ---------- Public types ---------- */
 
@@ -69,13 +70,34 @@ export async function runIndex(options: IndexOptions): Promise<IndexResult> {
   const filesDeleted = await deleteStaleFiles(deleted, graphStore);
 
   // --- Step 4: Parse changed files and store in graph ---
-  const parser = new AstGrepParser(rootDir);
+  // Large runs go through worker threads via parallelParse; small runs stay
+  // serial (worker startup overhead isn't worth it below PARALLEL_THRESHOLD).
   const fileHashes = new Map<string, string>();
 
-  for (const file of changed) {
-    const result = await parseAndStore(file, rootDir, parser, graphStore, fileHashes, errors);
-    entitiesCreated += result.entities;
-    relationsCreated += result.relations;
+  if (changed.length >= PARALLEL_THRESHOLD) {
+    const { parsed, failures } = await parallelParse(changed, rootDir);
+    for (const file of parsed) {
+      fileHashes.set(file.path, file.hash);
+      await graphStore.deleteEdgesByFile(file.path);
+      await graphStore.deleteNodesByFile(file.path);
+      await graphStore.putNodes(file.entities);
+      await graphStore.putEdges(file.relations);
+      entitiesCreated += file.entities.length;
+      relationsCreated += file.relations.length;
+      for (const err of file.errors) {
+        errors.push({ file: err.file, message: err.message });
+      }
+    }
+    for (const failure of failures) {
+      errors.push({ file: failure.path, message: failure.message });
+    }
+  } else {
+    const parser = new AstGrepParser(rootDir);
+    for (const file of changed) {
+      const result = await parseAndStore(file, rootDir, parser, graphStore, fileHashes, errors);
+      entitiesCreated += result.entities;
+      relationsCreated += result.relations;
+    }
   }
 
   // --- Step 5: Create module entities ---
