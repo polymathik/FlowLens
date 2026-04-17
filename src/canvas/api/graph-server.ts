@@ -41,6 +41,30 @@ export async function startGraphServer(
     }
   });
 
+  // GET /flowlens-api/summary — entity/relation counts
+  app.get('/flowlens-api/summary', async (_req, res) => {
+    try {
+      const entities = await graphStore.getAllNodes();
+      const relations = await graphStore.getAllEdges();
+      const entities_by_kind: Record<string, number> = {};
+      for (const e of entities) {
+        entities_by_kind[e.kind] = (entities_by_kind[e.kind] ?? 0) + 1;
+      }
+      const relations_by_type: Record<string, number> = {};
+      for (const r of relations) {
+        relations_by_type[r.type] = (relations_by_type[r.type] ?? 0) + 1;
+      }
+      res.json({
+        entity_count: entities.length,
+        relation_count: relations.length,
+        entities_by_kind,
+        relations_by_type,
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // GET /flowlens-api/architecture — architecture.json
   app.get('/flowlens-api/architecture', async (_req, res) => {
     const archPath = join(flowlensDir, 'architecture.json');

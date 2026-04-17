@@ -1,57 +1,20 @@
 /**
  * Graph API client — fetches entities, relations, and metadata from the Express graph server.
  * The API base URL is relative (proxied by Vite dev server to http://localhost:3001).
+ *
+ * Types are sourced from `src/contracts/` (single source of truth) and
+ * re-exported here for canvas-local imports.
  */
+export type {
+  Entity,
+  EntityKind,
+  EntityMetrics,
+  Location,
+} from '../../contracts/entities.js';
+export type { Relation, RelationType } from '../../contracts/relations.js';
 
-// Canvas-local type definitions mirroring backend contracts.
-// Duplicated here because canvas has its own build system (Vite, not tsc).
-
-export type EntityKind =
-  | 'file' | 'module' | 'namespace' | 'class' | 'interface'
-  | 'function' | 'method' | 'variable' | 'field' | 'parameter'
-  | 'type' | 'enum' | 'enum_member' | 'decorator';
-
-export type Location = {
-  line_start: number;
-  line_end: number;
-  column_start: number;
-  column_end: number;
-};
-
-export type EntityMetrics = {
-  line_count: number;
-  cognitive_complexity?: number;
-  quality_score?: number;
-  [key: string]: number | undefined;
-};
-
-export type Entity = {
-  id: string;
-  kind: EntityKind;
-  name: string;
-  qualified_name: string;
-  file: string;
-  location: Location;
-  visibility: string;
-  language: string;
-  metrics?: EntityMetrics;
-  annotations?: Record<string, string>;
-};
-
-export type RelationType =
-  | 'import' | 'call' | 'extend' | 'implement'
-  | 'override' | 'mixin' | 'use' | 'contain' | 'create'
-  | 'parameter' | 'return' | 'throw' | 'decorate';
-
-export type Relation = {
-  id: string;
-  from: string;
-  to: string;
-  type: RelationType;
-  location: { file: string; line: number; column: number };
-  weight: number;
-  confidence: number;
-};
+import type { Entity } from '../../contracts/entities.js';
+import type { Relation } from '../../contracts/relations.js';
 
 const API_BASE = '/flowlens-api';
 
@@ -90,4 +53,15 @@ export async function fetchViolations(): Promise<unknown[]> {
 
 export async function fetchDiff(sha: string): Promise<{ changes?: unknown[] }> {
   return fetchJSON<{ changes?: unknown[] }>(`/diff?sha=${encodeURIComponent(sha)}`);
+}
+
+export interface GraphSummary {
+  entity_count: number;
+  relation_count: number;
+  entities_by_kind: Record<string, number>;
+  relations_by_type: Record<string, number>;
+}
+
+export async function fetchSummary(): Promise<GraphSummary> {
+  return fetchJSON<GraphSummary>('/summary');
 }

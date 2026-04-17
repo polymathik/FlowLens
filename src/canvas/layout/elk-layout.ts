@@ -1,12 +1,21 @@
 /**
  * ELK.js layout engine integration.
  * Computes hierarchical/layered positions for React Flow nodes using ELK.
+ *
+ * Conforms to the canvas `LayoutEngine` contract in
+ * `src/contracts/canvas/layout.ts` — see `createElkEngine()` below.
  */
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { Node, Edge } from '@xyflow/react';
+import type {
+  LayoutEngine,
+  LayoutOptions as ContractLayoutOptions,
+} from '../../contracts/canvas/index.js';
+import type { CanvasNode, CanvasEdge } from '../../contracts/canvas/index.js';
 
 const elk = new ELK();
 
+/** ELK-specific options (flat bag matching ELK's config keys). */
 export interface LayoutOptions {
   algorithm?: string;
   direction?: string;
@@ -57,4 +66,36 @@ export async function computeElkLayout(
     }
     return { ...node, position: { x: elkNode.x, y: elkNode.y } };
   });
+}
+
+/**
+ * Contract-conforming factory. Maps the generic {@link ContractLayoutOptions}
+ * (with nested `spacing: {node, layer}`) onto ELK's flat option keys and
+ * delegates to {@link computeElkLayout}. Kept alongside the raw function so
+ * both styles are usable: the Canvas hooks call `computeElkLayout` for
+ * speed; external integrations target the `LayoutEngine` contract.
+ */
+export function createElkEngine(): LayoutEngine {
+  return {
+    async computeLayout(
+      nodes: CanvasNode[],
+      edges: CanvasEdge[],
+      options: ContractLayoutOptions,
+    ) {
+      const positioned = await computeElkLayout(
+        nodes as unknown as Node[],
+        edges as unknown as Edge[],
+        {
+          algorithm: options.algorithm,
+          direction: options.direction,
+          nodeSpacing: options.spacing.node,
+          layerSpacing: options.spacing.layer,
+        },
+      );
+      return {
+        nodes: positioned as unknown as CanvasNode[],
+        edges,
+      };
+    },
+  };
 }

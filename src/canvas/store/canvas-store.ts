@@ -5,16 +5,15 @@
  * search query, and drill-down navigation state.
  */
 import { create } from 'zustand';
+import type {
+  ZoomLevel as ContractZoomLevel,
+  OverlayType as ContractOverlayType,
+} from '../../contracts/canvas/index.js';
 
-export type ZoomLevel = 'system' | 'module' | 'file' | 'entity';
-export type OverlayType =
-  | 'complexity-heatmap'
-  | 'churn-heatmap'
-  | 'hotspot'
-  | 'cycles'
-  | 'architecture-violations'
-  | 'interface-diff'
-  | null;
+// Re-export the contract types so existing imports keep working.
+export type ZoomLevel = ContractZoomLevel;
+/** Local variant: store uses `null` to indicate no overlay active. */
+export type OverlayType = ContractOverlayType | null;
 
 interface CanvasState {
   // Zoom
