@@ -17,6 +17,10 @@ import { execSync } from 'node:child_process';
 import { LevelGraphStore } from '../../graph/levelgraph-store.js';
 import { runIndex } from '../../indexer/indexer.js';
 import { inferArchitecture } from '../../architecture/heuristic-inference.js';
+import { runInference } from '../../ai/ai-integration.js';
+import { buildTopology } from '../../ai/topology-builder.js';
+import type { AIProvider } from '../../contracts/ai-integration.js';
+import { printWarning } from '../output.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { printHeader, printSuccess, printError, printSummary } from '../output.js';
 import type { FlowLensConfig } from '../../contracts/config.js';
@@ -80,7 +84,10 @@ const ENTITY_KINDS = [
 export const initCommand = new Command('init')
   .description('Initialize FlowLens for the current project')
   .option('--force', 'Overwrite existing .flowlens/ directory')
-  .action(async (opts: { force?: boolean }) => {
+  .option('--ai', 'Use an AI provider to infer architecture layers')
+  .option('--provider <provider>', 'AI provider: anthropic, openai, ollama', 'anthropic')
+  .option('--model <model>', 'Override the default model for the chosen provider')
+  .action(async (opts: { force?: boolean; ai?: boolean; provider?: string; model?: string }) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
 
@@ -143,9 +150,29 @@ export const initCommand = new Command('init')
         allEntities.push(...kindEntities);
       }
 
-      // Relations are used for import-based layer analysis; passing empty array
-      // is safe — architecture inference falls back to directory grouping only.
-      const archConfig = inferArchitecture(allEntities, []);
+      // Infer architecture: AI-assisted when --ai is passed, with automatic
+      // fall-back to the heuristic if the provider fails. Relations come from
+      // the graph so both paths can use import-based layer analysis.
+      const allRelations = await graphStore.getAllEdges();
+
+      let archConfig = inferArchitecture(allEntities, allRelations);
+      if (opts.ai) {
+        const topology = buildTopology(allEntities, allRelations);
+        const outcome = await runInference(
+          {
+            provider: (opts.provider as AIProvider) ?? 'anthropic',
+            model: opts.model,
+          },
+          topology,
+        );
+        if (outcome.ok) {
+          archConfig = outcome.config;
+          printSuccess(`AI inference (${opts.provider}) produced ${archConfig.layers.length} layers`);
+        } else {
+          printWarning(`AI inference failed: ${outcome.error}`);
+          printWarning('Falling back to heuristic inference.');
+        }
+      }
       await writeFile(
         join(flowlensDir, 'architecture.json'),
         JSON.stringify(archConfig, null, 2),

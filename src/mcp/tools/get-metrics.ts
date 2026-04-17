@@ -11,6 +11,7 @@ import { resolveEntity, isResolveError } from '../entity-resolver.js';
 import { computeCouplingMetrics } from '../../metrics/coupling.js';
 import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
 import { getLastIndexed } from '../last-indexed.js';
+import { buildCanvasUrl } from '../../contracts/canvas-links.js';
 
 export interface GetMetricsInput {
   entity?: string;
@@ -77,6 +78,13 @@ export async function handleGetMetrics(
     return toMCPContent(buildResponse(
       { entries: [entry], summary: buildSummary([entity]) },
       lastIndexed,
+      {
+        canvas_url: buildCanvasUrl({
+          kind: entity.kind === 'file' ? 'file' : 'entity',
+          identifier: entity.qualified_name,
+          overlay: 'complexity',
+        }),
+      },
     ));
   }
 

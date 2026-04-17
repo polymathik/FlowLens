@@ -1,0 +1,45 @@
+{
+  "name": "flowlens-vscode",
+  "displayName": "FlowLens",
+  "description": "Visual dependency graph and code intelligence, inside VS Code.",
+  "version": "0.1.0-alpha",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "workspaceContains:.flowlens"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "flowlens.openCanvas",
+        "title": "FlowLens: Open Dependency Canvas"
+      },
+      {
+        "command": "flowlens.runDoctor",
+        "title": "FlowLens: Run Doctor"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "flowlens",
+          "title": "FlowLens",
+          "icon": "$(symbol-namespace)"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.0"
+  }
+}

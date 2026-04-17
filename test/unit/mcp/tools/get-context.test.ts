@@ -100,6 +100,20 @@ describe('get_context tool', () => {
     expect(inbound.length).toBe(1);
   });
 
+  it('embeds a canvas_url pointing to the resolved entity', async () => {
+    await store.putNodes([
+      makeEntity({ id: 'e1', name: 'UserService' }),
+    ]);
+
+    const result = await handleGetContext({ entity: 'UserService' }, deps);
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.canvas_url).toBeDefined();
+    expect(parsed.canvas_url).toContain('/#/entity/');
+    // Identifier should be the qualified_name (URL-encoded)
+    expect(parsed.canvas_url).toMatch(/UserService/);
+  });
+
   it('resolves entity not found and returns error with suggestions', async () => {
     await store.putNodes([
       makeEntity({ id: 'e1', name: 'UserService' }),

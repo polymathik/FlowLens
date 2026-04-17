@@ -3,7 +3,12 @@ import type { MCPToolResponse } from '../contracts/mcp/server.js';
 export function buildResponse<T>(
   data: T,
   lastIndexed: string,
-  options?: { total_count?: number; max_results?: number; actualCount?: number },
+  options?: {
+    total_count?: number;
+    max_results?: number;
+    actualCount?: number;
+    canvas_url?: string;
+  },
 ): MCPToolResponse<T> {
   const truncated = options?.max_results !== undefined && options?.actualCount !== undefined
     && options.actualCount > options.max_results;
@@ -13,6 +18,7 @@ export function buildResponse<T>(
     last_indexed: lastIndexed,
     truncated,
     total_count: options?.total_count ?? options?.actualCount,
+    canvas_url: options?.canvas_url,
   };
 }
 

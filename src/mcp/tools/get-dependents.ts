@@ -13,6 +13,7 @@ import type { Relation } from '../../contracts/relations.js';
 import { resolveEntity, isResolveError } from '../entity-resolver.js';
 import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
 import { getLastIndexed } from '../last-indexed.js';
+import { buildCanvasUrl } from '../../contracts/canvas-links.js';
 
 export interface GetDependentsInput {
   entity: string;
@@ -121,6 +122,10 @@ export async function handleGetDependents(
   const response = buildResponse(data, lastIndexed, {
     max_results: maxResults,
     actualCount: dependents.length,
+    canvas_url: buildCanvasUrl({
+      kind: entity.kind === 'file' ? 'file' : 'entity',
+      identifier: entity.qualified_name,
+    }),
   });
 
   return toMCPContent(response);

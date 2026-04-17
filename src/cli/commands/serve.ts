@@ -14,11 +14,16 @@ import { AnnotationStore } from '../../mcp/annotation-store.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { createFlowLensServer } from '../../mcp/server.js';
 import { printError } from '../output.js';
+import { ChokidarFileWatcher } from '../../watch/file-watcher.js';
+import { applyWatchEvents } from '../../watch/incremental-updater.js';
+import { readFile } from 'node:fs/promises';
+import type { FlowLensConfig } from '../../contracts/config.js';
 
 export const serveCommand = new Command('serve')
   .description('Start the MCP server for AI assistant integration')
   .option('--transport <type>', 'Transport: stdio (default)', 'stdio')
   .option('--port <port>', 'HTTP port (default 3333, only with --transport http)', '3333')
+  .option('--watch', 'Re-index on file changes while serving')
   .action(async (opts) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
@@ -49,6 +54,22 @@ export const serveCommand = new Command('serve')
         rootDir,
         fileIndexPath: join(flowlensDir, 'file_index.json'),
       });
+
+      // --watch: incrementally re-index on file changes while serving.
+      if (opts.watch) {
+        const config: FlowLensConfig = JSON.parse(
+          await readFile(join(flowlensDir, 'config.json'), 'utf-8'),
+        );
+        const watcher = new ChokidarFileWatcher();
+        watcher.onChanges(async (events) => {
+          const result = await applyWatchEvents(events, { rootDir, graph });
+          process.stderr.write(
+            `[watch] ${result.filesReparsed} reparsed / ${result.filesDeleted} deleted / ${result.errors.length} errors in ${result.durationMs}ms\n`,
+          );
+        });
+        watcher.start(rootDir, { debounceMs: 300, ignore: config.exclude });
+        process.stderr.write('[watch] file watcher started\n');
+      }
 
       if (opts.transport === 'stdio') {
         // Write to stderr since stdout is used for MCP protocol

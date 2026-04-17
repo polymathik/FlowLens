@@ -9,4 +9,6 @@ export interface MCPToolResponse<T> {
   last_indexed: string;
   truncated: boolean;
   total_count?: number;
+  /** Deep-link to the canvas view for this response's primary target. */
+  canvas_url?: string;
 }

@@ -288,6 +288,26 @@ function CanvasInner() {
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       selectNode(node.id);
+      // When embedded in a VS Code WebView (or any parent window that
+      // listens), post an entity-click message so the host can open the
+      // file. No-op in a normal browser — window.parent === window.
+      if (window.parent && window.parent !== window) {
+        const data = node.data as {
+          entity?: { file?: string; location?: { line_start?: number; column_start?: number } };
+        };
+        const entity = data.entity;
+        if (entity?.file) {
+          window.parent.postMessage(
+            {
+              type: 'flowlens:entity-click',
+              file: entity.file,
+              line: entity.location?.line_start,
+              column: entity.location?.column_start,
+            },
+            '*',
+          );
+        }
+      }
     },
     [selectNode],
   );
