@@ -15,6 +15,7 @@ import type { Annotation } from '../../contracts/mcp/annotations.js';
 import { resolveEntity, isResolveError } from '../entity-resolver.js';
 import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
 import { getLastIndexed } from '../last-indexed.js';
+import { buildCanvasUrl } from '../../contracts/canvas-links.js';
 
 export interface GetContextInput {
   entity: string;
@@ -136,10 +137,16 @@ export async function handleGetContext(
   const inTotal = await deps.graph.getEdgesTo(entity.id);
   const totalEstimate = outTotal.length + inTotal.length;
 
+  const canvasUrl = buildCanvasUrl({
+    kind: entity.kind === 'file' ? 'file' : 'entity',
+    identifier: entity.qualified_name,
+  });
+
   const response = buildResponse(data, lastIndexed, {
     max_results: maxResults,
     actualCount: collected.length,
     total_count: totalEstimate,
+    canvas_url: canvasUrl,
   });
 
   return toMCPContent(response);

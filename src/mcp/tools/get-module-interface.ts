@@ -14,6 +14,7 @@ import { resolveEntity, isResolveError } from '../entity-resolver.js';
 import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
 import { getLastIndexed } from '../last-indexed.js';
 import { computeDiff } from '../../analysis/diff-computer.js';
+import { buildCanvasUrl } from '../../contracts/canvas-links.js';
 
 export interface GetModuleInterfaceInput {
   module: string;
@@ -116,6 +117,10 @@ export async function handleGetModuleInterface(
     max_results: maxResults,
     actualCount: exports.length,
     total_count: filtered.length,
+    canvas_url: buildCanvasUrl({
+      kind: entity.kind === 'file' ? 'file' : 'module',
+      identifier: entity.file || entity.qualified_name,
+    }),
   });
 
   return toMCPContent(response);
