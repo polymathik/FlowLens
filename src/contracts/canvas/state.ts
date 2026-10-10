@@ -9,14 +9,15 @@ import type { RelationType } from '../relations.js';
 /** Four discrete zoom tiers mapped from React Flow viewport zoom. */
 export type ZoomLevel = 'system' | 'module' | 'file' | 'entity';
 
-/** Identifiers for the six analytical overlays. */
+/** Identifiers for the analytical overlays (six from Phase 5, `context` from Phase 7). */
 export type OverlayType =
   | 'complexity-heatmap'
   | 'churn-heatmap'
   | 'hotspot'
   | 'cycles'
   | 'architecture-violations'
-  | 'interface-diff';
+  | 'interface-diff'
+  | 'context';
 
 /**
  * The Zustand store shape. All fields that represent store state go above

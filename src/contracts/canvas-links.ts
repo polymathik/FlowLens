@@ -13,7 +13,8 @@
  * `http://localhost:5173` (the canvas default port).
  */
 
-export type CanvasLinkKind = 'entity' | 'module' | 'file';
+/** `context` (Phase 7): identifier is a ContextId; opens the item editor and flies to its anchors. */
+export type CanvasLinkKind = 'entity' | 'module' | 'file' | 'context';
 
 export type CanvasOverlay =
   | 'complexity'
@@ -21,7 +22,8 @@ export type CanvasOverlay =
   | 'hotspot'
   | 'cycles'
   | 'violations'
-  | 'diff';
+  | 'diff'
+  | 'context';
 
 export interface CanvasLinkOptions {
   kind: CanvasLinkKind;
