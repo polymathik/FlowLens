@@ -201,7 +201,8 @@ export const scenarios = [
       await openCanvas(page, base);
       await page.click('[data-testid="rules-button"]');
       await page.waitForSelector('[data-testid="layer-card"]');
-      await page.waitForFunction(() => document.querySelector('[data-testid="rules-violation-count"]')?.textContent === '1');
+      // api → ui: routes.ts→ui/view.ts import plus the cross-file handleGetUser→renderUser call.
+      await page.waitForFunction(() => document.querySelector('[data-testid="rules-violation-count"]')?.textContent === '2');
       // Remove the api → ui ban: preview drops to 0 without saving.
       const apiCard = page.locator('[data-testid="layer-card"]').nth(1);
       await apiCard.locator('[data-testid="must-not"] button', { hasText: 'ui' }).click();
