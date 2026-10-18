@@ -63,6 +63,7 @@ import { ZoneActionsContext, type ZoneActions } from './nodes/zone-actions';
 import { ArchitectureEditor } from './panels/rules/ArchitectureEditor';
 import { MINIMAP_STROKE } from './nodes/NodeShell';
 import { useColorMode } from './explorer/theme';
+import { TimelineBar, TimelineOverlays, TimelineProvider, TimelineToggle, useTimelineGraph, useTimelineView } from '../timeline';
 import { COLORS } from './shared/ui';
 
 function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error' }) {
@@ -94,9 +95,10 @@ function CanvasInner() {
   useCommunityStateLoader();
   useArchitectureLayersLoader();
   const overlayData = useOverlayData(graph.version);
-  const model = useMapModel(graph);
+  const tl = useTimelineGraph(graph);
+  const model = useMapModel(tl.graph);
   const containerId = model.view.containerId;
-  useCommunitySync(model.view, graph.hierarchy);
+  useCommunitySync(tl.active ? { ...model.view, zoning: undefined } : model.view, graph.hierarchy);
   const zoneActions = useMemo<ZoneActions>(
     () => ({
       toggle: (itemId, expanded) => store.getState().setZoneExpansion({ [expansionKey(containerId, itemId)]: expanded }),
@@ -124,6 +126,7 @@ function CanvasInner() {
   const focusActions = useFocusActions(graph.hierarchy);
   useFocusKeys(focusActions, !!menu || showRules);
   const focusCards = model.view.cut?.items.filter((i) => i.kind === 'file' || !i.expanded).length ?? 0;
+  const shown = useTimelineView(view.displayNodes, view.displayEdges, model.view, tl.graph.hierarchy);
   useCanvasLayout({ model, visibleIds: view.visibleIds, commit });
   useSemanticZoom();
   useHashRoute(graph.entities, graph.hierarchy, !graph.loading && graph.entities.length > 0);
@@ -161,7 +164,7 @@ function CanvasInner() {
         onToggleRules={() => setShowRules((v) => !v)}
         onExport={onExport}
         exporting={exporting}
-        zoneControls={<ZoneControls view={model.view} hierarchy={graph.hierarchy} onOpenRules={() => setShowRules(true)} />}
+        zoneControls={<><ZoneControls view={model.view} hierarchy={graph.hierarchy} onOpenRules={() => setShowRules(true)} /><TimelineToggle /></>}
         focusButton={<FocusButton actions={focusActions} />}
         focusInfo={model.view.focus}
         focusBar={<FocusBar info={model.view.focus} cards={focusCards} onExit={focusActions.exit} />}
@@ -169,8 +172,8 @@ function CanvasInner() {
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         <ZoneActionsContext.Provider value={zoneActions}>
         <ReactFlow
-          nodes={view.displayNodes}
-          edges={view.displayEdges}
+          nodes={shown.nodes}
+          edges={shown.edges}
           onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -198,12 +201,14 @@ function CanvasInner() {
         </ReactFlow>
         </ZoneActionsContext.Provider>
         <ZoneNotice view={model.view} />
+        <TimelineOverlays frame={shown.frame} notApplicable={shown.notApplicable} />
         {menu && <ZoneMenu target={menu} view={model.view} hierarchy={graph.hierarchy} onClose={() => setMenu(null)} />}
         {showFilter && <FilterPanel />}
         {showRules && <ArchitectureEditor onClose={() => setShowRules(false)} />}
         <OverlayLegend nodes={view.displayNodes} />
         <DetailPanel graph={graph} edges={view.displayEdges} />
       </div>
+      <TimelineBar items={shown.items} ghosts={tl.ghosts} frame={shown.frame} />
       <SearchPanel entities={graph.entities} hierarchy={graph.hierarchy} />
     </div>
   );
@@ -212,7 +217,9 @@ function CanvasInner() {
 export default function Canvas() {
   return (
     <ReactFlowProvider>
-      <CanvasInner />
+      <TimelineProvider>
+        <CanvasInner />
+      </TimelineProvider>
     </ReactFlowProvider>
   );
 }

@@ -29,9 +29,10 @@ import { zoneScenarios } from './zone-scenarios.mjs';
 import { communityScenarios } from './community-scenarios.mjs';
 import { layersScenarios } from './layers-scenarios.mjs';
 import { focusScenarios } from './focus-scenarios.mjs';
+import { timelineScenarios } from './timeline-scenarios.mjs';
 import { configureExplorer } from './canvas-page.mjs';
 
-const scenarios = [...canvasScenarios, ...explorerScenarios, ...mapScenarios, ...zoneScenarios, ...communityScenarios, ...layersScenarios, ...focusScenarios];
+const scenarios = [...canvasScenarios, ...explorerScenarios, ...mapScenarios, ...zoneScenarios, ...communityScenarios, ...layersScenarios, ...focusScenarios, ...timelineScenarios];
 
 const ROOT = resolve(import.meta.dirname, '../../..');
 const args = process.argv.slice(2);
