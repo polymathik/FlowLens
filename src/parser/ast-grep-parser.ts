@@ -131,7 +131,8 @@ export class AstGrepParser implements Parser {
       return result;
     }
     const root = sgRoot.root();
-    const errorLines = findSyntaxErrorLines(root);
+    // JSON files are often JSONC (tsconfig, .vscode) — comments are not errors there.
+    const errorLines = language === 'json' ? [] : findSyntaxErrorLines(root);
     if (errorLines.length > 0) {
       result.syntax_errors = errorLines.length;
       errors.push({

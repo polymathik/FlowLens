@@ -52,10 +52,15 @@ export async function computeDiff(
 
   const changes: InterfaceDiffEntry[] = [];
 
-  // Removed entities — present in snapshot, absent from current
+  // Removed entities — present in snapshot, absent from current. Their
+  // dependents no longer exist in the current graph (the edges went with the
+  // entity), so the blast radius is counted on the snapshot's relations.
+  // Parameters are reported as parameter_added/removed on their function.
+  const snapshotDependents = dependentsIndex(snapshotData.relations);
   for (const [qn, old] of snapshotMap) {
+    if (old.kind === 'parameter') continue;
     if (!currentMap.has(qn)) {
-      const dependents = await countDependents(currentGraph, old.id);
+      const dependents = snapshotDependents.get(old.id)?.size ?? 0;
       changes.push({
         entity_id: old.id,
         entity_name: old.name,
@@ -70,6 +75,7 @@ export async function computeDiff(
 
   // Added entities — present in current, absent from snapshot
   for (const [qn, curr] of currentMap) {
+    if (curr.kind === 'parameter') continue;
     if (!snapshotMap.has(qn)) {
       changes.push({
         entity_id: curr.id,
@@ -226,12 +232,8 @@ function detectParameterChanges(
   snapshotEntities: Entity[],
   currentEntities: Entity[],
 ): Omit<InterfaceDiffEntry, 'affected_dependents'>[] {
-  const oldParams = snapshotEntities.filter(
-    (e) => e.kind === 'parameter' && e.qualified_name.startsWith(old.qualified_name + '.'),
-  );
-  const currParams = currentEntities.filter(
-    (e) => e.kind === 'parameter' && e.qualified_name.startsWith(curr.qualified_name + '.'),
-  );
+  const oldParams = snapshotEntities.filter((e) => isDirectParameter(e, old));
+  const currParams = currentEntities.filter((e) => isDirectParameter(e, curr));
 
   const oldParamNames = new Set(oldParams.map((p) => p.name));
   const currParamNames = new Set(currParams.map((p) => p.name));
@@ -364,6 +366,27 @@ function detectModified(
     before: old,
     after: curr,
   };
+}
+
+/**
+ * A parameter entity directly owned by `fn`: qualified name `fn.qn + '.' + name`
+ * (Phase 8 identity rule), excluding parameters of nested functions.
+ */
+export function isDirectParameter(e: Entity, fn: Entity): boolean {
+  if (e.kind !== 'parameter' || e.file !== fn.file) return false;
+  const prefix = fn.qualified_name + '.';
+  return e.qualified_name.startsWith(prefix) && !e.qualified_name.slice(prefix.length).includes('.');
+}
+
+/** target id → distinct source ids, from a relation list. */
+function dependentsIndex(relations: Relation[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const r of relations) {
+    if (!r.to) continue;
+    const set = map.get(r.to);
+    if (set) set.add(r.from); else map.set(r.to, new Set([r.from]));
+  }
+  return map;
 }
 
 /**

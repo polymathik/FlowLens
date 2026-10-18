@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import { LevelGraphStore } from '../../graph/levelgraph-store.js';
 import { runIndex } from '../../indexer/indexer.js';
+import { formatQualitySummary } from '../../quality/graph-quality.js';
 import { inferArchitecture } from '../../architecture/heuristic-inference.js';
 import { runInference } from '../../ai/ai-integration.js';
 import { buildTopology } from '../../ai/topology-builder.js';
@@ -195,6 +196,7 @@ export const initCommand = new Command('init')
       await graphStore.close();
 
       printSummary(result);
+      for (const line of formatQualitySummary(result.quality)) console.log(line);
       printSuccess('\nFlowLens initialized successfully!');
     } catch (err) {
       printError(`Init failed: ${err instanceof Error ? err.message : String(err)}`);

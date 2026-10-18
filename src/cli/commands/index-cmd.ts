@@ -15,6 +15,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { LevelGraphStore } from '../../graph/levelgraph-store.js';
 import { runIndex } from '../../indexer/indexer.js';
+import { formatQualitySummary } from '../../quality/graph-quality.js';
 import { printHeader, printSuccess, printError, printSummary } from '../output.js';
 import type { FlowLensConfig } from '../../contracts/config.js';
 
@@ -53,6 +54,7 @@ export const indexCommand = new Command('index')
       await graphStore.close();
 
       printSummary(result);
+      for (const line of formatQualitySummary(result.quality)) console.log(line);
       printSuccess('Index complete');
     } catch (err) {
       printError(`Index failed: ${err instanceof Error ? err.message : String(err)}`);

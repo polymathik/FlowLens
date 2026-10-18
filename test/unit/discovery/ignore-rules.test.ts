@@ -49,7 +49,23 @@ describe('loadIgnorePatterns', () => {
 
     const patterns = await loadIgnorePatterns(tmpDir);
     expect(patterns).toContain('root-ignore/');
-    expect(patterns).toContain('subdir/local-build/');
+    // slashless nested patterns apply at any depth below their directory
+    expect(patterns).toContain('subdir/**/local-build/');
+  });
+
+  it('applies slashless nested patterns recursively and anchors slashed ones', async () => {
+    await mkdir(join(tmpDir, 'pkg', 'deep', 'gen'), { recursive: true });
+    await writeFile(join(tmpDir, 'pkg', '.gitignore'), '*.gen.ts\n/only-here.ts\nsub/x.ts\n!keep.gen.ts\n');
+    const patterns = await loadIgnorePatterns(tmpDir);
+    const ignored = buildIgnoreFilter(patterns);
+    expect(ignored('pkg/a.gen.ts')).toBe(true);
+    expect(ignored('pkg/deep/gen/b.gen.ts')).toBe(true);
+    expect(ignored('pkg/deep/keep.gen.ts')).toBe(false);
+    expect(ignored('pkg/only-here.ts')).toBe(true);
+    expect(ignored('pkg/deep/only-here.ts')).toBe(false);
+    expect(ignored('pkg/sub/x.ts')).toBe(true);
+    expect(ignored('pkg/deep/sub/x.ts')).toBe(false);
+    expect(ignored('other/a.gen.ts')).toBe(false);
   });
 
   it('returns empty array when no ignore files exist', async () => {

@@ -8,6 +8,22 @@ export function buildIgnoreFilter(patterns: string[]): (path: string) => boolean
   return (path: string) => ig.ignores(path);
 }
 
+/**
+ * Rebase one pattern of a nested `.gitignore` in `relDir` onto the project
+ * root (git semantics): a pattern with no slash except a trailing one
+ * matches at any depth below its directory (`relDir/**\/pat`); any other
+ * pattern is anchored to the directory (`relDir/pat`).
+ */
+export function rebaseNestedPattern(line: string, relDir: string): string {
+  const negated = line.startsWith('!');
+  const body = negated ? line.slice(1) : line;
+  const core = body.endsWith('/') ? body.slice(0, -1) : body;
+  const rebased = core.includes('/')
+    ? `${relDir}/${body.replace(/^\//, '')}`
+    : `${relDir}/**/${body}`;
+  return negated ? `!${rebased}` : rebased;
+}
+
 /** Parse lines from an ignore file, filtering comments and blanks. */
 function parseIgnoreLines(content: string): string[] {
   return content.split('\n').filter(l => l.trim() && !l.startsWith('#'));
@@ -56,15 +72,9 @@ async function collectGitignorePatterns(
       // Root .gitignore — patterns apply as-is
       patterns.push(...lines);
     } else {
-      // Nested .gitignore — prefix patterns with relative directory
-      for (const line of lines) {
-        // Negation patterns (starting with !) need special handling
-        if (line.startsWith('!')) {
-          patterns.push(`!${relDir}/${line.slice(1)}`);
-        } else {
-          patterns.push(`${relDir}/${line}`);
-        }
-      }
+      // Nested .gitignore — rebase patterns onto the root
+      const base = relDir.split('\\').join('/');
+      for (const line of lines) patterns.push(rebaseNestedPattern(line.trimEnd(), base));
     }
   }
 
