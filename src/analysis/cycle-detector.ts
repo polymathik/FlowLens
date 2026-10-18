@@ -62,7 +62,7 @@ export function detectCyclesInData(
   const sccs = findStronglyConnectedComponents(collapsed.adjacency);
   if (sccs.length === 0) return [];
 
-  const ctx = buildContext(allEntities, collapsed, options);
+  const ctx = buildContext(allEntities, collapsed, options, sccs);
   const cycles: DetectedCycle[] = [];
 
   for (const scc of sccs) {
@@ -97,6 +97,7 @@ function buildContext(
   entities: Entity[],
   collapsed: CollapsedGraph,
   options: CycleDetectorOptions,
+  sccs: string[][],
 ): DetectionContext {
   const g = options.granularity;
   const byId = new Map(entities.map((e) => [e.id, e]));
@@ -143,11 +144,30 @@ function buildContext(
     },
     entitiesOf,
     pageRankRatio: (n) => {
-      ranks ??= computePageRankOnAdjacency(collapsed.adjacency);
+      ranks ??= computePageRankOnAdjacency(withoutIntraCycleEdges(collapsed.adjacency, sccs));
       return (ranks.get(n) ?? 0) * nodeCount;
     },
     reverse,
   };
+}
+
+/**
+ * PageRank input without edges inside a cycle: a strongly connected component
+ * otherwise traps rank and every cycle member looks "central". With them
+ * removed, a member's rank reflects how much the rest of the graph depends on it.
+ */
+function withoutIntraCycleEdges(
+  adjacency: Map<string, Set<string>>,
+  sccs: string[][],
+): Map<string, Set<string>> {
+  const sccOf = new Map<string, number>();
+  sccs.forEach((scc, i) => scc.forEach((n) => sccOf.set(n, i)));
+  const out = new Map<string, Set<string>>();
+  for (const [from, tos] of adjacency) {
+    const s = sccOf.get(from);
+    out.set(from, new Set([...tos].filter((to) => s === undefined || sccOf.get(to) !== s)));
+  }
+  return out;
 }
 
 function buildCycle(

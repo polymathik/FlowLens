@@ -70,6 +70,22 @@ describe('detectCyclesInData', () => {
   });
 });
 
+describe('PageRank criticality', () => {
+  it('a closed cycle does not look central just because it traps rank', () => {
+    const lone = Array.from({ length: 20 }, (_, i) => file(`L${i}`, `misc/l${i}.ts`));
+    const cyc = detectCyclesInData([...lone, file('P', 'pkg/p.ts'), file('Q', 'pkg/q.ts')], [imp('P', 'Q'), imp('Q', 'P')], { granularity: 'file' });
+    expect(cyc[0].severity).toBe('low');
+  });
+
+  it('a cycle many files depend on is critical', () => {
+    const users = Array.from({ length: 6 }, (_, i) => file(`U${i}`, `app/u${i}.ts`));
+    const edges = [imp('P', 'Q'), imp('Q', 'P'), ...users.map((u) => imp(u.id, 'P'))];
+    const [c] = detectCyclesInData([...users, file('P', 'pkg/p.ts'), file('Q', 'pkg/q.ts')], edges, { granularity: 'file' });
+    expect(c.severity).toBe('medium');
+    expect(c.severity_reasons?.join(' ')).toContain('dependents outside the cycle');
+  });
+});
+
 describe('assessCycleSeverity', () => {
   const base = { layers: [], moduleCount: 1, maxPageRankRatio: 1, externalDependents: 0, avgAfferentCoupling: 0 };
   it('grades low / medium / high', () => {

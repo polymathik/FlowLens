@@ -80,7 +80,8 @@ export async function handleTraverse(args: TraverseInput, deps: ServerDependenci
   const included = new Set<string>([entity.id, ...items.map((r) => r.id)]);
 
   const nodes: TraverseNode[] = items.map((r) => ({
-    entity: toEntityView(view.byId.get(r.id)!, detail),
+    // Summary traversal nodes omit metrics: the walk's shape is the point.
+    entity: toEntityView(view.byId.get(r.id)!, detail, { metrics: detail === 'full' }),
     depth: r.depth,
     ...(layerOf ? { layer: r.layer } : {}),
     ...(r.boundary ? { boundary: true as const } : {}),
