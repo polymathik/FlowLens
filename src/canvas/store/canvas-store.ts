@@ -77,6 +77,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       focus: null,
       flow: null,
       flowPicker: null,
+      flowBack: null,
 
       setZoomLevel: (level) => set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
       selectNode: (id) => set(id === null ? { selectedNodeId: null, selectedEdgeId: null, highlightedIds: [] } : { selectedNodeId: id, selectedEdgeId: null }),
@@ -144,6 +145,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       setFlow: (flow) =>
         set((s) => (flow ? { flow, focus: null, flowPicker: null, ...(s.flow?.id === flow.id ? {} : { selectedNodeId: null, selectedEdgeId: null, hoveredNodeId: null, focusRequest: null }) } : { flow: null })),
       setFlowPicker: (flowPicker) => set({ flowPicker }),
+      setFlowBack: (flowBack) => set({ flowBack }),
     };
   });
 }

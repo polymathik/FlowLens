@@ -56,8 +56,8 @@ function cardOf(n: FlowNode, trace: FlowTrace, columnOf: (depth: number) => numb
     id: n.id, entityId: n.id, kind: n.kind, name: displayName(n), file: n.file, line: n.line,
     role: root ? 'root' : trace.direction === 'in' && n.entry_kind ? 'trigger' : 'step',
     depth: n.depth, column: columnOf(n.depth), seq: n.order, step: 0, laneId: n.lane_id, parentId: null,
-    ...(n.entry_kind ? { entryKind: n.entry_kind } : {}),
-    ...(root ? { entryLabel: trace.root.label } : {}),
+    ...(root ? (trace.root.kind !== 'unknown' ? { entryKind: trace.root.kind } : {}) : n.entry_kind ? { entryKind: n.entry_kind } : {}),
+    ...(root && trace.root.kind !== 'unknown' ? { entryLabel: trace.root.label } : {}),
     ...(detail ? { detail } : {}),
     candidates: [],
   };

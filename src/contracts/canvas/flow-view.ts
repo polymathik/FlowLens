@@ -39,8 +39,10 @@ export interface FlowSpec {
   /** Node limit; absent = FLOW_LIMITS.maxNodes.default. */
   maxNodes?: number;
   includeTests?: boolean;
-  /** Entry label when known (picker): used as the trace's `entity` and as the breadcrumb until the trace arrives. Not in the URL. */
+  /** Entry label when known (picker): sent as the trace's `entity` (the only way to address an inline handler). Not in the URL. */
   label?: string;
+  /** The root as the trace reported it, filled in once the trace has loaded: title for the breadcrumb, entity for its ancestors. Cosmetic: never sent, never in the URL. */
+  resolved?: { title: string; entityId: string };
 }
 
 /** Parsed `flow/<id>?…` link. Absent fields mean "the default". */
@@ -185,6 +187,8 @@ export type FlowEdgeState = 'normal' | 'path' | 'active' | 'done' | 'dim';
 
 export interface FlowCardData extends Record<string, unknown> {
   card: FlowCard;
+  /** Colour slot of the card's lane. */
+  hue: number;
   state: FlowCardState;
   /** 0..100 quality score of the entity, when indexed. */
   quality?: number;
@@ -202,6 +206,6 @@ export interface FlowEdgeData extends Record<string, unknown> {
   state: FlowEdgeState;
   /** Show the badge number (hidden on very dense traces until hover / step-through). */
   showStep: boolean;
-  /** Corridor lane for back-references so they do not overlap each other. */
-  loop: number;
+  /** Draw the label at all (dense traces show labels only on the path, the step and hovered hops). */
+  showLabel: boolean;
 }

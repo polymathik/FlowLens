@@ -131,6 +131,8 @@ export interface CanvasState {
   flow: FlowSpec | null;
   /** The entry-point picker (open or not, optionally limited to a path). */
   flowPicker: FlowPickerState | null;
+  /** The flow a card was opened from in the structure map ("Back to flow" chip); null = none. */
+  flowBack: FlowSpec | null;
 
   // Drill-down
   /**
@@ -179,6 +181,7 @@ export interface CanvasState {
   setFlow: (flow: FlowSpec | null) => void;
   /** Open (with an optional path limit) or close the entry-point picker. */
   setFlowPicker: (picker: FlowPickerState | null) => void;
+  setFlowBack: (flow: FlowSpec | null) => void;
 }
 
 /**

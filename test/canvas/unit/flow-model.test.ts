@@ -3,7 +3,7 @@ import { traceFlow } from '../../../src/flow/trace.js';
 import { renderTraceText } from '../../../src/flow/render.js';
 import type { FlowTrace } from '../../../src/contracts/flow.js';
 import { buildFlowModel } from '../../../src/canvas/flow/model/flow-model.js';
-import { assignRows, columnX, FLOW_GEOMETRY, layoutFlow } from '../../../src/canvas/flow/model/flow-layout.js';
+import { assignSlots, columnX, FLOW_GEOMETRY, layoutFlow } from '../../../src/canvas/flow/model/flow-layout.js';
 import { emphasisForSelection, emphasisForStep, pathTo, stepCaption, stepCount } from '../../../src/canvas/flow/model/flow-emphasis.js';
 import { buildFlowElements, DENSE_HOPS } from '../../../src/canvas/flow/model/flow-nodes.js';
 import { buildGraph, type FileSpec, type RelSpec } from '../../helpers/flow-graph.js';
@@ -33,7 +33,11 @@ describe('flow model: cards, lanes and columns', () => {
     expect(m.lanes.map((l) => l.label)).toEqual(trace.lanes.map((l) => l.label));
     expect(m.lanes.flatMap((l) => l.cardIds).sort()).toEqual(m.cards.map((c) => c.id).sort());
     expect(m.columns).toBe(3);
-    expect(m.cards.find((c) => c.role === 'root')).toMatchObject({ entryLabel: trace.root.label });
+    // an arbitrary function (kind 'unknown') has no entry label: its card shows its own name
+    expect(trace.root.kind).toBe('unknown');
+    expect(m.cards.find((c) => c.role === 'root')?.entryLabel).toBeUndefined();
+    const entry = buildFlowModel({ ...trace, root: { ...trace.root, kind: 'http_route', label: 'GET /x' } });
+    expect(entry.cards.find((c) => c.role === 'root')).toMatchObject({ entryLabel: 'GET /x', entryKind: 'http_route' });
   });
 
   it('every hop is exactly one edge, numbered in call order, labelled with the call site and its repeat count', () => {
@@ -53,8 +57,8 @@ describe('flow model: cards, lanes and columns', () => {
       { from: 'a.ts/main', to: 'a.ts/x', line: 30 }, { from: 'a.ts/main', to: 'a.ts/y', line: 10 }, { from: 'a.ts/main', to: 'a.ts/z', line: 20 },
     ]);
     const m = buildFlowModel(traceFlow(b.graph, b.id('a.ts/main')));
-    const rows = assignRows(m);
-    const inOrder = m.cards.filter((c) => c.column === 1).sort((p, q) => (rows.get(p.id) ?? 0) - (rows.get(q.id) ?? 0)).map((c) => c.name);
+    const slots = assignSlots(m);
+    const inOrder = m.cards.filter((c) => c.column === 1).sort((p, q) => (slots.get(p.id)?.row ?? 0) - (slots.get(q.id)?.row ?? 0)).map((c) => c.name);
     expect(inOrder).toEqual(['y()', 'z()', 'x()']);
   });
 });
@@ -182,8 +186,8 @@ describe('flow layout', () => {
       { from: 'a.ts/root', to: 'a.ts/c1', line: 2 }, { from: 'a.ts/root', to: 'a.ts/c2', line: 3 }, { from: 'a.ts/c1', to: 'a.ts/g1', line: 12 },
     ]);
     const m = buildFlowModel(traceFlow(b.graph, b.id('a.ts/root')));
-    const rows = assignRows(m);
-    const rowOf = (n: string) => rows.get(m.cards.find((c) => c.name === n)?.id ?? '');
+    const slots = assignSlots(m);
+    const rowOf = (n: string) => slots.get(m.cards.find((c) => c.name === n)?.id ?? '')?.row;
     expect([rowOf('root()'), rowOf('c1()'), rowOf('c2()'), rowOf('g1()')]).toEqual([0, 0, 1, 0]);
   });
 
@@ -238,7 +242,7 @@ describe('flow emphasis and step-through', () => {
     expect(at2.cards.get(m.cards.find((c) => c.name === 'query()')!.id)).toBe('active');
     expect(at2.cards.get(m.cards.find((c) => c.name === 'audit()')!.id)).toBe('dim');
     expect(stepCaption(m, 2)).toBe('2/3  list() calls query()  users.ts:3 ×2');
-    expect(stepCaption(m, 0)).toBe(`Start: ${trace.root.label}`);
+    expect(stepCaption(m, 0)).toBe("Start: handler()");
     const last = emphasisForStep(m, 3);
     expect([...last.edges.values()]).toEqual(['done', 'done', 'active']);
   });
