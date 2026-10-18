@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LevelGraphStore } from '../../../src/graph/levelgraph-store.js';
 import type { ClaudeHookOutput, ClaudeSettings } from '../../../src/contracts/agent.js';
+import { startHarness, type Harness } from '../../helpers/daemon-harness.js';
 import { git, runCli, runHookCommand, TSX_CLI_COMMAND } from './helpers.js';
 
 const E2E_TIMEOUT = 180000;
@@ -19,6 +20,10 @@ describe('agent hooks end to end', () => {
   let proj: string;
   let elsewhere: string;
   let commands: { session: string; prompt: string; guard: string };
+  // Isolated $FLOWLENS_HOME + in-process daemon from this checkout: the CLI and
+  // hook children inherit FLOWLENS_HOME, so they never reuse a user-level
+  // daemon that may be running older code.
+  let daemon: Harness;
   const env = () => ({ CLAUDE_PROJECT_DIR: proj });
   const parse = (stdout: string) => JSON.parse(stdout) as ClaudeHookOutput;
   const postToolUse = (file: string) => ({
@@ -27,6 +32,7 @@ describe('agent hooks end to end', () => {
   });
 
   beforeAll(async () => {
+    daemon = await startHarness();
     proj = await mkdtemp(join(tmpdir(), 'flowlens-e2e-'));
     elsewhere = await mkdtemp(join(tmpdir(), 'flowlens-e2e-cwd-'));
     await mkdir(join(proj, 'src'));
@@ -54,6 +60,7 @@ describe('agent hooks end to end', () => {
   }, E2E_TIMEOUT);
 
   afterAll(async () => {
+    await daemon?.stop();
     await rm(proj, { recursive: true, force: true });
     await rm(elsewhere, { recursive: true, force: true });
   });

@@ -1,8 +1,9 @@
 /**
  * Find a running daemon or start one.
  *
- * 1. Read `daemon.json`; ping with its token. Same version → use it; a
- *    different FlowLens version is asked to shut down and replaced.
+ * 1. Read `daemon.json`; ping with its token. Same version and graph RPC
+ *    protocol → use it; a different FlowLens version or RPC method set (a
+ *    daemon still running older code) is asked to shut down and replaced.
  * 2. Otherwise, under a start lockfile (so concurrent CLIs spawn only one
  *    daemon), spawn `flowlens daemon start --foreground` detached with
  *    stdio to `daemon.log`, `windowsHide`, cwd = `$FLOWLENS_HOME` (never a
@@ -12,7 +13,7 @@
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, statSync, truncateSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { DaemonInfo } from '../contracts/service.js';
+import { GRAPH_RPC_PROTOCOL, type DaemonInfo } from '../contracts/service.js';
 import { isPidAlive, withFileLock } from '../projects/file-lock.js';
 import { ensureFlowlensHome } from '../projects/paths.js';
 import { DaemonClient } from './client.js';
@@ -38,7 +39,7 @@ export async function findDaemon(): Promise<DaemonClient | null> {
     client.destroy();
     return null;
   }
-  if (pong.version !== FLOWLENS_VERSION) {
+  if (pong.version !== FLOWLENS_VERSION || pong.protocol !== GRAPH_RPC_PROTOCOL) {
     await stopDaemon(client);
     return null;
   }

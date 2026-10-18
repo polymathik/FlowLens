@@ -5,7 +5,7 @@
  * reuse `requireAuth` for its own API routes.
  */
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import type { ServiceOptions } from '../contracts/service.js';
+import { GRAPH_RPC_PROTOCOL, type PingResponse, type ServiceOptions } from '../contracts/service.js';
 import type { FileProjectRegistry } from '../projects/registry.js';
 import { authenticate } from './auth.js';
 import { errorBody, ServiceError, toServiceError } from './errors.js';
@@ -58,7 +58,10 @@ export function createServiceApp(deps: ServiceDeps, mount?: MountRoutes): Expres
   app.use('/api', express.json({ limit: '512mb' }));
 
   app.get('/api/ping', (_req, res) => {
-    res.json({ ok: true, pid: process.pid, version: deps.version, uptime_ms: Date.now() - deps.startedAt });
+    const pong: PingResponse = {
+      ok: true, pid: process.pid, version: deps.version, uptime_ms: Date.now() - deps.startedAt, protocol: GRAPH_RPC_PROTOCOL,
+    };
+    res.json(pong);
   });
   app.get('/api/version', (_req, res) => {
     res.json({ ok: true, version: deps.version, api_version: 1 });

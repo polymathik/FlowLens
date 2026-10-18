@@ -79,6 +79,15 @@ export const GRAPH_WRITE_METHODS = [
   'replaceFile',
 ] as const satisfies readonly GraphRpcMethod[];
 
+/**
+ * Fingerprint of the graph RPC surface. Daemons report it in `PingResponse`;
+ * a client treats a daemon with a different (or missing) fingerprint like a
+ * different version and replaces it, so a long-running daemon started from
+ * older code never answers "Unknown graph method" for methods added later
+ * (e.g. Phase 8 `replaceFile` / `getUnresolvedRelations`).
+ */
+export const GRAPH_RPC_PROTOCOL: string = [...GRAPH_READ_METHODS, ...GRAPH_WRITE_METHODS].sort().join(',');
+
 export interface GraphRpcRequest<M extends GraphRpcMethod = GraphRpcMethod> {
   method: M;
   args: Parameters<NonNullable<GraphStore[M]>>;
@@ -171,6 +180,8 @@ export interface PingResponse {
   pid: number;
   version: string;
   uptime_ms: number;
+  /** `GRAPH_RPC_PROTOCOL` of the daemon's code (absent on pre-Phase-8 daemons). */
+  protocol?: string;
 }
 
 export interface VersionResponse {
