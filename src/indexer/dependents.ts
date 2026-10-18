@@ -9,7 +9,9 @@
  *   2. shares a package scope with a touched file, or imports that package
  *      (Java packages, Go directories),
  *   3. has an import that did not resolve before and now names a file,
- *   4. owns an edge pointing at an entity id that no longer exists.
+ *   4. owns an edge pointing at an entity id that no longer exists,
+ *   5. uses a `#subpath` import under a touched package.json (its `imports`
+ *      map may have changed, so those specifiers must be re-resolved).
  */
 import type { FileSymbolRecord, ImportBinding } from '../contracts/symbols.js';
 
@@ -75,10 +77,28 @@ export function findDependents(input: DependentsInput): Set<string> {
     }
   }
 
+  for (const t of touched) {
+    if (!isPackageJson(t)) continue;
+    const dir = t === 'package.json' ? '' : t.slice(0, -'package.json'.length);
+    for (const [file, rec] of records) {
+      if (dir && !file.startsWith(dir)) continue;
+      if (usesSubpathImport(rec)) out.add(file);
+    }
+  }
+
   for (const f of input.ownersOfRemovedTargets) out.add(f);
   for (const t of touched) out.delete(t);
   for (const f of [...out]) if (!records.has(f)) out.delete(f);
   return out;
+}
+
+function isPackageJson(file: string): boolean {
+  return file === 'package.json' || file.endsWith('/package.json');
+}
+
+function usesSubpathImport(rec: FileSymbolRecord): boolean {
+  return rec.symbols.imports.some((b) => b.specifier.startsWith('#'))
+    || rec.symbols.reexports.some((r) => r.specifier.startsWith('#'));
 }
 
 function add(map: Map<string, Set<string>>, key: string, value: string): void {

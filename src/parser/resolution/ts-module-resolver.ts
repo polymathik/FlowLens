@@ -6,6 +6,7 @@
  *   1. Relative / absolute specifiers against the importing file's directory.
  *   2. Node builtins (`node:fs`, `fs`, …) → external.
  *   3. tsconfig/jsconfig `paths` and `baseUrl` of the nearest config.
+ *   3b. `#subpath` imports declared by the nearest package.json (`"imports"`).
  *   4. Local workspace packages (npm/yarn/pnpm) → their *source* entry
  *      (build output `dist/…` is mapped back to `src/…`, see build-layout.ts).
  *   5. Anything else → external package.
@@ -19,6 +20,7 @@ import { normalizeRelativePath } from '../../utils/paths.js';
 import { findNearestConfig, loadPathMapping, expandWithPaths, clearTsconfigCache } from './tsconfig.js';
 import { getWorkspacePackages, packageEntryCandidates, clearWorkspaceCache } from './workspaces.js';
 import { builtToSourceCandidates, clearBuildLayoutCache, findPackageDir, getBuildLayout } from './build-layout.js';
+import { clearPackageImportsCache, resolvePackageImport } from './package-imports.js';
 
 export interface ModuleResolution {
   /** Project-relative path of the resolved file, or null. */
@@ -42,6 +44,7 @@ export function clearModuleResolverCaches(): void {
   clearTsconfigCache();
   clearWorkspaceCache();
   clearBuildLayoutCache();
+  clearPackageImportsCache();
 }
 
 export function isRelativeSpecifier(specifier: string): boolean {
@@ -79,6 +82,9 @@ export function resolveModuleSpecifier(
     }
   }
 
+  const sub = resolveSubpathImport(bare, fromFile, root);
+  if (sub) return sub;
+
   const lib = resolveSvelteKitLib(bare, fromFile, root);
   if (lib) return lib;
 
@@ -86,6 +92,21 @@ export function resolveModuleSpecifier(
   if (ws.matched) return { file: ws.file, external: false };
 
   return { file: null, external: true };
+}
+
+/**
+ * Node `#subpath` imports (package.json `imports`). A declared import that
+ * names no existing file is unresolved (not external) so the count is honest
+ * and the importer is re-resolved when the file appears.
+ */
+function resolveSubpathImport(bare: string, fromFile: string, root: string): ModuleResolution | null {
+  const res = resolvePackageImport(bare, join(root, fromFile), root);
+  if (!res) return null;
+  for (const candidate of res.candidates) {
+    const hit = toProjectPath(probe(candidate), root);
+    if (hit) return { file: hit, external: false };
+  }
+  return { file: null, external: res.bareTarget && res.candidates.length === 0 };
 }
 
 /**
