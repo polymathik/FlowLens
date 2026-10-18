@@ -3,12 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { ServerDependencies } from './server.js';
+import type { ServerDependencies } from '../contracts/mcp/server.js';
 import { buildAgentContext } from '../agent/context-builder.js';
 import { buildAgentGuardReport } from '../agent/guard.js';
 import { formatContextMarkdown, formatGuardMarkdown } from '../agent/format.js';
 import { getFilteredGitChangedFiles } from '../agent/changed-files.js';
 import { readFreshDigest } from '../agent/digest-cache.js';
+import { serviceRevision } from '../agent/service-revision.js';
 
 export function registerAgentResources(server: McpServer, deps: ServerDependencies): void {
   server.registerResource(
@@ -129,7 +130,7 @@ export function registerAgentPrompts(server: McpServer, deps: ServerDependencies
 
 /** Reuse the persisted agent digest when it matches the on-disk graph (avoids full scans). */
 async function contextOptions(deps: ServerDependencies) {
-  const digest = await readFreshDigest(deps.flowlensDir);
+  const digest = await readFreshDigest(deps.flowlensDir, [], await serviceRevision(deps.flowlensDir));
   return { flowlensDir: deps.flowlensDir, digest: digest ?? undefined };
 }
 

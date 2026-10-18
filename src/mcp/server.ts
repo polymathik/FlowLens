@@ -7,9 +7,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { GraphStore } from '../contracts/graph.js';
-import type { AnnotationStore } from './annotation-store.js';
-import type { SnapshotManager } from '../analysis/snapshot-manager.js';
+import type { ServerDependencies } from '../contracts/mcp/server.js';
 import { registerGetContext } from './tools/get-context.js';
 import { registerGetDependents } from './tools/get-dependents.js';
 import { registerGetModuleInterface } from './tools/get-module-interface.js';
@@ -25,18 +23,7 @@ import { registerGetLayerMap } from './tools/get-layer-map.js';
 import { registerAgentPrompts, registerAgentResources } from './agent-resources.js';
 import { registerHealthResource } from './health-resource.js';
 
-export interface ServerDependencies {
-  graph: GraphStore;
-  annotationStore: AnnotationStore;
-  snapshotManager: SnapshotManager;
-  flowlensDir: string;
-  rootDir: string;
-  fileIndexPath: string;
-  /** LevelDB directory used for cache fingerprinting (default `<flowlensDir>/graph`). */
-  graphPath?: string;
-  /** Optional graph version token (e.g. from a graph service) for cache invalidation. */
-  graphVersion?: () => string | Promise<string>;
-}
+export type { ServerDependencies };
 
 export function createFlowLensServer(deps: ServerDependencies): McpServer {
   const server = new McpServer({

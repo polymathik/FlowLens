@@ -22,6 +22,7 @@ import { loadBaseline, makeBaseline, saveBaseline } from './baseline.js';
 import { getGitHead } from './changed-files.js';
 import { buildContextFromDigest } from './context-builder.js';
 import { computeGraphDigest, type AgentGraphDigest } from './digest.js';
+import { serviceRevision } from './service-revision.js';
 import { captureStamp, readDigest, readFreshDigest, writeDigest } from './digest-cache.js';
 import { formatContextMarkdown } from './format.js';
 import { describeGraphFailure, flowlensDirFor, openAgentGraph, SETUP_HINT } from './graph-access.js';
@@ -50,14 +51,14 @@ export type DigestResolution =
 export async function resolveDigest(rootDir: string, graphOptions: AgentGraphOptions = {}): Promise<DigestResolution> {
   const flowlensDir = flowlensDirFor(rootDir);
   if (!existsSync(join(flowlensDir, 'graph'))) return { ok: false, message: SETUP_HINT };
-  const cached = await readFreshDigest(flowlensDir);
+  const cached = await readFreshDigest(flowlensDir, [], await serviceRevision(flowlensDir, graphOptions));
   if (cached) return { ok: true, digest: cached, source: 'cache' };
 
   const handle = await openAgentGraph(rootDir, graphOptions);
   if (!handle.ok) return staleOr(flowlensDir, handle.reason === 'busy', handle.message);
   let digest: AgentGraphDigest;
   try {
-    const stamp = captureStamp(flowlensDir);
+    const stamp = captureStamp(flowlensDir, await serviceRevision(flowlensDir, graphOptions));
     digest = await computeGraphDigest(handle.graph, flowlensDir);
     digest.health = await computeHealthHeadline(rootDir, handle.graph);
     await writeDigest(flowlensDir, digest, stamp);

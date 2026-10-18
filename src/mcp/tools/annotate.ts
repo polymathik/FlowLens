@@ -5,7 +5,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ServerDependencies } from '../server.js';
+import type { ServerDependencies } from '../../contracts/mcp/server.js';
 import { EntityToolSchemas, type AnnotateInput, type AnnotateOutput } from '../../contracts/mcp/tools.js';
 import { buildResponse, toMCPContent, type ToolResult } from '../response-builder.js';
 import { openView, resolveOrError } from '../tool-runtime.js';

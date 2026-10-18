@@ -3,8 +3,10 @@
  * graph revision. A hit lets SessionStart/UserPromptSubmit hooks answer
  * without touching the graph at all.
  *
- * Revision signal (wave 2). The graph service exposes no revision counter
- * (requested from Lane B), so the revision is a stat fingerprint of the
+ * Revision signal. Phase 12: when the daemon holds the DB open, callers pass
+ * its revision token (`serviceRevision()` in service-revision.ts) and the
+ * fingerprint is that token + the base fingerprint. Otherwise (no daemon,
+ * DB closed, `--no-daemon`) the revision is a stat fingerprint of the
  * LevelDB directory: every write — by `index`, the daemon's watcher, a
  * guard's re-index through `RemoteGraphStore`, or a `--no-daemon` process —
  * appends to LevelDB's log on this machine, so it works through the daemon.
@@ -56,10 +58,14 @@ export function baseFingerprint(flowlensDir: string): string {
   return hashContent(BASE_FILES.map((name) => statPart(join(flowlensDir, name), name)).join('|'));
 }
 
-/** Full revision: LevelDB directory + base files. Null when there is no graph. */
-export function graphFingerprint(flowlensDir: string): string | null {
+/**
+ * Full revision: the daemon's revision token when given, else the LevelDB
+ * directory stats, plus the base files. Null when there is no graph.
+ */
+export function graphFingerprint(flowlensDir: string, revision?: string | null): string | null {
   const graphDir = join(flowlensDir, 'graph');
   if (!existsSync(graphDir)) return null;
+  if (revision) return hashContent(`${revision}|${baseFingerprint(flowlensDir)}`);
   try {
     const parts = readdirSync(graphDir)
       .filter((name) => !VOLATILE.test(name))
@@ -77,8 +83,8 @@ export function graphFingerprint(flowlensDir: string): string | null {
  * writes and BEFORE reading the graph: any write that lands while the digest
  * is being computed then makes the stored stamp mismatch (a safe miss).
  */
-export function captureStamp(flowlensDir: string): GraphStamp | null {
-  const fingerprint = graphFingerprint(flowlensDir);
+export function captureStamp(flowlensDir: string, revision?: string | null): GraphStamp | null {
+  const fingerprint = graphFingerprint(flowlensDir, revision);
   if (!fingerprint) return null;
   return { fingerprint, base_fingerprint: baseFingerprint(flowlensDir), read_at: Date.now() };
 }
@@ -99,8 +105,12 @@ export async function readDigest(flowlensDir: string): Promise<AgentGraphDigest 
  * or (same base) no source file changed since it was computed — apart from
  * `patching`, files the caller re-reads from the live graph anyway.
  */
-export async function readFreshDigest(flowlensDir: string, patching: string[] = []): Promise<AgentGraphDigest | null> {
-  const fingerprint = graphFingerprint(flowlensDir);
+export async function readFreshDigest(
+  flowlensDir: string,
+  patching: string[] = [],
+  revision?: string | null,
+): Promise<AgentGraphDigest | null> {
+  const fingerprint = graphFingerprint(flowlensDir, revision);
   if (!fingerprint) return null;
   const digest = await readDigest(flowlensDir);
   if (!digest) return null;

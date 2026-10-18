@@ -1,4 +1,25 @@
 import type { Detail } from './schemas/common.js';
+import type { GraphStore } from '../graph.js';
+import type { AnnotationStore } from '../../mcp/annotation-store.js';
+import type { SnapshotManager } from '../../analysis/snapshot-manager.js';
+
+/**
+ * Everything the MCP server and its tool/resource handlers need (Phase 12:
+ * moved here from `src/mcp/server.ts` so handlers do not import the server
+ * module that registers them; `server.ts` re-exports it).
+ */
+export interface ServerDependencies {
+  graph: GraphStore;
+  annotationStore: AnnotationStore;
+  snapshotManager: SnapshotManager;
+  flowlensDir: string;
+  rootDir: string;
+  fileIndexPath: string;
+  /** LevelDB directory used for cache fingerprinting (default `<flowlensDir>/graph`). */
+  graphPath?: string;
+  /** Optional graph version token (e.g. from a graph service) for cache invalidation. */
+  graphVersion?: () => string | Promise<string>;
+}
 
 export interface MCPServerConfig {
   graphPath: string;

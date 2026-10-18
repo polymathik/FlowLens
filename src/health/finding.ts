@@ -45,6 +45,7 @@ export function makeFocus(
       identifier: target.identifier,
       overlay: target.overlay,
       baseUrl: ctx.canvasBaseUrl,
+      projectId: ctx.input.project.id ?? undefined,
     }),
   };
 }

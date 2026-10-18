@@ -7,7 +7,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ServerDependencies } from '../server.js';
+import type { ServerDependencies } from '../../contracts/mcp/server.js';
 import type { Entity } from '../../contracts/entities.js';
 import type { InterfaceDiffEntry } from '../../contracts/analysis/diff.js';
 import {
@@ -100,7 +100,7 @@ export async function handleGetModuleInterface(
   };
 
   return toMCPContent(buildResponse(data, view.lastIndexed, {
-    page, detail, canvas_url: entityCanvasUrl(entity),
+    page, detail, canvas_url: entityCanvasUrl(entity, undefined, deps),
   }));
 }
 
