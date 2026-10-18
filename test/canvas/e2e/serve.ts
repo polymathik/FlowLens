@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { createIndexedFixture, createNotesProject } from '../helpers/fixture-project.js';
 import { createDeepProject } from '../helpers/deep-fixture.js';
 import { createCommunitiesProject } from '../helpers/communities-fixture.js';
+import { createHistoryProject, createSingleCommitProject } from '../helpers/history-project.js';
 import { startDaemon } from '../../../src/service/daemon.js';
 import { DaemonClient } from '../../../src/service/client.js';
 import { RemoteGraphStore } from '../../../src/service/remote-graph-store.js';
@@ -34,6 +35,8 @@ await mkdir(join(workDir, 'b'), { recursive: true });
 const b = await createNotesProject(join(workDir, 'b'));
 const deep = await createDeepProject(join(workDir, 'deep'));
 const comm = await createCommunitiesProject(join(workDir, 'comm'));
+const hist = await createHistoryProject(join(workDir, 'hist'));
+const tiny = await createSingleCommitProject(join(workDir, 'tiny'));
 const goneRoot = join(workDir, 'gone-app');
 await mkdir(join(goneRoot, '.flowlens'), { recursive: true });
 
@@ -57,7 +60,7 @@ console.log(`READY ${JSON.stringify({
   token: daemon.info.token,
   hasGit: a.hasGit,
   mode: dev ? 'dev' : 'bundle',
-  projects: { deep: { root: deep.rootDir }, comm: { root: comm.rootDir }, a: { id: pa.id, root: a.rootDir }, b: { id: pb.id, root: b.rootDir }, missing: { id: pc.id, root: goneRoot } },
+  projects: { deep: { root: deep.rootDir }, comm: { root: comm.rootDir }, hist: { root: hist.rootDir }, tiny: { root: tiny.rootDir }, a: { id: pa.id, root: a.rootDir }, b: { id: pb.id, root: b.rootDir }, missing: { id: pc.id, root: goneRoot } },
 })}`);
 
 const shutdown = async () => {
