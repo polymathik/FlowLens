@@ -1,179 +1,134 @@
 /**
- * get_metrics tool — queries metrics for individual entities or
- * aggregated across the codebase, sorted by a chosen metric field.
+ * get_metrics tool — metrics for one entity, or entities ranked by a metric.
+ *
+ * Coupling metrics (afferent/efferent/instability) are query-time only, so
+ * they are computed from the cached graph view with the shared formula in
+ * `metrics/coupling.ts`. `quality_score` ranks ascending (worst first); all
+ * other fields rank descending.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
-import type { Entity, EntityKind, EntityMetrics } from '../../contracts/entities.js';
-import { resolveEntity, isResolveError } from '../entity-resolver.js';
+import type { Entity, EntityMetrics } from '../../contracts/entities.js';
+import type { GraphStore } from '../../contracts/graph.js';
+import {
+  ANALYSIS_LIMITS, AnalysisToolSchemas,
+  type Detail, type GetMetricsInput, type GetMetricsOutput, type MetricSortField, type MetricsEntry,
+} from '../../contracts/mcp/tools.js';
 import { computeCouplingMetrics } from '../../metrics/coupling.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
-import { buildCanvasUrl } from '../../contracts/canvas-links.js';
+import { buildResponse, paginate, toMCPContent, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { DEFAULT_DETAIL, keyMetrics, round } from '../entity-view.js';
+import { entityCanvasUrl, openView, resolveOrError } from '../tool-runtime.js';
+import type { GraphView } from '../graph-view.js';
 
-export interface GetMetricsInput {
-  entity?: string;
-  kind?: string;
-  sort_by?: string;
-  max_results?: number;
+const ASCENDING: ReadonlySet<MetricSortField> = new Set(['quality_score']);
+
+/** Adapter so the shared coupling formula runs on the in-memory view. */
+function viewAsEdgeSource(view: GraphView): GraphStore {
+  return {
+    getEdgesTo: async (id: string) => view.edgesTo(id),
+    getEdgesFrom: async (id: string) => view.edgesFrom(id),
+  } as unknown as GraphStore;
 }
 
-export interface MetricsEntry {
-  entity_id: string;
-  entity_name: string;
-  entity_kind: EntityKind;
-  file: string;
-  metrics: EntityMetrics;
+async function withCoupling(view: GraphView, e: Entity): Promise<EntityMetrics> {
+  const coupling = await computeCouplingMetrics(e.id, viewAsEdgeSource(view));
+  return { line_count: 0, ...e.metrics, ...coupling, instability: round(coupling.instability ?? 0) };
 }
 
-export interface MetricsSummary {
-  avg_quality: number | null;
-  highest_complexity_entity: string | null;
-  bug_density: number;
-  most_unstable: Array<{ name: string; instability: number }>;
-}
-
-export interface GetMetricsResult {
-  entries: MetricsEntry[];
-  summary: MetricsSummary;
-}
-
-const MAX_RESULTS_CAP = 250;
-const SORTABLE_FIELDS = [
-  'cognitive_complexity', 'cyclomatic_complexity', 'quality_score',
-  'halstead_volume', 'halstead_difficulty', 'halstead_bugs',
-  'line_count', 'instability',
-] as const;
-
-type SortField = typeof SORTABLE_FIELDS[number];
-
-export async function handleGetMetrics(
-  args: GetMetricsInput,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
-  const sortBy = (args.sort_by ?? 'cognitive_complexity') as SortField;
-
-  // Single-entity mode
-  if (args.entity) {
-    const outcome = await resolveEntity(deps.graph, args.entity);
-    if (isResolveError(outcome)) {
-      return toMCPError(outcome.error, outcome.suggestions, lastIndexed);
-    }
-    const { entity } = outcome;
-    const coupling = await computeCouplingMetrics(entity.id, deps.graph);
-    const mergedMetrics: EntityMetrics = { ...entity.metrics, ...coupling } as EntityMetrics;
-
-    const entry: MetricsEntry = {
-      entity_id: entity.id,
-      entity_name: entity.name,
-      entity_kind: entity.kind,
-      file: entity.file,
-      metrics: mergedMetrics,
-    };
-
-    return toMCPContent(buildResponse(
-      { entries: [entry], summary: buildSummary([entity]) },
-      lastIndexed,
-      {
-        canvas_url: buildCanvasUrl({
-          kind: entity.kind === 'file' ? 'file' : 'entity',
-          identifier: entity.qualified_name,
-          overlay: 'complexity',
-        }),
-      },
-    ));
-  }
-
-  // Multi-entity mode: all entities, optionally filtered by kind
-  const allNodes = await deps.graph.getAllNodes();
-  let filtered = allNodes;
-
-  if (args.kind) {
-    filtered = filtered.filter(e => e.kind === args.kind);
-  }
-
-  // Filter to entities with meaningful metrics
-  filtered = filtered.filter(e => e.metrics && hasNonTrivialMetrics(e.metrics));
-
-  // Sort by the requested metric field (descending)
-  filtered.sort((a, b) => {
-    const aVal = getMetricValue(a.metrics, sortBy);
-    const bVal = getMetricValue(b.metrics, sortBy);
-    return bVal - aVal;
-  });
-
-  const totalCount = filtered.length;
-  const sliced = filtered.slice(0, maxResults);
-
-  const entries: MetricsEntry[] = sliced.map(e => ({
+function toEntry(e: Entity, metrics: EntityMetrics, sortBy: MetricSortField, detail: Detail): MetricsEntry {
+  const shown = detail === 'full'
+    ? metrics
+    : { ...keyMetrics(metrics), line_count: metrics.line_count, [sortBy]: metrics[sortBy] };
+  return {
     entity_id: e.id,
     entity_name: e.name,
+    qualified_name: e.qualified_name,
     entity_kind: e.kind,
     file: e.file,
-    metrics: e.metrics!,
-  }));
-
-  const data: GetMetricsResult = {
-    entries,
-    summary: buildSummary(filtered),
+    line: e.location?.line_start ?? 0,
+    metrics: shown,
   };
+}
 
-  return toMCPContent(buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: entries.length,
-    total_count: totalCount,
-  }));
+export async function handleGetMetrics(args: GetMetricsInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const limit = clampLimit(args.max_results, ANALYSIS_LIMITS.metrics);
+  const sortBy: MetricSortField = args.sort_by ?? 'cognitive_complexity';
+  const detail = args.detail ?? DEFAULT_DETAIL;
+
+  if (args.entity) {
+    const resolved = resolveOrError(view, args.entity);
+    if (resolved.error) return resolved.error;
+    const { entity } = resolved;
+    const metrics = await withCoupling(view, entity);
+    const data: GetMetricsOutput = {
+      sort_by: sortBy,
+      entries: [toEntry(entity, metrics, sortBy, 'full')],
+      summary: buildSummary([{ entity, metrics }]),
+    };
+    return toMCPContent(buildResponse(data, view.lastIndexed, {
+      page: { total: 1, returned: 1, limit },
+      detail,
+      canvas_url: entityCanvasUrl(entity, 'complexity'),
+    }));
+  }
+
+  const candidates = view.nodes
+    .filter((e) => (!args.kind || e.kind === args.kind) && e.metrics && hasNonTrivialMetrics(e.metrics));
+  const rows: Array<{ entity: Entity; metrics: EntityMetrics }> = [];
+  for (const entity of candidates) rows.push({ entity, metrics: await withCoupling(view, entity) });
+
+  const dir = ASCENDING.has(sortBy) ? 1 : -1;
+  rows.sort((a, b) => {
+    const av = a.metrics[sortBy];
+    const bv = b.metrics[sortBy];
+    if (av === undefined || bv === undefined) return av === bv ? 0 : av === undefined ? 1 : -1; // missing last
+    return dir * (av - bv) || a.entity.qualified_name.localeCompare(b.entity.qualified_name);
+  });
+
+  const { items, page } = paginate(rows, limit);
+  const data: GetMetricsOutput = {
+    sort_by: sortBy,
+    entries: items.map((r) => toEntry(r.entity, r.metrics, sortBy, detail)),
+    summary: buildSummary(rows),
+  };
+  return toMCPContent(buildResponse(data, view.lastIndexed, { page, detail }));
 }
 
 function hasNonTrivialMetrics(m: EntityMetrics): boolean {
-  return (m.cognitive_complexity !== undefined && m.cognitive_complexity > 0) ||
-    (m.cyclomatic_complexity !== undefined && m.cyclomatic_complexity > 0) ||
-    (m.quality_score !== undefined);
+  return (m.cognitive_complexity ?? 0) > 0 || (m.cyclomatic_complexity ?? 0) > 0 || m.quality_score !== undefined;
 }
 
-function getMetricValue(metrics: EntityMetrics | undefined, field: SortField): number {
-  if (!metrics) return 0;
-  return (metrics[field as keyof EntityMetrics] as number) ?? 0;
-}
-
-function buildSummary(entities: Entity[]): MetricsSummary {
-  const withQuality = entities.filter(e => e.metrics?.quality_score !== undefined);
-  const avgQuality = withQuality.length > 0
-    ? Math.round(withQuality.reduce((sum, e) => sum + (e.metrics!.quality_score ?? 0), 0) / withQuality.length * 10) / 10
+function buildSummary(rows: Array<{ entity: Entity; metrics: EntityMetrics }>): GetMetricsOutput['summary'] {
+  const quality = rows.filter((r) => r.metrics.quality_score !== undefined);
+  const avgQuality = quality.length > 0
+    ? Math.round((quality.reduce((s, r) => s + r.metrics.quality_score!, 0) / quality.length) * 10) / 10
     : null;
 
-  // Highest complexity
-  let highestCC: Entity | null = null;
-  for (const e of entities) {
-    const cc = e.metrics?.cognitive_complexity ?? 0;
-    if (cc > (highestCC?.metrics?.cognitive_complexity ?? 0)) {
-      highestCC = e;
-    }
+  let highest: { entity: Entity; cc: number } | null = null;
+  for (const r of rows) {
+    const cc = r.metrics.cognitive_complexity ?? 0;
+    if (cc > (highest?.cc ?? 0)) highest = { entity: r.entity, cc };
   }
 
-  // Bug density: sum halstead_bugs / count of entities with halstead_bugs
-  const withBugs = entities.filter(e => e.metrics?.halstead_bugs !== undefined);
-  const totalBugs = withBugs.reduce((sum, e) => sum + (e.metrics!.halstead_bugs ?? 0), 0);
-  const bugDensity = withBugs.length > 0
-    ? Math.round((totalBugs / withBugs.length) * 1000) / 1000
-    : 0;
+  const bugs = rows.filter((r) => r.metrics.halstead_bugs !== undefined);
+  const bugDensity = bugs.length > 0 ? round(bugs.reduce((s, r) => s + r.metrics.halstead_bugs!, 0) / bugs.length) : 0;
 
-  // Most unstable: top 5 by instability
-  const withInstability = entities
-    .filter(e => e.metrics?.instability !== undefined && e.metrics.instability > 0)
-    .sort((a, b) => (b.metrics!.instability ?? 0) - (a.metrics!.instability ?? 0))
+  // Only entities coupled in both directions — a pure leaf (Ce only) is trivially "unstable".
+  const mostUnstable = rows
+    .filter((r) => (r.metrics.afferent_coupling ?? 0) > 0 && (r.metrics.efferent_coupling ?? 0) > 0)
+    .sort((a, b) => (b.metrics.instability ?? 0) - (a.metrics.instability ?? 0)
+      || (b.metrics.efferent_coupling ?? 0) - (a.metrics.efferent_coupling ?? 0))
     .slice(0, 5)
-    .map(e => ({ name: e.name, instability: e.metrics!.instability! }));
+    .map((r) => ({ name: r.entity.qualified_name, instability: r.metrics.instability ?? 0 }));
 
   return {
     avg_quality: avgQuality,
-    highest_complexity_entity: highestCC?.name ?? null,
+    highest_complexity_entity: highest?.entity.qualified_name ?? null,
     bug_density: bugDensity,
-    most_unstable: withInstability,
+    most_unstable: mostUnstable,
   };
 }
 
@@ -182,16 +137,10 @@ export function registerGetMetrics(server: McpServer, deps: ServerDependencies):
     'get_metrics',
     {
       description:
-        'Queries code metrics for a specific entity or across the codebase, sorted by any metric field.',
-      inputSchema: {
-        entity: z.string().optional().describe('Entity identifier (omit for aggregate view)'),
-        kind: z.string().optional().describe('Filter by entity kind (class, function, etc.)'),
-        sort_by: z.string().optional().default('cognitive_complexity')
-          .describe('Metric field to sort by (descending)'),
-        max_results: z.number().optional().default(50).describe('Max results (default 50, max 250)'),
-      },
+        'Code metrics for one entity, or entities ranked by a metric (complexity, quality, Halstead, coupling, churn, hotspot score).',
+      inputSchema: AnalysisToolSchemas.GetMetricsInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleGetMetrics(args as GetMetricsInput, deps),
+    async (args) => handleGetMetrics(args, deps),
   );
 }

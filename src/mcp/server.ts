@@ -30,6 +30,10 @@ export interface ServerDependencies {
   flowlensDir: string;
   rootDir: string;
   fileIndexPath: string;
+  /** LevelDB directory used for cache fingerprinting (default `<flowlensDir>/graph`). */
+  graphPath?: string;
+  /** Optional graph version token (e.g. from a graph service) for cache invalidation. */
+  graphVersion?: () => string | Promise<string>;
 }
 
 export function createFlowLensServer(deps: ServerDependencies): McpServer {

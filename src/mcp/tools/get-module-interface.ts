@@ -1,74 +1,72 @@
 /**
  * get_module_interface tool — returns the public API surface of a module/file.
  *
- * Lists all public entities in the file, counts their dependents, and
- * optionally attaches interface diff entries when diff_since is provided.
+ * Lists the public entities of a file (or of every file directly inside a
+ * directory module), counts their dependents, and optionally attaches
+ * interface diff entries when diff_since is provided.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
 import type { Entity } from '../../contracts/entities.js';
 import type { InterfaceDiffEntry } from '../../contracts/analysis/diff.js';
-import { resolveEntity, isResolveError } from '../entity-resolver.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
+import {
+  LIMITS, EntityToolSchemas,
+  type ExportEntry, type GetModuleInterfaceInput, type GetModuleInterfaceOutput,
+} from '../../contracts/mcp/tools.js';
+import { buildResponse, paginate, toMCPContent, toMCPError, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { DEFAULT_DETAIL, toEntityView } from '../entity-view.js';
+import { entityCanvasUrl, openView, resolveOrError } from '../tool-runtime.js';
 import { computeDiff } from '../../analysis/diff-computer.js';
-import { buildCanvasUrl } from '../../contracts/canvas-links.js';
+import { resolveSnapshotRef } from '../../analysis/snapshot-refs.js';
+import { moduleOfFile } from '../../analysis/module-path.js';
+import { toDiffEntryView } from './diff-interface.js';
 
-export interface GetModuleInterfaceInput {
-  module: string;
-  include_private?: boolean;
-  diff_since?: string;
-  max_results?: number;
-}
-
-export interface ExportEntry {
-  entity: Entity;
-  type_signature?: string;
-  dependent_count: number;
-  diff?: InterfaceDiffEntry[];
-}
-
-export interface GetModuleInterfaceResult {
-  module: Entity;
-  exports: ExportEntry[];
-}
-
-const MAX_RESULTS_CAP = 250;
+/** Kinds that are never part of a module's exported interface. */
+const NON_EXPORT_KINDS = new Set<Entity['kind']>(['file', 'module', 'parameter']);
 
 export async function handleGetModuleInterface(
   args: GetModuleInterfaceInput,
   deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const outcome = await resolveEntity(deps.graph, args.module);
+): Promise<ToolResult> {
+  const view = await openView(deps);
+  const resolved = resolveOrError(view, args.module);
+  if (resolved.error) return resolved.error;
+  const { entity } = resolved;
 
-  if (isResolveError(outcome)) {
-    return toMCPError(outcome.error, outcome.suggestions, lastIndexed);
-  }
-
-  const { entity } = outcome;
-  const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
+  const limit = clampLimit(args.max_results, LIMITS.moduleInterface);
+  const detail = args.detail ?? DEFAULT_DETAIL;
   const includePrivate = args.include_private ?? false;
 
-  // Get all entities in this file
-  const fileEntities = await deps.graph.getNodesByFile(entity.file);
+  // Resolve diff_since up front so an unknown ref is an error, not silently ignored.
+  let diffChanges: InterfaceDiffEntry[] | null = null;
+  let diffSha: string | undefined;
+  if (args.diff_since) {
+    const ref = await resolveSnapshotRef(args.diff_since, deps.snapshotManager, deps.rootDir);
+    if (!ref.ok) {
+      return toMCPError({ error: ref.message, code: ref.code === 'invalid_ref' ? 'invalid_argument' : 'no_snapshot', suggestions: ref.suggestions }, view.lastIndexed);
+    }
+    diffSha = ref.sha;
+    const scope = entity.kind === 'module' ? entity.file + '/' : entity.file;
+    diffChanges = (await computeDiff(deps.graph, ref.snapshot, { scope })).changes;
+  }
 
-  // Filter to public entities (unless include_private)
-  const filtered = includePrivate
-    ? fileEntities
-    : fileEntities.filter(e => e.visibility === 'public');
+  const members = entity.kind === 'module'
+    ? view.nodes.filter((n) => n.kind !== 'module' && moduleOfFile(n.file) === entity.file)
+    : view.byFile.get(entity.file) ?? [];
+  const filtered = members
+    .filter((e) => !NON_EXPORT_KINDS.has(e.kind))
+    .filter((e) => includePrivate || e.visibility === 'public')
+    .sort((a, b) => a.file.localeCompare(b.file) || a.location.line_start - b.location.line_start);
 
-  // For each export, count dependents and compute type_signature
+  const { items, page } = paginate(filtered, limit);
   const exports: ExportEntry[] = [];
-  for (const e of filtered) {
-    if (exports.length >= maxResults) break;
-
-    const inbound = await deps.graph.getEdgesTo(e.id);
+  for (const e of items) {
+    const dependents = new Set(view.edgesTo(e.id).filter((r) => r.type !== 'contain').map((r) => r.from));
     const entry: ExportEntry = {
-      entity: e,
-      dependent_count: inbound.length,
+      entity: toEntityView(e, detail),
+      dependent_count: dependents.size,
     };
 
     // Build type_signature based on entity kind
@@ -85,45 +83,22 @@ export async function handleGetModuleInterface(
       entry.type_signature = `interface ${e.name}`;
     }
 
+    if (diffChanges) {
+      const matching = diffChanges.filter((c) => c.entity_id === e.id || c.entity_name === e.name);
+      if (matching.length > 0) entry.diff = matching.map((c) => toDiffEntryView(c, detail));
+    }
     exports.push(entry);
   }
 
-  // Compute diff if diff_since is provided
-  if (args.diff_since) {
-    const snapshot = await deps.snapshotManager.loadSnapshot(args.diff_since);
-    if (snapshot) {
-      const diff = await computeDiff(deps.graph, snapshot, {
-        scope: entity.file,
-      });
-
-      // Attach diff entries to matching exports
-      for (const entry of exports) {
-        const matchingChanges = diff.changes.filter(
-          c => c.entity_id === entry.entity.id || c.entity_name === entry.entity.name,
-        );
-        if (matchingChanges.length > 0) {
-          entry.diff = matchingChanges;
-        }
-      }
-    }
-  }
-
-  const data: GetModuleInterfaceResult = {
-    module: entity,
+  const data: GetModuleInterfaceOutput = {
+    module: toEntityView(entity, detail),
     exports,
+    ...(diffSha ? { diff_since_sha: diffSha } : {}),
   };
 
-  const response = buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: exports.length,
-    total_count: filtered.length,
-    canvas_url: buildCanvasUrl({
-      kind: entity.kind === 'file' ? 'file' : 'module',
-      identifier: entity.file || entity.qualified_name,
-    }),
-  });
-
-  return toMCPContent(response);
+  return toMCPContent(buildResponse(data, view.lastIndexed, {
+    page, detail, canvas_url: entityCanvasUrl(entity),
+  }));
 }
 
 export function registerGetModuleInterface(server: McpServer, deps: ServerDependencies): void {
@@ -131,15 +106,10 @@ export function registerGetModuleInterface(server: McpServer, deps: ServerDepend
     'get_module_interface',
     {
       description:
-        'Returns the public API surface of a module or file, with optional diff against a snapshot.',
-      inputSchema: {
-        module: z.string().describe('Module/file identifier: qualified name, ID, or file path'),
-        include_private: z.boolean().optional().default(false).describe('Include private entities'),
-        diff_since: z.string().optional().describe('Git SHA to diff against'),
-        max_results: z.number().optional().default(50).describe('Max results (default 50, max 250)'),
-      },
+        'Public API surface of a file or directory module (exports with dependent counts), with optional diff against a snapshot ref.',
+      inputSchema: EntityToolSchemas.GetModuleInterfaceInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleGetModuleInterface(args as GetModuleInterfaceInput, deps),
+    async (args) => handleGetModuleInterface(args, deps),
   );
 }

@@ -1,6 +1,7 @@
-import { minimatch } from 'minimatch';
+import { Minimatch } from 'minimatch';
 import type { GraphStore } from '../contracts/graph.js';
 import type { Entity } from '../contracts/entities.js';
+import type { Relation } from '../contracts/relations.js';
 import type {
   ArchitectureConfig,
   ArchitectureLayer,
@@ -23,11 +24,22 @@ export function resolveLayer(
   return null;
 }
 
+/** Compiled glob cache: compiling a Minimatch per entity dominated layer resolution time. */
+const patternCache = new Map<string, Minimatch>();
+function compiledPattern(pattern: string): Minimatch {
+  let mm = patternCache.get(pattern);
+  if (!mm) {
+    mm = new Minimatch(pattern);
+    patternCache.set(pattern, mm);
+  }
+  return mm;
+}
+
 function matchesLayer(entity: Entity, layer: ArchitectureLayer): boolean {
   // Check glob patterns against entity file path
   if (layer.include.patterns) {
     for (const pattern of layer.include.patterns) {
-      if (minimatch(entity.file, pattern)) return true;
+      if (compiledPattern(pattern).match(entity.file)) return true;
     }
   }
   // Check explicit file list
@@ -45,7 +57,7 @@ function matchesLayer(entity: Entity, layer: ArchitectureLayer): boolean {
 /**
  * Build a lookup table: entity id -> layer name (or null for unassigned).
  */
-function buildLayerMap(
+export function buildLayerMap(
   entities: Entity[],
   config: ArchitectureConfig,
 ): Map<string, string | null> {
@@ -102,66 +114,70 @@ export async function validateArchitecture(
   graph: GraphStore,
   config: ArchitectureConfig,
 ): Promise<ArchitectureViolation[]> {
-  const entities = await graph.getAllNodes();
-  const edges = await graph.getAllEdges();
+  const [entities, edges] = await Promise.all([graph.getAllNodes(), graph.getAllEdges()]);
+  return validateArchitectureData(entities, edges, config);
+}
 
-  const layerMap = buildLayerMap(entities, config);
+/**
+ * Pure variant over already-loaded data (used with the MCP graph cache).
+ * `layerMap` may be supplied to reuse a precomputed entity -> layer assignment.
+ */
+export function validateArchitectureData(
+  entities: Entity[],
+  edges: Relation[],
+  config: ArchitectureConfig,
+  layerMap: Map<string, string | null> = buildLayerMap(entities, config),
+): ArchitectureViolation[] {
+  const byId = new Map(entities.map((e) => [e.id, e]));
   const violations: ArchitectureViolation[] = [];
 
   for (const edge of edges) {
     const sourceLayer = layerMap.get(edge.from);
     const targetLayer = layerMap.get(edge.to);
 
-    // Skip if either entity is unassigned
-    if (!sourceLayer || !targetLayer) continue;
-    // Skip same-layer edges
-    if (sourceLayer === targetLayer) continue;
+    // Skip if either entity is unassigned, or the edge stays within a layer
+    if (!sourceLayer || !targetLayer || sourceLayer === targetLayer) continue;
 
     const sourceDef = findLayerDef(config, sourceLayer);
     if (!sourceDef) continue;
 
-    // Check may_only_access rule
-    if (sourceDef.may_only_access) {
-      if (!sourceDef.may_only_access.includes(targetLayer)) {
-        violations.push({
-          id: violationId(edge.from, edge.to, 'may_only_access'),
-          rule: 'may_only_access',
-          layer_from: sourceLayer,
-          layer_to: targetLayer,
-          entity_from: edge.from,
-          entity_to: edge.to,
-          relation_type: edge.type,
-          location: edge.location,
-          auto_fix_suggestion: generateAutoFix(
-            'may_only_access',
-            sourceDef,
-            targetLayer,
-          ),
-        });
-      }
+    const broken: Array<'may_only_access' | 'must_not_access'> = [];
+    if (sourceDef.may_only_access && !sourceDef.may_only_access.includes(targetLayer)) {
+      broken.push('may_only_access');
     }
+    if (sourceDef.must_not_access?.includes(targetLayer)) broken.push('must_not_access');
 
-    // Check must_not_access rule
-    if (sourceDef.must_not_access) {
-      if (sourceDef.must_not_access.includes(targetLayer)) {
-        violations.push({
-          id: violationId(edge.from, edge.to, 'must_not_access'),
-          rule: 'must_not_access',
-          layer_from: sourceLayer,
-          layer_to: targetLayer,
-          entity_from: edge.from,
-          entity_to: edge.to,
-          relation_type: edge.type,
-          location: edge.location,
-          auto_fix_suggestion: generateAutoFix(
-            'must_not_access',
-            sourceDef,
-            targetLayer,
-          ),
-        });
-      }
+    for (const rule of broken) {
+      violations.push({
+        id: violationId(edge.from, edge.to, rule),
+        rule,
+        layer_from: sourceLayer,
+        layer_to: targetLayer,
+        entity_from: edge.from,
+        entity_to: edge.to,
+        relation_type: edge.type,
+        location: edge.location,
+        auto_fix_suggestion: generateAutoFix(rule, sourceDef, targetLayer),
+        rule_text: ruleText(rule, sourceDef, targetLayer),
+        entity_from_name: byId.get(edge.from)?.qualified_name ?? edge.from,
+        entity_to_name: byId.get(edge.to)?.qualified_name ?? edge.to,
+      });
     }
   }
 
   return violations;
+}
+
+/** Full human-readable statement of the broken rule. */
+function ruleText(
+  rule: 'may_only_access' | 'must_not_access',
+  sourceLayer: ArchitectureLayer,
+  targetLayerName: string,
+): string {
+  if (rule === 'may_only_access') {
+    const allowed = sourceLayer.may_only_access ?? [];
+    const list = allowed.length > 0 ? allowed.map((l) => `'${l}'`).join(', ') : 'no other layer';
+    return `Layer '${sourceLayer.name}' may only access ${list}, but accesses '${targetLayerName}'`;
+  }
+  return `Layer '${sourceLayer.name}' must not access '${targetLayerName}'`;
 }

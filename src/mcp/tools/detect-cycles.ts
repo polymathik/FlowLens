@@ -1,85 +1,55 @@
 /**
- * detect_cycles tool — delegates to the cycle-detector analysis module
- * and builds a summary with counts by severity and granularity.
+ * detect_cycles tool — dependency cycles at file, module (directory) or
+ * function (call graph) granularity; `all` runs all three. Each cycle has an
+ * ordered closed path, its edges, and an explained, layer-aware severity.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
-import type { CycleGranularity, CycleSeverity, DetectedCycle } from '../../contracts/analysis/cycles.js';
-import { detectCycles } from '../../analysis/cycle-detector.js';
-import { buildResponse, toMCPContent } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
+import type { CycleGranularity, DetectedCycle } from '../../contracts/analysis/cycles.js';
+import {
+  ANALYSIS_LIMITS, AnalysisToolSchemas,
+  type DetectCyclesInput, type DetectCyclesOutput,
+} from '../../contracts/mcp/tools.js';
+import { SEVERITY_ORDER } from '../../analysis/cycle-detector.js';
+import { normalizeScope } from '../../analysis/module-path.js';
+import { buildResponse, paginate, toMCPContent, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { openView } from '../tool-runtime.js';
+import { cachedCycles, optionalArch } from '../analysis-cache.js';
 
-export interface DetectCyclesInput {
-  granularity?: string;
-  scope?: string;
-  relation_types?: string[];
-  severity_threshold?: string;
-  max_results?: number;
-}
+export async function handleDetectCycles(args: DetectCyclesInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const arch = await optionalArch(deps.flowlensDir, view);
+  const granularity = args.granularity ?? 'all';
+  const limit = clampLimit(args.max_results, ANALYSIS_LIMITS.cycles);
+  const granularities: Array<Exclude<CycleGranularity, 'all'>> =
+    granularity === 'all' ? ['file', 'module', 'function'] : [granularity];
 
-export interface DetectCyclesResult {
-  cycles: DetectedCycle[];
-  summary: {
-    total_cycles: number;
-    by_severity: Record<string, number>;
-    by_granularity: Record<string, number>;
-  };
-}
-
-const MAX_RESULTS_CAP = 250;
-
-export async function handleDetectCycles(
-  args: DetectCyclesInput,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const granularity = (args.granularity ?? 'all') as CycleGranularity;
-  const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
-
-  const granularities: CycleGranularity[] = granularity === 'all'
-    ? ['file', 'module', 'function']
-    : [granularity];
-
-  let allCycles: DetectedCycle[] = [];
-
+  const all: DetectedCycle[] = [];
   for (const g of granularities) {
-    const cycles = await detectCycles(deps.graph, {
+    all.push(...cachedCycles(view, {
       granularity: g,
-      scope: args.scope,
-      relation_types: args.relation_types as any,
-      severity_threshold: args.severity_threshold as CycleSeverity | undefined,
-    });
-    allCycles.push(...cycles);
+      relation_types: args.relation_types,
+      scope: normalizeScope(args.scope),
+      severity_threshold: args.severity_threshold,
+    }, arch));
+  }
+  all.sort((a, b) => SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity] || a.length - b.length);
+
+  const bySeverity = { high: 0, medium: 0, low: 0 };
+  const byGranularity: Record<string, number> = Object.fromEntries(granularities.map((g) => [g, 0]));
+  for (const c of all) {
+    bySeverity[c.severity]++;
+    byGranularity[c.granularity] = (byGranularity[c.granularity] ?? 0) + 1;
   }
 
-  // Build summary counts
-  const bySeverity: Record<string, number> = {};
-  const byGranularity: Record<string, number> = {};
-
-  for (const cycle of allCycles) {
-    bySeverity[cycle.severity] = (bySeverity[cycle.severity] ?? 0) + 1;
-    byGranularity[cycle.granularity] = (byGranularity[cycle.granularity] ?? 0) + 1;
-  }
-
-  const totalCycles = allCycles.length;
-  const truncated = allCycles.slice(0, maxResults);
-
-  const data: DetectCyclesResult = {
-    cycles: truncated,
-    summary: {
-      total_cycles: totalCycles,
-      by_severity: bySeverity,
-      by_granularity: byGranularity,
-    },
+  const { items, page } = paginate(all, limit);
+  const data: DetectCyclesOutput = {
+    cycles: items,
+    summary: { total_cycles: all.length, by_severity: bySeverity, by_granularity: byGranularity },
   };
-
-  return toMCPContent(buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: truncated.length,
-    total_count: totalCycles,
-  }));
+  return toMCPContent(buildResponse(data, view.lastIndexed, { page }));
 }
 
 export function registerDetectCycles(server: McpServer, deps: ServerDependencies): void {
@@ -87,18 +57,10 @@ export function registerDetectCycles(server: McpServer, deps: ServerDependencies
     'detect_cycles',
     {
       description:
-        'Detects dependency cycles in the codebase at file, module, or function granularity.',
-      inputSchema: {
-        granularity: z.enum(['file', 'module', 'function', 'all']).optional().default('all')
-          .describe('Cycle detection granularity'),
-        scope: z.string().optional().describe('Scope to a file path prefix'),
-        relation_types: z.array(z.string()).optional().describe('Filter by relation types'),
-        severity_threshold: z.enum(['low', 'medium', 'high']).optional()
-          .describe('Minimum severity threshold'),
-        max_results: z.number().optional().default(50).describe('Max results (default 50, max 250)'),
-      },
+        'Detects dependency cycles at file, module (directory) or function granularity, with ordered cycle paths and layer-aware severity.',
+      inputSchema: AnalysisToolSchemas.DetectCyclesInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleDetectCycles(args as DetectCyclesInput, deps),
+    async (args) => handleDetectCycles(args, deps),
   );
 }

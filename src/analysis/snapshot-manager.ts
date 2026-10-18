@@ -5,20 +5,32 @@
  * and a lightweight `index.json` is maintained for fast listing.
  */
 
-import { readFile, writeFile, unlink } from 'node:fs/promises';
+import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GraphStore } from '../contracts/graph.js';
 import type { SnapshotIndex, SnapshotData } from '../contracts/analysis/snapshots.js';
 
+/** Snapshot keys are file names: allow SHA-like tokens only (no path traversal). */
+export function isValidSnapshotKey(sha: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(sha) && !sha.includes('..');
+}
+
 export class SnapshotManager {
   constructor(private readonly snapshotsDir: string) {}
+
+  /** Whether a snapshot file exists for exactly this key. */
+  hasSnapshot(sha: string): boolean {
+    return isValidSnapshotKey(sha) && existsSync(join(this.snapshotsDir, `${sha}.graph.json`));
+  }
 
   /**
    * Capture the current state of the graph and persist it under the given SHA.
    * Also updates the index.json catalogue.
    */
   async takeSnapshot(graph: GraphStore, sha: string): Promise<void> {
+    if (!isValidSnapshotKey(sha)) throw new Error(`Invalid snapshot key: '${sha}'`);
+    await mkdir(this.snapshotsDir, { recursive: true });
     const [entities, relations] = await Promise.all([
       graph.getAllNodes(),
       graph.getAllEdges(),
@@ -33,7 +45,7 @@ export class SnapshotManager {
 
     await writeFile(
       join(this.snapshotsDir, `${sha}.graph.json`),
-      JSON.stringify(data, null, 2),
+      JSON.stringify(data),
     );
 
     // Update index
@@ -55,6 +67,7 @@ export class SnapshotManager {
    * the given SHA.
    */
   async loadSnapshot(sha: string): Promise<SnapshotData | null> {
+    if (!isValidSnapshotKey(sha)) return null;
     const filePath = join(this.snapshotsDir, `${sha}.graph.json`);
     if (!existsSync(filePath)) return null;
 

@@ -1,92 +1,61 @@
 /**
- * get_hotspots tool — identifies code hotspots by combining git churn
- * data with cognitive complexity. High churn + high complexity = hotspot.
+ * get_hotspots tool — code hotspots: git churn rate × cognitive complexity.
+ * Only entities with a positive score are listed unless include_zero is set;
+ * last_changed is the real date of the last commit touching the file.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
-import type { EntityKind } from '../../contracts/entities.js';
+import {
+  ANALYSIS_LIMITS, AnalysisToolSchemas,
+  type GetHotspotsInput, type GetHotspotsOutput,
+} from '../../contracts/mcp/tools.js';
+import type { FileChurnData } from '../../contracts/analysis/churn.js';
 import { computeChurn } from '../../analysis/churn-analyzer.js';
-import { computeHotspots } from '../../analysis/hotspot-analyzer.js';
-import { buildResponse, toMCPContent } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
+import { computeHotspotsInData } from '../../analysis/hotspot-analyzer.js';
+import { buildResponse, paginate, toMCPContent, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { round } from '../entity-view.js';
+import { openView } from '../tool-runtime.js';
 
-export interface GetHotspotsInput {
-  kind?: string;
-  min_score?: number;
-  max_results?: number;
-}
+export const CHURN_PERIOD_DAYS = 90;
 
-export interface GetHotspotsResult {
-  hotspots: Array<{
-    entity_id: string;
-    entity_name: string;
-    entity_kind: EntityKind;
-    file: string;
-    hotspot_score: number;
-    churn_rate: number;
-    cognitive_complexity: number;
-    dependent_count: number;
-  }>;
-  summary: {
-    total_hotspots: number;
-    avg_hotspot_score: number;
-    highest_hotspot: string | null;
-  };
-}
+export async function handleGetHotspots(args: GetHotspotsInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const limit = clampLimit(args.max_results, ANALYSIS_LIMITS.hotspots);
 
-const MAX_RESULTS_CAP = 250;
-
-export async function handleGetHotspots(
-  args: GetHotspotsInput,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const maxResults = Math.min(args.max_results ?? 20, MAX_RESULTS_CAP);
-
-  const churnData = await computeChurn(deps.rootDir);
-
-  const hotspots = await computeHotspots(deps.graph, churnData, {
-    kind: args.kind as EntityKind | undefined,
+  // Churn depends on git, not the graph; memoise per graph load (local git call).
+  const churn = await view.cached<Promise<Map<string, FileChurnData>>>(
+    `churn:${deps.rootDir}`, () => computeChurn(deps.rootDir, { period_days: CHURN_PERIOD_DAYS }),
+  );
+  const all = computeHotspotsInData(view.nodes, (id) => view.edgesTo(id), churn, {
+    kind: args.kind,
     min_score: args.min_score,
-    max_results: maxResults,
-  });
+    include_zero: args.include_zero,
+  }).map((h) => ({ ...h, hotspot_score: round(h.hotspot_score, 4), churn_rate: round(h.churn_rate, 4) }));
 
-  const totalCount = hotspots.length;
-  const avgScore = totalCount > 0
-    ? Math.round(hotspots.reduce((sum, h) => sum + h.hotspot_score, 0) / totalCount * 100) / 100
-    : 0;
-
-  const data: GetHotspotsResult = {
-    hotspots,
+  const { items, page } = paginate(all, limit);
+  const avg = all.length > 0 ? all.reduce((s, h) => s + h.hotspot_score, 0) / all.length : 0;
+  const data: GetHotspotsOutput = {
+    hotspots: items,
     summary: {
-      total_hotspots: totalCount,
-      avg_hotspot_score: avgScore,
-      highest_hotspot: hotspots[0]?.entity_name ?? null,
+      total_hotspots: all.length,
+      avg_hotspot_score: round(avg, 4),
+      highest_hotspot: all[0]?.qualified_name ?? all[0]?.entity_name ?? null,
+      churn_period_days: CHURN_PERIOD_DAYS,
     },
   };
-
-  return toMCPContent(buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: hotspots.length,
-    total_count: totalCount,
-  }));
+  return toMCPContent(buildResponse(data, view.lastIndexed, { page }));
 }
 
 export function registerGetHotspots(server: McpServer, deps: ServerDependencies): void {
   server.registerTool(
     'get_hotspots',
     {
-      description:
-        'Identifies code hotspots by combining git churn rate with cognitive complexity.',
-      inputSchema: {
-        kind: z.string().optional().describe('Filter by entity kind (function, class, etc.)'),
-        min_score: z.number().optional().describe('Minimum hotspot score threshold'),
-        max_results: z.number().optional().default(20).describe('Max results (default 20, max 250)'),
-      },
+      description: 'Code hotspots: entities ranked by git churn rate × cognitive complexity (positive scores only by default).',
+      inputSchema: AnalysisToolSchemas.GetHotspotsInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleGetHotspots(args as GetHotspotsInput, deps),
+    async (args) => handleGetHotspots(args, deps),
   );
 }

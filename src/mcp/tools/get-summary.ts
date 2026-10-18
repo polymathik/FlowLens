@@ -1,140 +1,78 @@
 /**
- * get_summary tool — returns a high-level overview of the indexed codebase
- * including entity/relation counts, language breakdown, top modules,
- * quality scores, layer structure, and cycle count.
+ * get_summary tool — high-level overview of the indexed codebase: entity and
+ * relation counts, languages, top directory modules, quality, layers and
+ * file-level cycle count. Served from the cached graph view.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ServerDependencies } from '../server.js';
-import type { ArchitectureConfig } from '../../contracts/architecture.js';
-import { detectCycles } from '../../analysis/cycle-detector.js';
-import { buildResponse, toMCPContent } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
+import { AnalysisToolSchemas, type GetSummaryInput, type GetSummaryOutput } from '../../contracts/mcp/tools.js';
+import { countEntitiesByLayer } from '../../analysis/layer-stats.js';
+import { moduleOfEntity } from '../../analysis/module-path.js';
+import { buildResponse, toMCPContent, type ToolResult } from '../response-builder.js';
+import { openView } from '../tool-runtime.js';
+import { cachedCycles, optionalArch } from '../analysis-cache.js';
+import type { GraphView } from '../graph-view.js';
 
-export interface GetSummaryResult {
-  entities: Record<string, number>;
-  relations: Record<string, number>;
-  languages: Record<string, { files: number; entities: number }>;
-  top_modules: Array<{ path: string; entity_count: number }>;
-  average_quality_score: number;
-  layers: Array<{ name: string; entity_count: number }>;
-  cycle_count: number;
-  last_indexed: string;
+const TOP_MODULES = 10;
+
+export async function handleGetSummary(_args: GetSummaryInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const arch = await optionalArch(deps.flowlensDir, view);
+  const stats = view.cached('summary-stats', () => computeStats(view));
+
+  const layers = arch
+    ? (() => {
+      const { counts } = countEntitiesByLayer(view.nodes, arch.config, arch.layerMap);
+      return arch.config.layers.map((l) => ({ name: l.name, entity_count: counts.get(l.name) ?? 0 }));
+    })()
+    : [];
+
+  const data: GetSummaryOutput = {
+    ...stats,
+    layers,
+    cycle_count: cachedCycles(view, { granularity: 'file' }, arch).length,
+    last_indexed: view.lastIndexed,
+  };
+  return toMCPContent(buildResponse(data, view.lastIndexed));
 }
 
-export async function handleGetSummary(
-  _args: Record<string, never>,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-
-  const [allNodes, allEdges] = await Promise.all([
-    deps.graph.getAllNodes(),
-    deps.graph.getAllEdges(),
-  ]);
-
-  // Count entities by kind
+function computeStats(view: GraphView) {
   const entities: Record<string, number> = {};
-  for (const entity of allNodes) {
-    entities[entity.kind] = (entities[entity.kind] ?? 0) + 1;
-  }
-
-  // Count relations by type
-  const relations: Record<string, number> = {};
-  for (const edge of allEdges) {
-    relations[edge.type] = (relations[edge.type] ?? 0) + 1;
-  }
-
-  // Language breakdown: compute files and entities per language
   const languages: Record<string, { files: number; entities: number }> = {};
-  for (const entity of allNodes) {
-    if (!languages[entity.language]) {
-      languages[entity.language] = { files: 0, entities: 0 };
-    }
-    languages[entity.language].entities += 1;
-    if (entity.kind === 'file') {
-      languages[entity.language].files += 1;
+  const moduleCounts = new Map<string, number>();
+  let qualitySum = 0;
+  let qualityCount = 0;
+
+  for (const e of view.nodes) {
+    entities[e.kind] = (entities[e.kind] ?? 0) + 1;
+    if (e.kind === 'module') continue; // directory entities have no language/module of their own
+    const lang = (languages[e.language] ??= { files: 0, entities: 0 });
+    lang.entities++;
+    if (e.kind === 'file') lang.files++;
+    const mod = moduleOfEntity(e);
+    moduleCounts.set(mod, (moduleCounts.get(mod) ?? 0) + 1);
+    if (e.metrics?.quality_score !== undefined) {
+      qualitySum += e.metrics.quality_score;
+      qualityCount++;
     }
   }
 
-  // Top modules: group entities by first directory segment, count
-  const moduleCounts = new Map<string, number>();
-  for (const entity of allNodes) {
-    const parts = entity.file.split('/');
-    const modulePath = parts.length > 1 ? parts[0] : entity.file;
-    moduleCounts.set(modulePath, (moduleCounts.get(modulePath) ?? 0) + 1);
-  }
-  const topModules = [...moduleCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
+  const relations: Record<string, number> = {};
+  for (const r of view.edges) relations[r.type] = (relations[r.type] ?? 0) + 1;
+
+  const top_modules = [...moduleCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, TOP_MODULES)
     .map(([path, entity_count]) => ({ path, entity_count }));
 
-  // Average quality score
-  const withQuality = allNodes.filter(e => e.metrics?.quality_score !== undefined);
-  const averageQualityScore = withQuality.length > 0
-    ? Math.round(withQuality.reduce((sum, e) => sum + (e.metrics!.quality_score ?? 0), 0) / withQuality.length * 10) / 10
-    : 0;
-
-  // Layers from architecture.json
-  const layers = await loadLayerInfo(deps.flowlensDir, deps.graph);
-
-  // Cycle count
-  let cycleCount = 0;
-  try {
-    const cycles = await detectCycles(deps.graph, { granularity: 'file' });
-    cycleCount = cycles.length;
-  } catch {
-    // Cycle detection may fail on empty graphs; default to 0
-  }
-
-  const data: GetSummaryResult = {
+  return {
     entities,
     relations,
     languages,
-    top_modules: topModules,
-    average_quality_score: averageQualityScore,
-    layers,
-    cycle_count: cycleCount,
-    last_indexed: lastIndexed,
+    top_modules,
+    average_quality_score: qualityCount > 0 ? Math.round((qualitySum / qualityCount) * 10) / 10 : 0,
   };
-
-  return toMCPContent(buildResponse(data, lastIndexed));
-}
-
-async function loadLayerInfo(
-  flowlensDir: string,
-  graph: ServerDependencies['graph'],
-): Promise<Array<{ name: string; entity_count: number }>> {
-  const archPath = join(flowlensDir, 'architecture.json');
-  if (!existsSync(archPath)) return [];
-  try {
-    const content = await readFile(archPath, 'utf-8');
-    const config = JSON.parse(content) as ArchitectureConfig;
-    const { resolveLayer } = await import('../../analysis/architecture-validator.js');
-    const allEntities = await graph.getAllNodes();
-
-    const layerCounts = new Map<string, number>();
-    for (const l of config.layers) {
-      layerCounts.set(l.name, 0);
-    }
-    for (const entity of allEntities) {
-      const layer = resolveLayer(entity, config);
-      if (layer) {
-        layerCounts.set(layer, (layerCounts.get(layer) ?? 0) + 1);
-      }
-    }
-
-    return config.layers.map(l => ({
-      name: l.name,
-      entity_count: layerCounts.get(l.name) ?? 0,
-    }));
-  } catch {
-    return [];
-  }
 }
 
 export function registerGetSummary(server: McpServer, deps: ServerDependencies): void {
@@ -142,10 +80,10 @@ export function registerGetSummary(server: McpServer, deps: ServerDependencies):
     'get_summary',
     {
       description:
-        'Returns a high-level overview of the indexed codebase: entity counts, relations, languages, quality, layers, and cycles.',
-      inputSchema: {},
+        'High-level overview of the indexed codebase: entity counts, relations, languages, top modules, quality, layers, and cycles.',
+      inputSchema: AnalysisToolSchemas.GetSummaryInputShape,
       annotations: { readOnlyHint: true },
     },
-    async () => handleGetSummary({} as Record<string, never>, deps),
+    async (args) => handleGetSummary(args, deps),
   );
 }

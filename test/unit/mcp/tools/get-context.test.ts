@@ -224,7 +224,7 @@ describe('get_context tool', () => {
     const parsed = JSON.parse(result.content[0].text);
     const relations = parsed.data.relations;
     expect(relations.length).toBe(1);
-    expect(relations[0].relation.type).toBe('call');
+    expect(relations[0].relation_type).toBe('call');
   });
 
   it('traverses multiple depth levels', async () => {
@@ -245,7 +245,7 @@ describe('get_context tool', () => {
     );
     const parsed1 = JSON.parse(result1.content[0].text);
     const names1 = parsed1.data.relations.map(
-      (r: { connected_entity: { name: string } }) => r.connected_entity.name,
+      (r: { entity: { name: string } }) => r.entity.name,
     );
     expect(names1).toContain('B');
     expect(names1).not.toContain('C');
@@ -257,7 +257,7 @@ describe('get_context tool', () => {
     );
     const parsed2 = JSON.parse(result2.content[0].text);
     const names2 = parsed2.data.relations.map(
-      (r: { connected_entity: { name: string } }) => r.connected_entity.name,
+      (r: { entity: { name: string } }) => r.entity.name,
     );
     expect(names2).toContain('B');
     expect(names2).toContain('C');

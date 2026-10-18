@@ -216,10 +216,15 @@ describe('traverse tool', () => {
     // Service should be reached (same layer)
     const nodeNames = parsed.data.nodes.map((n: any) => n.entity.name);
     expect(nodeNames).toContain('Service');
-    // Repository is in a different layer — should be in stopped_at_boundaries
-    expect(parsed.data.stopped_at_boundaries).toContain('src/data/repo.ts/Repository');
-    // Repository should NOT appear in nodes (stopped at boundary)
-    expect(nodeNames).not.toContain('Repository');
+    // Repository is in a different layer — reported in stopped_at_boundaries
+    // with the layers crossed (contract revision 2).
+    expect(parsed.data.stopped_at_boundaries).toEqual([
+      { entity: 'src/data/repo.ts/Repository', from_layer: 'api', to_layer: 'data' },
+    ]);
+    // Repository is returned as a boundary node but not expanded further.
+    const repo = parsed.data.nodes.find((n: any) => n.entity.name === 'Repository');
+    expect(repo.boundary).toBe(true);
+    expect(repo.layer).toBe('data');
   });
 
   it('filters by relation_types', async () => {

@@ -1,134 +1,92 @@
 /**
- * get_dependents tool — finds everything that depends on a given entity.
+ * get_dependents tool — everything that depends on an entity (inbound
+ * relations), optionally the full transitive closure.
  *
- * Returns direct dependents by default, with optional transitive closure
- * via BFS when include_transitive is set.
+ * Structural `contain` edges are excluded unless explicitly requested: a file
+ * containing a class is not a dependent of it.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
-import type { Entity } from '../../contracts/entities.js';
-import type { Relation } from '../../contracts/relations.js';
-import { resolveEntity, isResolveError } from '../entity-resolver.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
-import { buildCanvasUrl } from '../../contracts/canvas-links.js';
+import type { Relation, RelationType } from '../../contracts/relations.js';
+import {
+  LIMITS, EntityToolSchemas,
+  type DependentEntry, type GetDependentsInput, type GetDependentsOutput,
+} from '../../contracts/mcp/tools.js';
+import { buildResponse, paginate, toMCPContent, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { DEFAULT_DETAIL, round, toEntityView } from '../entity-view.js';
+import { entityCanvasUrl, openView, resolveOrError } from '../tool-runtime.js';
+import type { GraphView } from '../graph-view.js';
 
-export interface GetDependentsInput {
-  entity: string;
-  include_transitive?: boolean;
-  relation_types?: string[];
-  max_results?: number;
+interface Hit {
+  id: string;
+  rel: Relation;
+  depth: number;
 }
 
-export interface DependentEntry {
-  entity: Entity;
-  relation: Relation;
-  is_direct: boolean;
-}
-
-export interface GetDependentsResult {
-  entity: Entity;
-  dependents: DependentEntry[];
-  risk_score: number;
-}
-
-const MAX_RESULTS_CAP = 250;
-
-export async function handleGetDependents(
-  args: GetDependentsInput,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const outcome = await resolveEntity(deps.graph, args.entity);
-
-  if (isResolveError(outcome)) {
-    return toMCPError(outcome.error, outcome.suggestions, lastIndexed);
-  }
-
-  const { entity } = outcome;
-  const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
-  const includeTransitive = args.include_transitive ?? false;
-  const relationTypeFilter = args.relation_types
-    ? new Set(args.relation_types)
-    : null;
-
-  // Collect direct inbound edges
-  let directEdges = await deps.graph.getEdgesTo(entity.id);
-  if (relationTypeFilter) {
-    directEdges = directEdges.filter(r => relationTypeFilter.has(r.type));
-  }
-  const dependents: DependentEntry[] = [];
-  const visited = new Set<string>([entity.id]);
-
-  for (const rel of directEdges) {
-    if (dependents.length >= maxResults) break;
-    if (visited.has(rel.from)) continue;
-    visited.add(rel.from);
-
-    const depEntity = await deps.graph.getNode(rel.from);
-    if (!depEntity) continue;
-
-    dependents.push({ entity: depEntity, relation: rel, is_direct: true });
-  }
-
-  // Transitive closure via BFS if requested
-  if (includeTransitive) {
-    const frontier = directEdges.map(r => r.from).filter(id => !visited.has(id) || true);
-    // Use visited set from above; BFS from direct dependents outward
-    let queue = [...new Set(directEdges.map(r => r.from))];
-
-    while (queue.length > 0 && dependents.length < maxResults) {
-      const nextQueue: string[] = [];
-
-      for (const nodeId of queue) {
-        if (dependents.length >= maxResults) break;
-
-        let edges = await deps.graph.getEdgesTo(nodeId);
-        if (relationTypeFilter) {
-          edges = edges.filter(r => relationTypeFilter.has(r.type));
-        }
-        for (const rel of edges) {
-          if (dependents.length >= maxResults) break;
-          if (visited.has(rel.from)) continue;
-          visited.add(rel.from);
-
-          const depEntity = await deps.graph.getNode(rel.from);
-          if (!depEntity) continue;
-
-          dependents.push({ entity: depEntity, relation: rel, is_direct: false });
-          nextQueue.push(rel.from);
-        }
+/** BFS over inbound edges; each dependent is reported once, at its shallowest depth. */
+export function collectDependents(
+  view: GraphView,
+  rootId: string,
+  accept: (type: RelationType) => boolean,
+  transitive: boolean,
+): Hit[] {
+  const hits: Hit[] = [];
+  const seen = new Set<string>([rootId]);
+  let frontier = [rootId];
+  for (let depth = 1; frontier.length > 0; depth++) {
+    const next: string[] = [];
+    for (const nodeId of frontier) {
+      for (const rel of view.edgesTo(nodeId)) {
+        if (!accept(rel.type) || seen.has(rel.from) || !view.byId.has(rel.from)) continue;
+        seen.add(rel.from);
+        hits.push({ id: rel.from, rel, depth });
+        next.push(rel.from);
       }
-
-      queue = nextQueue;
     }
+    if (!transitive) break;
+    frontier = next;
   }
+  return hits;
+}
 
-  // Compute risk score: dependents.length / total entities (0-1 normalized)
-  const allNodes = await deps.graph.getAllNodes();
-  const totalEntities = allNodes.length;
-  const riskScore = totalEntities > 0
-    ? Math.min(dependents.length / totalEntities, 1)
-    : 0;
+export async function handleGetDependents(args: GetDependentsInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const resolved = resolveOrError(view, args.entity);
+  if (resolved.error) return resolved.error;
+  const { entity } = resolved;
 
-  const data: GetDependentsResult = {
-    entity,
+  const limit = clampLimit(args.max_results, LIMITS.dependents);
+  const detail = args.detail ?? DEFAULT_DETAIL;
+  const types = args.relation_types ? new Set<string>(args.relation_types) : null;
+  const accept = (t: RelationType) => (types ? types.has(t) : t !== 'contain');
+
+  const hits = collectDependents(view, entity.id, accept, args.include_transitive ?? false);
+  const direct = hits.filter((h) => h.depth === 1).length;
+  const others = Math.max(view.nodes.length - 1, 1);
+
+  const { items, page } = paginate(hits, limit);
+  const dependents: DependentEntry[] = items.map((h) => ({
+    entity: toEntityView(view.byId.get(h.id)!, detail),
+    relation_type: h.rel.type,
+    depth: h.depth,
+    is_direct: h.depth === 1,
+    location: { file: h.rel.location.file, line: h.rel.location.line },
+    ...(detail === 'full' ? { relation: h.rel } : {}),
+  }));
+
+  const data: GetDependentsOutput = {
+    entity: toEntityView(entity, detail),
     dependents,
-    risk_score: Math.round(riskScore * 1000) / 1000,
+    direct_count: direct,
+    transitive_count: hits.length - direct,
+    risk_score: round(Math.min(hits.length / others, 1)),
   };
 
-  const response = buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: dependents.length,
-    canvas_url: buildCanvasUrl({
-      kind: entity.kind === 'file' ? 'file' : 'entity',
-      identifier: entity.qualified_name,
-    }),
-  });
-
-  return toMCPContent(response);
+  return toMCPContent(buildResponse(data, view.lastIndexed, {
+    page, detail, canvas_url: entityCanvasUrl(entity),
+  }));
 }
 
 export function registerGetDependents(server: McpServer, deps: ServerDependencies): void {
@@ -136,15 +94,10 @@ export function registerGetDependents(server: McpServer, deps: ServerDependencie
     'get_dependents',
     {
       description:
-        'Finds all entities that depend on a given entity, with optional transitive closure.',
-      inputSchema: {
-        entity: z.string().describe('Entity identifier: qualified name, ID, or file path'),
-        include_transitive: z.boolean().optional().default(false).describe('Include transitive dependents'),
-        relation_types: z.array(z.string()).optional().describe('Filter by relation types (e.g. ["import", "call"])'),
-        max_results: z.number().optional().default(50).describe('Max results (default 50, max 250)'),
-      },
+        'Entities that depend on a given entity (who breaks if it changes), with optional transitive closure and a risk score.',
+      inputSchema: EntityToolSchemas.GetDependentsInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleGetDependents(args as GetDependentsInput, deps),
+    async (args) => handleGetDependents(args, deps),
   );
 }

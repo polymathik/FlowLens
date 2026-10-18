@@ -5,55 +5,30 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
-import { resolveEntity, isResolveError } from '../entity-resolver.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
+import { EntityToolSchemas, type AnnotateInput, type AnnotateOutput } from '../../contracts/mcp/tools.js';
+import { buildResponse, toMCPContent, type ToolResult } from '../response-builder.js';
+import { openView, resolveOrError } from '../tool-runtime.js';
 
-export interface AnnotateInput {
-  entity: string;
-  text: string;
-  category: 'convention' | 'decision' | 'warning' | 'todo';
-  author?: string;
-}
-
-export interface AnnotateResult {
-  annotation_id: string;
-  entity_id: string;
-  created_at: string;
-}
-
-export async function handleAnnotate(
-  args: AnnotateInput,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const outcome = await resolveEntity(deps.graph, args.entity);
-
-  if (isResolveError(outcome)) {
-    return toMCPError(outcome.error, outcome.suggestions, lastIndexed);
-  }
-
-  const { entity } = outcome;
+export async function handleAnnotate(args: AnnotateInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const resolved = resolveOrError(view, args.entity);
+  if (resolved.error) return resolved.error;
 
   const annotation = deps.annotationStore.add({
-    entity_id: entity.id,
+    entity_id: resolved.entity.id,
     text: args.text,
     category: args.category,
     author: args.author ?? 'unknown',
   });
-
   await deps.annotationStore.save();
 
-  const data: AnnotateResult = {
+  const data: AnnotateOutput = {
     annotation_id: annotation.id,
-    entity_id: entity.id,
+    entity_id: resolved.entity.id,
     created_at: annotation.created_at,
   };
-
-  const response = buildResponse(data, lastIndexed);
-  return toMCPContent(response);
+  return toMCPContent(buildResponse(data, view.lastIndexed));
 }
 
 export function registerAnnotate(server: McpServer, deps: ServerDependencies): void {
@@ -62,13 +37,8 @@ export function registerAnnotate(server: McpServer, deps: ServerDependencies): v
     {
       description:
         'Creates an annotation on a code entity for tracking conventions, decisions, warnings, or TODOs.',
-      inputSchema: {
-        entity: z.string().describe('Entity identifier: qualified name, ID, or file path'),
-        text: z.string().describe('Annotation text'),
-        category: z.enum(['convention', 'decision', 'warning', 'todo']).describe('Annotation category'),
-        author: z.string().optional().default('unknown').describe('Author name'),
-      },
+      inputSchema: EntityToolSchemas.AnnotateInputShape,
     },
-    async (args) => handleAnnotate(args as AnnotateInput, deps),
+    async (args) => handleAnnotate(args, deps),
   );
 }

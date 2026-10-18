@@ -1,161 +1,106 @@
 /**
- * get_context tool — retrieves full context around a code entity including
- * relations, metrics, and annotations.
+ * get_context tool — the neighbourhood of an entity: relations up to `depth`
+ * (BFS, both directions), its metrics and annotations.
  *
- * BFS traversal collects relations at each depth level up to the requested
- * depth, then caps at max_results.
+ * The full neighbourhood is computed first (in memory, from the cached graph
+ * view) and then paginated, so total_count/truncated are exact.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
-import type { Entity } from '../../contracts/entities.js';
-import type { Relation, RelationType } from '../../contracts/relations.js';
-import type { Annotation } from '../../contracts/mcp/annotations.js';
-import { resolveEntity, isResolveError } from '../entity-resolver.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
-import { buildCanvasUrl } from '../../contracts/canvas-links.js';
+import type { Relation } from '../../contracts/relations.js';
+import {
+  LIMITS, EntityToolSchemas,
+  type GetContextInput, type GetContextOutput, type ContextRelation,
+} from '../../contracts/mcp/tools.js';
+import { buildResponse, paginate, toMCPContent, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { DEFAULT_DETAIL, toEntityView } from '../entity-view.js';
+import { entityCanvasUrl, openView, resolveOrError } from '../tool-runtime.js';
 
-export interface GetContextInput {
-  entity: string;
-  depth?: number;
-  relation_types?: string[];
-  include_metrics?: boolean;
-  max_results?: number;
-}
+/** Safety ceiling on relations explored; beyond it total_count becomes a lower bound. */
+export const MAX_EXPLORED_RELATIONS = 50_000;
 
-export interface ContextRelation {
-  relation: Relation;
-  connected_entity: Entity;
-  direction: 'outbound' | 'inbound';
+interface Hit {
+  rel: Relation;
+  neighbourId: string;
+  direction: 'inbound' | 'outbound';
   depth: number;
 }
 
-export interface GetContextResult {
-  entity: Entity;
-  relations: ContextRelation[];
-  annotations: Annotation[];
-}
+export async function handleGetContext(args: GetContextInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const resolved = resolveOrError(view, args.entity);
+  if (resolved.error) return resolved.error;
+  const { entity } = resolved;
 
-const MAX_RESULTS_CAP = 250;
-
-export async function handleGetContext(
-  args: GetContextInput,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const outcome = await resolveEntity(deps.graph, args.entity);
-
-  if (isResolveError(outcome)) {
-    return toMCPError(outcome.error, outcome.suggestions, lastIndexed);
-  }
-
-  const { entity } = outcome;
-  const depth = args.depth ?? 2;
-  const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
+  const depth = Math.min(Math.max(args.depth ?? LIMITS.context.depthDefault, 1), LIMITS.context.depthCap);
+  const limit = clampLimit(args.max_results, LIMITS.context);
+  const detail = args.detail ?? DEFAULT_DETAIL;
   const includeMetrics = args.include_metrics ?? true;
-  const filterTypes = args.relation_types
-    ? new Set(args.relation_types)
-    : null;
+  const filter = args.relation_types ? new Set<string>(args.relation_types) : null;
 
-  // BFS traversal to collect relations at each depth level
-  const collected: ContextRelation[] = [];
+  const hits: Hit[] = [];
   const visitedNodes = new Set<string>([entity.id]);
-  const visitedRelations = new Set<string>();
+  const visitedRels = new Set<string>();
   let frontier = [entity.id];
+  let capped = false;
 
-  for (let d = 1; d <= depth && frontier.length > 0 && collected.length < maxResults; d++) {
-    const nextFrontier: string[] = [];
-
+  for (let d = 1; d <= depth && frontier.length > 0 && !capped; d++) {
+    const next: string[] = [];
     for (const nodeId of frontier) {
-      if (collected.length >= maxResults) break;
-
-      // Outbound relations
-      const outbound = await deps.graph.getEdgesFrom(nodeId);
-      for (const rel of outbound) {
-        if (collected.length >= maxResults) break;
-        if (visitedRelations.has(rel.id)) continue;
-        if (filterTypes && !filterTypes.has(rel.type)) continue;
-
-        visitedRelations.add(rel.id);
-        const connected = await deps.graph.getNode(rel.to);
-        if (!connected) continue;
-
-        collected.push({
-          relation: rel,
-          connected_entity: stripMetrics(connected, includeMetrics),
-          direction: 'outbound',
-          depth: d,
-        });
-
-        if (!visitedNodes.has(rel.to)) {
-          visitedNodes.add(rel.to);
-          nextFrontier.push(rel.to);
-        }
-      }
-
-      // Inbound relations
-      const inbound = await deps.graph.getEdgesTo(nodeId);
-      for (const rel of inbound) {
-        if (collected.length >= maxResults) break;
-        if (visitedRelations.has(rel.id)) continue;
-        if (filterTypes && !filterTypes.has(rel.type)) continue;
-
-        visitedRelations.add(rel.id);
-        const connected = await deps.graph.getNode(rel.from);
-        if (!connected) continue;
-
-        collected.push({
-          relation: rel,
-          connected_entity: stripMetrics(connected, includeMetrics),
-          direction: 'inbound',
-          depth: d,
-        });
-
-        if (!visitedNodes.has(rel.from)) {
-          visitedNodes.add(rel.from);
-          nextFrontier.push(rel.from);
+      const sides: Array<[Relation[], 'outbound' | 'inbound']> = [
+        [view.edgesFrom(nodeId), 'outbound'],
+        [view.edgesTo(nodeId), 'inbound'],
+      ];
+      for (const [rels, direction] of sides) {
+        for (const rel of rels) {
+          if (visitedRels.has(rel.id) || (filter && !filter.has(rel.type))) continue;
+          visitedRels.add(rel.id);
+          const neighbourId = direction === 'outbound' ? rel.to : rel.from;
+          if (!view.byId.has(neighbourId)) continue; // dangling endpoint
+          hits.push({ rel, neighbourId, direction, depth: d });
+          if (!visitedNodes.has(neighbourId)) {
+            visitedNodes.add(neighbourId);
+            next.push(neighbourId);
+          }
+          if (visitedRels.size >= MAX_EXPLORED_RELATIONS) capped = true;
         }
       }
     }
-
-    frontier = nextFrontier;
+    frontier = next;
   }
 
-  const annotations = deps.annotationStore.getForEntity(entity.id);
+  const counts: GetContextOutput['relation_counts'] = { inbound: 0, outbound: 0, by_type: {} };
+  for (const h of hits) {
+    counts[h.direction]++;
+    counts.by_type[h.rel.type] = (counts.by_type[h.rel.type] ?? 0) + 1;
+  }
 
-  const resultEntity = stripMetrics(entity, includeMetrics);
-  const data: GetContextResult = {
-    entity: resultEntity,
-    relations: collected,
-    annotations,
+  const { items, page } = paginate(hits, limit, { estimate: capped });
+  const relations: ContextRelation[] = items.map((h) => ({
+    direction: h.direction,
+    relation_type: h.rel.type,
+    depth: h.depth,
+    entity: toEntityView(view.byId.get(h.neighbourId)!, detail, { metrics: includeMetrics }),
+    location: { file: h.rel.location.file, line: h.rel.location.line },
+    ...(detail === 'full' ? { relation: h.rel } : {}),
+  }));
+
+  const data: GetContextOutput = {
+    // The root entity always carries its complete metrics (when requested).
+    entity: {
+      ...toEntityView(entity, detail, { metrics: false }),
+      ...(includeMetrics && entity.metrics ? { metrics: entity.metrics } : {}),
+    },
+    relations,
+    relation_counts: counts,
+    annotations: deps.annotationStore.getForEntity(entity.id),
   };
 
-  // Count total available (for truncation info) — use first-level only as estimate
-  const outTotal = await deps.graph.getEdgesFrom(entity.id);
-  const inTotal = await deps.graph.getEdgesTo(entity.id);
-  const totalEstimate = outTotal.length + inTotal.length;
-
-  const canvasUrl = buildCanvasUrl({
-    kind: entity.kind === 'file' ? 'file' : 'entity',
-    identifier: entity.qualified_name,
-  });
-
-  const response = buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: collected.length,
-    total_count: totalEstimate,
-    canvas_url: canvasUrl,
-  });
-
-  return toMCPContent(response);
-}
-
-function stripMetrics(entity: Entity, includeMetrics: boolean): Entity {
-  if (includeMetrics || !entity.metrics) return entity;
-  const { metrics: _, ...rest } = entity;
-  return rest as Entity;
+  return toMCPContent(buildResponse(data, view.lastIndexed, {
+    page, detail, canvas_url: entityCanvasUrl(entity),
+  }));
 }
 
 export function registerGetContext(server: McpServer, deps: ServerDependencies): void {
@@ -163,16 +108,11 @@ export function registerGetContext(server: McpServer, deps: ServerDependencies):
     'get_context',
     {
       description:
-        'Retrieves the full context around a code entity including relations, metrics, and annotations.',
-      inputSchema: {
-        entity: z.string().describe('Entity identifier: qualified name, ID, or file path'),
-        depth: z.number().optional().default(2).describe('Relation traversal depth'),
-        relation_types: z.array(z.string()).optional().describe('Filter by relation types'),
-        include_metrics: z.boolean().optional().default(true).describe('Include entity metrics'),
-        max_results: z.number().optional().default(50).describe('Max relations (default 50, max 250)'),
-      },
+        'Neighbourhood of a code entity: inbound/outbound relations up to `depth`, metrics and annotations. '
+        + 'Ambiguous names return candidates to retry with.',
+      inputSchema: EntityToolSchemas.GetContextInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleGetContext(args as GetContextInput, deps),
+    async (args) => handleGetContext(args, deps),
   );
 }

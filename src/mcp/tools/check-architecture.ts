@@ -1,135 +1,60 @@
 /**
- * check_architecture tool — validates the codebase graph against architecture
- * layer rules defined in architecture.json and reports violations.
+ * check_architecture tool — validates the graph against the layer rules in
+ * architecture.json and reports violations with readable names and rule text.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ServerDependencies } from '../server.js';
-import type { ArchitectureConfig } from '../../contracts/architecture.js';
-import type { ArchitectureViolation } from '../../contracts/analysis/architecture.js';
-import { validateArchitecture, resolveLayer } from '../../analysis/architecture-validator.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
-
-export interface CheckArchitectureInput {
-  scope?: string;
-  max_results?: number;
-}
-
-export interface LayerInfo {
-  name: string;
-  entity_count: number;
-  violation_count: number;
-}
-
-export interface CheckArchitectureResult {
-  violations: ArchitectureViolation[];
-  layers: LayerInfo[];
-  summary: {
-    total_violations: number;
-    layers_with_violations: string[];
-  };
-}
-
-const MAX_RESULTS_CAP = 250;
+import {
+  ANALYSIS_LIMITS, AnalysisToolSchemas,
+  type CheckArchitectureInput, type CheckArchitectureOutput,
+} from '../../contracts/mcp/tools.js';
+import { countEntitiesByLayer, countViolationsByLayer } from '../../analysis/layer-stats.js';
+import { isInScope } from '../../analysis/module-path.js';
+import { buildResponse, paginate, toMCPContent, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { archOrError, openView } from '../tool-runtime.js';
+import { cachedViolations } from '../analysis-cache.js';
 
 export async function handleCheckArchitecture(
   args: CheckArchitectureInput,
   deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-  const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
+): Promise<ToolResult> {
+  const view = await openView(deps);
+  const arch = await archOrError(deps, view);
+  if (arch.error) return arch.error;
 
-  const archConfig = await loadArchConfig(deps.flowlensDir);
-  if (!archConfig) {
-    return toMCPError(
-      'No architecture.json found — run "flowlens infer-architecture" first',
-      [],
-      lastIndexed,
-    );
-  }
+  const limit = clampLimit(args.max_results, ANALYSIS_LIMITS.architecture);
+  const violations = cachedViolations(view, arch).filter((v) => isInScope(v.location.file, args.scope));
 
-  let violations = await validateArchitecture(deps.graph, archConfig);
-
-  // Apply scope filter
-  if (args.scope) {
-    violations = violations.filter(v =>
-      v.location.file.startsWith(args.scope!),
-    );
-  }
-
-  // Build layer info
-  const allEntities = await deps.graph.getAllNodes();
-  const layerEntityCounts = new Map<string, number>();
-  const layerViolationCounts = new Map<string, number>();
-
-  for (const layer of archConfig.layers) {
-    layerEntityCounts.set(layer.name, 0);
-    layerViolationCounts.set(layer.name, 0);
-  }
-
-  for (const entity of allEntities) {
-    const layer = resolveLayer(entity, archConfig);
-    if (layer) {
-      layerEntityCounts.set(layer, (layerEntityCounts.get(layer) ?? 0) + 1);
-    }
-  }
-
-  for (const v of violations) {
-    layerViolationCounts.set(v.layer_from, (layerViolationCounts.get(v.layer_from) ?? 0) + 1);
-  }
-
-  const layers: LayerInfo[] = archConfig.layers.map(l => ({
+  const entityCounts = countEntitiesByLayer(view.nodes, arch.config, arch.layerMap).counts;
+  const violationCounts = countViolationsByLayer(violations, arch.config);
+  const layers = arch.config.layers.map((l) => ({
     name: l.name,
-    entity_count: layerEntityCounts.get(l.name) ?? 0,
-    violation_count: layerViolationCounts.get(l.name) ?? 0,
+    entity_count: entityCounts.get(l.name) ?? 0,
+    violation_count: violationCounts.get(l.name) ?? 0,
   }));
 
-  const layersWithViolations = layers
-    .filter(l => l.violation_count > 0)
-    .map(l => l.name);
-  const totalViolations = violations.length;
-  const truncated = violations.slice(0, maxResults);
-
-  const data: CheckArchitectureResult = {
-    violations: truncated,
+  const { items, page } = paginate(violations, limit);
+  const data: CheckArchitectureOutput = {
+    violations: items,
     layers,
     summary: {
-      total_violations: totalViolations,
-      layers_with_violations: layersWithViolations,
+      total_violations: violations.length,
+      layers_with_violations: layers.filter((l) => l.violation_count > 0).map((l) => l.name),
     },
   };
-
-  return toMCPContent(buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: truncated.length,
-    total_count: totalViolations,
-  }));
-}
-
-async function loadArchConfig(flowlensDir: string): Promise<ArchitectureConfig | null> {
-  const path = join(flowlensDir, 'architecture.json');
-  if (!existsSync(path)) return null;
-  const content = await readFile(path, 'utf-8');
-  return JSON.parse(content) as ArchitectureConfig;
+  return toMCPContent(buildResponse(data, view.lastIndexed, { page }));
 }
 
 export function registerCheckArchitecture(server: McpServer, deps: ServerDependencies): void {
   server.registerTool(
     'check_architecture',
     {
-      description:
-        'Validates the codebase against architecture layer rules and reports violations.',
-      inputSchema: {
-        scope: z.string().optional().describe('Restrict to file path prefix'),
-        max_results: z.number().optional().default(50).describe('Max results (default 50, max 250)'),
-      },
+      description: 'Validates the codebase against architecture layer rules and reports violations.',
+      inputSchema: AnalysisToolSchemas.CheckArchitectureInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleCheckArchitecture(args as CheckArchitectureInput, deps),
+    async (args) => handleCheckArchitecture(args, deps),
   );
 }
