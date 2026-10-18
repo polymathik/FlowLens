@@ -48,7 +48,7 @@
     "bench": "tsx benchmarks/run-all.ts",
     "prepublishOnly": "npm run lint && npm test && npm run clean && npm run build",
     "test:canvas:e2e": "node test/canvas/e2e/run.mjs",
-    "smoke:pack": "node .github/scripts/pack-smoke.mjs"
+    "smoke:pack": "node scripts/pack-smoke.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

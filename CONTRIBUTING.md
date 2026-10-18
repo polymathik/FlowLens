@@ -34,8 +34,14 @@ npm run lint && npm test && npm run build
 npm pack --dry-run      # only dist/, README, LICENSE, NOTICE, package.json
 ```
 
-CI runs the same on Linux, macOS and Windows (Node 20 and 22) and installs
-the packed tarball into a clean project as a smoke test.
+There is no hosted CI. Before a release, also run the clean-install smoke
+test, which packs the tarball, installs it into a fresh temp project and
+exercises init, index, check, export, doctor, report and the explorer:
+
+```bash
+npm run smoke:pack
+npm run test:canvas:e2e   # browser E2E (needs Playwright's Chromium)
+```
 
 ## Docs and diagrams
 

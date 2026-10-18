@@ -8,7 +8,7 @@
  * must list the project. Runs with an isolated FLOWLENS_HOME and an
  * ephemeral daemon port, and stops the daemon at the end.
  *
- * Usage: node .github/scripts/pack-smoke.mjs [--keep]
+ * Usage: node scripts/pack-smoke.mjs [--keep]
  * Assumes `npm run build` already ran. Exits non-zero on any failure.
  */
 import { execFileSync } from 'node:child_process';
@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repo = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+const repo = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const isWin = process.platform === 'win32';
 const keep = process.argv.includes('--keep');
 const results = [];
