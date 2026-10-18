@@ -56,6 +56,7 @@ import { ZoneActionsContext, type ZoneActions } from './nodes/zone-actions';
 import { ArchitectureEditor } from './panels/rules/ArchitectureEditor';
 import { MINIMAP_STROKE } from './nodes/NodeShell';
 import { useColorMode } from './explorer/theme';
+import { TimelineBar, TimelineOverlays, TimelineProvider, TimelineToggle, useTimelineGraph, useTimelineView } from '../timeline';
 import { COLORS } from './shared/ui';
 
 function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error' }) {
@@ -86,9 +87,10 @@ function CanvasInner() {
   useZoneOverridesLoader();
   useCommunityStateLoader();
   const overlayData = useOverlayData(graph.version);
-  const model = useMapModel(graph);
+  const tl = useTimelineGraph(graph);
+  const model = useMapModel(tl.graph);
   const containerId = model.view.containerId;
-  useCommunitySync(model.view, graph.hierarchy);
+  useCommunitySync(tl.active ? { ...model.view, zoning: undefined } : model.view, graph.hierarchy);
   const zoneActions = useMemo<ZoneActions>(
     () => ({
       toggle: (itemId, expanded) => store.getState().setZoneExpansion({ [expansionKey(containerId, itemId)]: expanded }),
@@ -104,6 +106,7 @@ function CanvasInner() {
     [setNodes],
   );
   const view = useCanvasView(nodes, layoutEdges as Edge<CanvasEdgeData>[], graph.index, overlayData);
+  const shown = useTimelineView(view.displayNodes, view.displayEdges, model.view, tl.graph.hierarchy);
   useCanvasLayout({ model, visibleIds: view.visibleIds, commit });
   useSemanticZoom();
   useHashRoute(graph.entities, graph.hierarchy, !graph.loading && graph.entities.length > 0);
@@ -140,13 +143,13 @@ function CanvasInner() {
         onToggleRules={() => setShowRules((v) => !v)}
         onExport={onExport}
         exporting={exporting}
-        zoneControls={<ZoneControls view={model.view} hierarchy={graph.hierarchy} />}
+        zoneControls={<><ZoneControls view={model.view} hierarchy={graph.hierarchy} /><TimelineToggle /></>}
       />
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         <ZoneActionsContext.Provider value={zoneActions}>
         <ReactFlow
-          nodes={view.displayNodes}
-          edges={view.displayEdges}
+          nodes={shown.nodes}
+          edges={shown.edges}
           onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -174,12 +177,14 @@ function CanvasInner() {
         </ReactFlow>
         </ZoneActionsContext.Provider>
         <ZoneNotice view={model.view} />
+        <TimelineOverlays frame={shown.frame} notApplicable={shown.notApplicable} />
         {menu && <ZoneMenu target={menu} view={model.view} hierarchy={graph.hierarchy} onClose={() => setMenu(null)} />}
         {showFilter && <FilterPanel />}
         {showRules && <ArchitectureEditor onClose={() => setShowRules(false)} />}
         <OverlayLegend nodes={view.displayNodes} />
         <DetailPanel graph={graph} edges={view.displayEdges} />
       </div>
+      <TimelineBar items={shown.items} ghosts={tl.ghosts} frame={shown.frame} />
       <SearchPanel entities={graph.entities} hierarchy={graph.hierarchy} />
     </div>
   );
@@ -188,7 +193,9 @@ function CanvasInner() {
 export default function Canvas() {
   return (
     <ReactFlowProvider>
-      <CanvasInner />
+      <TimelineProvider>
+        <CanvasInner />
+      </TimelineProvider>
     </ReactFlowProvider>
   );
 }

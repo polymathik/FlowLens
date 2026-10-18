@@ -13,6 +13,7 @@ import { isSummaryTier, labelScale, quantizeZoom } from '../../utils/lod';
 import { chipWidth } from '../../layout/cut-layout';
 import { MetricsBadge } from '../shared/MetricsBadge';
 import { useZoneActions } from './zone-actions';
+import { TimelineDelta, TimelineGrowth } from '../../timeline/ZoneTimeline';
 
 const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 /** Communities only: where the zone comes from and how self-contained it is (never "the architecture"). */
@@ -75,23 +76,25 @@ export const ZoneNode = React.memo(({ id, data, selected, width, height }: ZoneB
           <span className="fl-zone-swatch" aria-hidden />
           <span className="fl-zone-name">{data.label}</span>
           {!summary && <span className="fl-zone-count">{data.fileCount}</span>}
+          {!summary && <TimelineDelta timeline={data.timeline} />}
           <span className="fl-zone-caret" aria-hidden>
             {data.expanded ? '▾' : '▸'}
           </span>
         </span>
         {summary && (
           <span className="fl-zone-count fl-zone-sub" data-testid="zone-summary">
-            {plural(data.fileCount, 'file')} · {plural(data.symbolCount, 'symbol')}
-            <MetricsBadge score={data.qualityScore} />
+            {data.timeline ? plural(data.fileCount, 'file') : `${plural(data.fileCount, 'file')} · ${plural(data.symbolCount, 'symbol')}`}
+            {!data.timeline && <MetricsBadge score={data.qualityScore} />}
           </span>
         )}
       </button>
       {!data.expanded && !summary && (
         <div className="fl-zone-card-body" style={{ paddingTop: 34 * Math.min(scale, 1.25) }}>
           <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-            {plural(data.fileCount, 'file')} · {plural(data.symbolCount, 'symbol')}
-            {tier !== 'module' && <MetricsBadge score={data.qualityScore} />}
+            {data.timeline ? plural(data.fileCount, 'file') : `${plural(data.fileCount, 'file')} · ${plural(data.symbolCount, 'symbol')}`}
+            {tier !== 'module' && !data.timeline && <MetricsBadge score={data.qualityScore} />}
           </span>
+          {data.timeline && <TimelineGrowth timeline={data.timeline} />}
           {data.topFiles.length > 0 && (
             <ul data-testid="top-files">
               {data.topFiles.map((f) => (

@@ -32,6 +32,7 @@
     "src/canvas/router",
     "src/canvas/store",
     "src/canvas/styles",
+    "src/canvas/timeline",
     "src/canvas/utils"
   ]
 }
