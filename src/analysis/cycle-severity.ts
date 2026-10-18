@@ -1,69 +1,72 @@
 /**
- * Severity scoring for detected cycles.
+ * Severity scoring for detected cycles (Phase 10, rule-based).
  *
- * Weighted formula:
- * - Length factor (0.3): shorter cycles = higher score
- * - Criticality factor (0.3): based on avg afferent coupling
- * - Cross-boundary factor (0.4): entities spanning multiple directories
+ * The old weighted formula keyed "cross-boundary" on the first path segment,
+ * so almost every cycle in a `src/` tree scored low and "high" never fired.
+ * Severity is now explained by three signals:
+ *
+ * - **layers**: members resolve to more than one architecture layer
+ * - **modules**: members live in more than one directory module
+ * - **critical**: some member is central — PageRank ≥ 2× the average on the
+ *   collapsed graph, ≥ 5 distinct dependents outside the cycle, or a stored
+ *   average afferent coupling ≥ 3
+ *
+ * | severity | rule |
+ * |---|---|
+ * | high   | crosses layers, or crosses modules and is critical |
+ * | medium | crosses modules, or is critical |
+ * | low    | everything else (a local cycle inside one module) |
  */
 
-import type { Entity } from '../contracts/entities.js';
 import type { CycleSeverity } from '../contracts/analysis/cycles.js';
 
-/**
- * Compute severity for a cycle given its entity details.
- */
-export function computeCycleSeverity(
-  cycleEntities: Entity[],
-  cycleLength: number,
-): CycleSeverity {
-  const score =
-    0.3 * lengthFactor(cycleLength) +
-    0.3 * criticalityFactor(cycleEntities) +
-    0.4 * crossBoundaryFactor(cycleEntities);
+export const CRITICAL_PAGERANK_RATIO = 2;
+export const CRITICAL_EXTERNAL_DEPENDENTS = 5;
+export const CRITICAL_AFFERENT_COUPLING = 3;
 
-  if (score > 0.7) return 'high';
-  if (score >= 0.4) return 'medium';
-  return 'low';
+export interface CycleSeverityInput {
+  /** Distinct non-null architecture layers touched by the members. */
+  layers: string[];
+  /** Distinct directory modules touched by the members. */
+  moduleCount: number;
+  /** Highest member PageRank × node count (1 = average). */
+  maxPageRankRatio: number;
+  /** Distinct nodes outside the cycle with an edge into it. */
+  externalDependents: number;
+  /** Average stored afferent coupling of member entities (0 if unknown). */
+  avgAfferentCoupling: number;
 }
 
-/**
- * Shorter cycles are more problematic.
- * Score = 1 - (length - 2) / 10, clamped to [0, 1].
- */
-function lengthFactor(cycleLength: number): number {
-  return Math.max(0, Math.min(1, 1 - (cycleLength - 2) / 10));
+export interface CycleSeverityResult {
+  severity: CycleSeverity;
+  reasons: string[];
 }
 
-/**
- * Higher average afferent coupling = more critical.
- * Normalized: avg_ca / (avg_ca + 1) to map to [0, 1).
- */
-function criticalityFactor(entities: Entity[]): number {
-  if (entities.length === 0) return 0;
+export function assessCycleSeverity(input: CycleSeverityInput): CycleSeverityResult {
+  const reasons: string[] = [];
+  const crossesLayers = input.layers.length > 1;
+  const crossesModules = input.moduleCount > 1;
 
-  const totalCa = entities.reduce(
-    (sum, e) => sum + (e.metrics?.afferent_coupling ?? 0),
-    0,
-  );
-  const avgCa = totalCa / entities.length;
+  if (crossesLayers) reasons.push(`crosses architecture layers: ${input.layers.join(', ')}`);
+  if (crossesModules) reasons.push(`spans ${input.moduleCount} modules`);
 
-  return avgCa / (avgCa + 1);
-}
+  const criticalBy: string[] = [];
+  if (input.maxPageRankRatio >= CRITICAL_PAGERANK_RATIO) {
+    criticalBy.push(`a member has ${input.maxPageRankRatio.toFixed(1)}x average PageRank`);
+  }
+  if (input.externalDependents >= CRITICAL_EXTERNAL_DEPENDENTS) {
+    criticalBy.push(`${input.externalDependents} dependents outside the cycle`);
+  }
+  if (input.avgAfferentCoupling >= CRITICAL_AFFERENT_COUPLING) {
+    criticalBy.push(`average afferent coupling ${input.avgAfferentCoupling.toFixed(1)}`);
+  }
+  const critical = criticalBy.length > 0;
+  if (critical) reasons.push(`critical: ${criticalBy.join('; ')}`);
 
-/**
- * 1.0 if cycle entities span multiple top-level directories,
- * 0.0 if all in the same directory.
- */
-function crossBoundaryFactor(entities: Entity[]): number {
-  if (entities.length === 0) return 0;
+  let severity: CycleSeverity = 'low';
+  if (crossesLayers || (crossesModules && critical)) severity = 'high';
+  else if (crossesModules || critical) severity = 'medium';
 
-  const dirs = new Set(
-    entities.map((e) => {
-      const parts = e.file.split('/');
-      return parts.length > 1 ? parts[0] : '';
-    }),
-  );
-
-  return dirs.size > 1 ? 1.0 : 0.0;
+  if (reasons.length === 0) reasons.push('local cycle within one module');
+  return { severity, reasons };
 }

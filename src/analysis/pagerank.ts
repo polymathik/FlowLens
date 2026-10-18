@@ -22,62 +22,66 @@ export async function computePageRank(
   graph: GraphStore,
   options?: PageRankOptions,
 ): Promise<Map<string, number>> {
+  const [allNodes, allEdges] = await Promise.all([graph.getAllNodes(), graph.getAllEdges()]);
+  const adjacency = new Map<string, string[]>();
+  for (const node of allNodes) adjacency.set(node.id, []);
+  for (const edge of allEdges) {
+    // Edges from unknown sources still count towards out-degree (as before),
+    // but only known nodes receive rank.
+    if (!adjacency.has(edge.from)) adjacency.set(edge.from, []);
+    adjacency.get(edge.from)!.push(edge.to);
+  }
+  const known = new Set(allNodes.map((n) => n.id));
+  return computePageRankOnAdjacency(adjacency, options, known);
+}
+
+/**
+ * PageRank over an arbitrary adjacency list (used for collapsed file/module
+ * graphs in cycle severity). Duplicate targets count as parallel edges.
+ * `nodes` limits which ids receive rank (defaults to every adjacency key).
+ */
+export function computePageRankOnAdjacency(
+  adjacency: Map<string, Iterable<string>>,
+  options?: PageRankOptions,
+  nodes?: Set<string>,
+): Map<string, number> {
   const d = options?.damping_factor ?? 0.85;
   const maxIter = options?.max_iterations ?? 100;
   const threshold = options?.convergence_threshold ?? 0.0001;
 
-  const allNodes = await graph.getAllNodes();
-  const allEdges = await graph.getAllEdges();
-  const N = allNodes.length;
+  const ids = [...(nodes ?? adjacency.keys())];
+  const N = ids.length;
   if (N === 0) return new Map();
 
-  // Build adjacency: inbound[nodeId] = [sourceIds], outDegree[nodeId] = count
-  const inbound = new Map<string, string[]>();
-  const outDegree = new Map<string, number>();
-
-  for (const node of allNodes) {
-    inbound.set(node.id, []);
-    outDegree.set(node.id, 0);
-  }
-
-  for (const edge of allEdges) {
-    if (inbound.has(edge.to)) {
-      inbound.get(edge.to)!.push(edge.from);
+  const inbound = new Map<string, string[]>(ids.map((id) => [id, []]));
+  const outDegree = new Map<string, number>(ids.map((id) => [id, 0]));
+  for (const [from, targets] of adjacency) {
+    for (const to of targets) {
+      inbound.get(to)?.push(from);
+      outDegree.set(from, (outDegree.get(from) ?? 0) + 1);
     }
-    outDegree.set(edge.from, (outDegree.get(edge.from) ?? 0) + 1);
   }
 
-  // Initialize ranks uniformly
-  let ranks = new Map<string, number>();
-  const initial = 1 / N;
-  for (const node of allNodes) ranks.set(node.id, initial);
+  let ranks = new Map<string, number>(ids.map((id) => [id, 1 / N]));
 
-  // Iterate until convergence or max iterations
   for (let iter = 0; iter < maxIter; iter++) {
-    // Compute dangling node contribution: nodes with no outgoing edges
-    // would otherwise leak rank. Redistribute their rank evenly to all nodes.
+    // Dangling nodes (no outgoing edges) redistribute their rank evenly.
     let danglingSum = 0;
-    for (const node of allNodes) {
-      if ((outDegree.get(node.id) ?? 0) === 0) {
-        danglingSum += ranks.get(node.id) ?? 0;
-      }
+    for (const id of ids) {
+      if ((outDegree.get(id) ?? 0) === 0) danglingSum += ranks.get(id) ?? 0;
     }
     const danglingContrib = danglingSum / N;
 
     const newRanks = new Map<string, number>();
     let maxDelta = 0;
-
-    for (const node of allNodes) {
-      const incoming = inbound.get(node.id) ?? [];
+    for (const id of ids) {
       let sum = danglingContrib;
-      for (const srcId of incoming) {
-        const srcRank = ranks.get(srcId) ?? 0;
-        const srcOut = outDegree.get(srcId) ?? 1;
-        sum += srcRank / srcOut;
+      for (const src of inbound.get(id)!) {
+        sum += (ranks.get(src) ?? 0) / (outDegree.get(src) ?? 1);
       }
-      const newRank = (1 - d) / N + d * sum;
-      newRanks.set(node.id, newRank);
-      maxDelta = Math.max(maxDelta, Math.abs(newRank - (ranks.get(node.id) ?? 0)));
+      const rank = (1 - d) / N + d * sum;
+      newRanks.set(id, rank);
+      maxDelta = Math.max(maxDelta, Math.abs(rank - (ranks.get(id) ?? 0)));
     }
 
     ranks = newRanks;

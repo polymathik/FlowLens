@@ -8,6 +8,7 @@
 import type { Entity } from '../contracts/entities.js';
 import type { Relation, RelationType } from '../contracts/relations.js';
 import type { CycleGranularity } from '../contracts/analysis/cycles.js';
+import { moduleOfEntity } from './module-path.js';
 
 export interface CollapsedGraph {
   adjacency: Map<string, Set<string>>;
@@ -18,7 +19,8 @@ export interface CollapsedGraph {
  * Build a collapsed adjacency list from entities and edges.
  *
  * - `file`: one node per file path, edges between files
- * - `module`: one node per top-level directory (first segment of file path)
+ * - `module`: one node per directory module (an entity's parent directory;
+ *   `module` entities map to themselves) — see `module-path.ts`
  * - `function`: only function/method entities with `call` edges
  * - `all`: raw entity graph
  */
@@ -92,7 +94,7 @@ function collapseByFile(entities: Entity[], edges: Relation[]): CollapsedGraph {
 function collapseByModule(entities: Entity[], edges: Relation[]): CollapsedGraph {
   const entityToModule = new Map<string, string>();
   for (const e of entities) {
-    entityToModule.set(e.id, extractModule(e.file));
+    entityToModule.set(e.id, moduleOfEntity(e));
   }
 
   const adjacency = new Map<string, Set<string>>();
@@ -169,8 +171,3 @@ function collapseAll(entities: Entity[], edges: Relation[]): CollapsedGraph {
   return { adjacency, relationTypes };
 }
 
-/** Extract module name: first directory segment in the file path. */
-function extractModule(filePath: string): string {
-  const parts = filePath.split('/');
-  return parts.length > 1 ? parts[0] : filePath;
-}

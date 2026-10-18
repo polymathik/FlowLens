@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "inferred_by": "manual",
+  "inferred_at": "2026-10-18T00:00:00Z",
+  "layers": [
+    { "name": "api", "include": { "patterns": ["src/api/**"] }, "may_only_access": ["core"] },
+    { "name": "core", "include": { "patterns": ["src/core/**"] }, "must_not_access": ["api"] },
+    { "name": "shared", "include": { "patterns": ["src/shared/**"] }, "may_only_access": [] }
+  ]
+}

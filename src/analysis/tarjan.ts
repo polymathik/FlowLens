@@ -1,8 +1,10 @@
 /**
- * Tarjan's Strongly Connected Components algorithm.
+ * Tarjan's Strongly Connected Components algorithm (iterative).
  *
- * Operates on an adjacency list (Map<nodeId, Set<nodeId>>)
- * and returns all SCCs with size > 1 (i.e., actual cycles).
+ * Operates on an adjacency list (Map<nodeId, Set<nodeId>>) and returns all
+ * SCCs with size > 1 (i.e., actual cycles). Uses an explicit call stack so
+ * long dependency chains (tens of thousands of nodes) cannot overflow the
+ * JavaScript stack.
  */
 
 interface TarjanNode {
@@ -11,57 +13,65 @@ interface TarjanNode {
   onStack: boolean;
 }
 
+interface Frame {
+  node: string;
+  neighbors: Iterator<string>;
+}
+
 export function findStronglyConnectedComponents(
   adjacency: Map<string, Set<string>>,
 ): string[][] {
   let index = 0;
   const stack: string[] = [];
-  const nodeInfo = new Map<string, TarjanNode>();
+  const info = new Map<string, TarjanNode>();
   const sccs: string[][] = [];
+  const empty = new Set<string>();
 
-  function strongConnect(v: string): void {
-    const vInfo: TarjanNode = { index, lowlink: index, onStack: true };
-    nodeInfo.set(v, vInfo);
+  const visit = (v: string, callStack: Frame[]): void => {
+    info.set(v, { index, lowlink: index, onStack: true });
     index++;
     stack.push(v);
+    callStack.push({ node: v, neighbors: (adjacency.get(v) ?? empty)[Symbol.iterator]() });
+  };
 
-    const neighbors = adjacency.get(v);
-    if (neighbors) {
-      for (const w of neighbors) {
-        const wInfo = nodeInfo.get(w);
+  for (const root of adjacency.keys()) {
+    if (info.has(root)) continue;
+    const callStack: Frame[] = [];
+    visit(root, callStack);
+
+    while (callStack.length > 0) {
+      const frame = callStack[callStack.length - 1];
+      const vInfo = info.get(frame.node)!;
+      const next = frame.neighbors.next();
+
+      if (!next.done) {
+        const w = next.value;
+        const wInfo = info.get(w);
         if (wInfo === undefined) {
-          // w has not been visited; recurse
-          strongConnect(w);
-          const wInfoAfter = nodeInfo.get(w)!;
-          vInfo.lowlink = Math.min(vInfo.lowlink, wInfoAfter.lowlink);
+          visit(w, callStack); // "recurse"
         } else if (wInfo.onStack) {
-          // w is on the stack — part of current SCC
           vInfo.lowlink = Math.min(vInfo.lowlink, wInfo.index);
         }
+        continue;
       }
-    }
 
-    // If v is a root node, pop the stack to form an SCC
-    if (vInfo.lowlink === vInfo.index) {
-      const scc: string[] = [];
-      let w: string;
-      do {
-        w = stack.pop()!;
-        nodeInfo.get(w)!.onStack = false;
-        scc.push(w);
-      } while (w !== v);
-
-      // Only keep SCCs with more than one node (actual cycles)
-      if (scc.length > 1) {
-        sccs.push(scc);
+      // All neighbours done: "return" to the caller.
+      callStack.pop();
+      if (callStack.length > 0) {
+        const parent = info.get(callStack[callStack.length - 1].node)!;
+        parent.lowlink = Math.min(parent.lowlink, vInfo.lowlink);
       }
-    }
-  }
 
-  // Visit all nodes in the adjacency list
-  for (const node of adjacency.keys()) {
-    if (!nodeInfo.has(node)) {
-      strongConnect(node);
+      if (vInfo.lowlink === vInfo.index) {
+        const scc: string[] = [];
+        let w: string;
+        do {
+          w = stack.pop()!;
+          info.get(w)!.onStack = false;
+          scc.push(w);
+        } while (w !== frame.node);
+        if (scc.length > 1) sccs.push(scc);
+      }
     }
   }
 

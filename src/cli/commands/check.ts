@@ -2,26 +2,25 @@
  * `flowlens check`
  *
  * Run architecture validation and cycle detection against the indexed graph.
- * Exits with code 1 when issues are found, 2 on error, 0 when clean.
+ * Exit codes: 0 clean, 1 issues found, 2 usage/config error (bad flags, or a
+ * missing/invalid architecture.json when architecture validation runs).
  */
 
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { LevelGraphStore } from '../../graph/levelgraph-store.js';
-import { detectCycles } from '../../analysis/cycle-detector.js';
-import { validateArchitecture } from '../../analysis/architecture-validator.js';
+import { runCheck } from '../../analysis/check-runner.js';
 import { printHeader, printError, printSuccess } from '../output.js';
-import type { ArchitectureConfig } from '../../contracts/architecture.js';
-import type { CycleSeverity } from '../../contracts/analysis/cycles.js';
+import { CYCLE_SEVERITIES, type CycleSeverity } from '../../contracts/analysis/cycles.js';
+import { CHECK_EXIT, type CheckReport } from '../../contracts/analysis/check.js';
 
 export const checkCommand = new Command('check')
   .description('Run architecture validation and cycle detection')
   .option('--format <format>', 'Output format: text, json', 'text')
-  .option('--cycles', 'Run cycle detection only')
-  .option('--architecture', 'Run architecture validation only')
-  .option('--severity <level>', 'Minimum severity: low, medium, high', 'low')
+  .option('--cycles', 'Run cycle detection (only, unless --architecture is also given)')
+  .option('--architecture', 'Run architecture validation (only, unless --cycles is also given)')
+  .option('--severity <level>', 'Minimum cycle severity: low, medium, high', 'low')
   .option('--scope <path>', 'Limit check to a subtree')
   .action(async (opts) => {
     const rootDir = resolve('.');
@@ -29,102 +28,70 @@ export const checkCommand = new Command('check')
 
     if (!existsSync(flowlensDir)) {
       printError('.flowlens/ not found. Run "flowlens init" first.');
-      process.exit(2);
+      process.exit(CHECK_EXIT.error);
     }
+    if (!CYCLE_SEVERITIES.includes(opts.severity)) {
+      printError(`Invalid --severity '${opts.severity}'. Use one of: ${CYCLE_SEVERITIES.join(', ')}`);
+      process.exit(CHECK_EXIT.error);
+    }
+    if (opts.format !== 'text' && opts.format !== 'json') {
+      printError(`Invalid --format '${opts.format}'. Use text or json`);
+      process.exit(CHECK_EXIT.error);
+    }
+    const both = !opts.cycles && !opts.architecture;
 
     try {
       const graphStore = new LevelGraphStore();
       await graphStore.open(join(flowlensDir, 'graph'));
 
-      let cycleResults: Awaited<ReturnType<typeof detectCycles>> = [];
-      let violations: Awaited<ReturnType<typeof validateArchitecture>> = [];
-      const runCycles = !opts.architecture;
-      const runArch = !opts.cycles;
-
-      // Cycle detection
-      if (runCycles) {
-        cycleResults = await detectCycles(graphStore, {
-          granularity: 'file',
-          severity_threshold: opts.severity as CycleSeverity,
-          scope: opts.scope,
-        });
-      }
-
-      // Architecture validation
-      if (runArch) {
-        const archPath = join(flowlensDir, 'architecture.json');
-        if (existsSync(archPath)) {
-          const archConfig: ArchitectureConfig = JSON.parse(
-            await readFile(archPath, 'utf-8'),
-          );
-          violations = await validateArchitecture(graphStore, archConfig);
-        }
-      }
+      const { report, exitCode, problems } = await runCheck(graphStore, {
+        flowlensDir,
+        runCycles: both || Boolean(opts.cycles),
+        runArchitecture: both || Boolean(opts.architecture),
+        severity: opts.severity as CycleSeverity,
+        scope: opts.scope,
+      });
 
       await graphStore.close();
 
-      const hasIssues = cycleResults.length > 0 || violations.length > 0;
-
       if (opts.format === 'json') {
-        const output = {
-          timestamp: new Date().toISOString(),
-          cycles: cycleResults.map((c) => ({
-            entities: c.entities,
-            severity: c.severity,
-            granularity: c.granularity,
-          })),
-          architecture_violations: violations.map((v) => ({
-            rule: v.rule,
-            from: v.entity_from,
-            to: v.entity_to,
-            suggestion: v.auto_fix_suggestion,
-          })),
-          summary: {
-            cycles_found: cycleResults.length,
-            violations_found: violations.length,
-            severity_breakdown: {
-              high: cycleResults.filter((c) => c.severity === 'high').length,
-              medium: cycleResults.filter((c) => c.severity === 'medium').length,
-              low: cycleResults.filter((c) => c.severity === 'low').length,
-            },
-          },
-        };
-        console.log(JSON.stringify(output, null, 2));
+        console.log(JSON.stringify({ ...report, problems }, null, 2));
       } else {
-        printHeader('FlowLens Check');
-
-        if (runCycles) {
-          if (cycleResults.length === 0) {
-            printSuccess('No circular dependencies detected');
-          } else {
-            console.log(`\n${cycleResults.length} circular dependencies found:`);
-            for (const cycle of cycleResults) {
-              console.log(
-                `  [${cycle.severity}] ${cycle.entities.join(' → ')} → ${cycle.entities[0]}`,
-              );
-            }
-          }
-        }
-
-        if (runArch) {
-          if (violations.length === 0) {
-            printSuccess('No architecture violations');
-          } else {
-            console.log(`\n${violations.length} architecture violations found:`);
-            for (const v of violations) {
-              console.log(`  ${v.rule}`);
-              if (v.auto_fix_suggestion)
-                console.log(`    → ${v.auto_fix_suggestion}`);
-            }
-          }
-        }
+        printText(report, problems, both || Boolean(opts.cycles), both || Boolean(opts.architecture));
       }
-
-      process.exit(hasIssues ? 1 : 0);
+      process.exit(exitCode);
     } catch (err) {
-      printError(
-        `Check failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      process.exit(2);
+      printError(`Check failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(CHECK_EXIT.error);
     }
   });
+
+function printText(report: CheckReport, problems: string[], cycles: boolean, arch: boolean): void {
+  printHeader('FlowLens Check');
+  if (cycles) {
+    if (report.cycles.length === 0) {
+      printSuccess(`No circular dependencies detected (severity ≥ ${report.severity_threshold})`);
+    } else {
+      console.log(`\n${report.cycles.length} circular dependencies found:`);
+      for (const c of report.cycles) {
+        console.log(`  [${c.severity}] ${c.path.join(' → ')}`);
+        if (c.severity_reasons.length > 0) console.log(`      ${c.severity_reasons.join('; ')}`);
+      }
+    }
+  }
+  if (arch) {
+    for (const p of problems) printError(p);
+    if (report.architecture === 'checked') {
+      if (report.architecture_violations.length === 0) {
+        printSuccess('No architecture violations');
+      } else {
+        console.log(`\n${report.architecture_violations.length} architecture violations found:`);
+        for (const v of report.architecture_violations) {
+          console.log(`  ${v.rule_text}`);
+          console.log(`    ${v.from} → ${v.to} (${v.relation_type}, ${v.location})`);
+          if (v.suggestion) console.log(`    → ${v.suggestion}`);
+        }
+      }
+    }
+  }
+}

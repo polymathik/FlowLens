@@ -1,130 +1,56 @@
 /**
- * get_layer_map tool — returns the architecture layer map with entity
- * counts and violation counts per layer.
+ * get_layer_map tool — the architecture layer map with entity and violation
+ * counts per layer.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ServerDependencies } from '../server.js';
-import type { ArchitectureConfig, ArchitectureLayer } from '../../contracts/architecture.js';
-import { resolveLayer, validateArchitecture } from '../../analysis/architecture-validator.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
+import { AnalysisToolSchemas, type GetLayerMapInput, type GetLayerMapOutput } from '../../contracts/mcp/tools.js';
+import { countEntitiesByLayer, countViolationsByLayer } from '../../analysis/layer-stats.js';
+import { buildResponse, toMCPContent, type ToolResult } from '../response-builder.js';
+import { archOrError, openView } from '../tool-runtime.js';
+import { cachedViolations } from '../analysis-cache.js';
 
-export interface LayerDetail {
-  name: string;
-  entity_count: number;
-  violation_count: number;
-  may_only_access: string[];
-  must_not_access: string[];
-}
+export async function handleGetLayerMap(_args: GetLayerMapInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const arch = await archOrError(deps, view);
+  if (arch.error) return arch.error;
 
-export interface GetLayerMapResult {
-  version: number;
-  inferred_by: string;
-  layers: LayerDetail[];
-  unassigned_count: number;
-  summary: {
-    total_layers: number;
-    total_entities_assigned: number;
-    total_violations: number;
-  };
-}
+  const { counts, unassigned } = countEntitiesByLayer(view.nodes, arch.config, arch.layerMap);
+  const violations = cachedViolations(view, arch);
+  const violationCounts = countViolationsByLayer(violations, arch.config);
 
-export async function handleGetLayerMap(
-  _args: Record<string, never>,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-
-  const archConfig = await loadArchConfig(deps.flowlensDir);
-  if (!archConfig) {
-    return toMCPError(
-      'No architecture.json found — run "flowlens infer-architecture" first',
-      [],
-      lastIndexed,
-    );
-  }
-
-  const allEntities = await deps.graph.getAllNodes();
-
-  // Count entities per layer
-  const layerEntityCounts = new Map<string, number>();
-  let unassignedCount = 0;
-
-  for (const layer of archConfig.layers) {
-    layerEntityCounts.set(layer.name, 0);
-  }
-
-  for (const entity of allEntities) {
-    const layer = resolveLayer(entity, archConfig);
-    if (layer) {
-      layerEntityCounts.set(layer, (layerEntityCounts.get(layer) ?? 0) + 1);
-    } else {
-      unassignedCount++;
-    }
-  }
-
-  // Count violations per layer
-  const violations = await validateArchitecture(deps.graph, archConfig);
-  const layerViolationCounts = new Map<string, number>();
-
-  for (const layer of archConfig.layers) {
-    layerViolationCounts.set(layer.name, 0);
-  }
-
-  for (const v of violations) {
-    layerViolationCounts.set(
-      v.layer_from,
-      (layerViolationCounts.get(v.layer_from) ?? 0) + 1,
-    );
-  }
-
-  // Build layer details
-  const layers: LayerDetail[] = archConfig.layers.map((l: ArchitectureLayer) => ({
+  const layers = arch.config.layers.map((l) => ({
     name: l.name,
-    entity_count: layerEntityCounts.get(l.name) ?? 0,
-    violation_count: layerViolationCounts.get(l.name) ?? 0,
+    include: l.include,
+    entity_count: counts.get(l.name) ?? 0,
+    violation_count: violationCounts.get(l.name) ?? 0,
     may_only_access: l.may_only_access ?? [],
     must_not_access: l.must_not_access ?? [],
   }));
 
-  const totalAssigned = layers.reduce((sum, l) => sum + l.entity_count, 0);
-
-  const data: GetLayerMapResult = {
-    version: archConfig.version,
-    inferred_by: archConfig.inferred_by,
+  const data: GetLayerMapOutput = {
+    version: arch.config.version,
+    inferred_by: arch.config.inferred_by,
     layers,
-    unassigned_count: unassignedCount,
+    unassigned_count: unassigned,
     summary: {
       total_layers: layers.length,
-      total_entities_assigned: totalAssigned,
+      total_entities_assigned: layers.reduce((sum, l) => sum + l.entity_count, 0),
       total_violations: violations.length,
     },
   };
-
-  return toMCPContent(buildResponse(data, lastIndexed));
-}
-
-async function loadArchConfig(flowlensDir: string): Promise<ArchitectureConfig | null> {
-  const path = join(flowlensDir, 'architecture.json');
-  if (!existsSync(path)) return null;
-  const content = await readFile(path, 'utf-8');
-  return JSON.parse(content) as ArchitectureConfig;
+  return toMCPContent(buildResponse(data, view.lastIndexed));
 }
 
 export function registerGetLayerMap(server: McpServer, deps: ServerDependencies): void {
   server.registerTool(
     'get_layer_map',
     {
-      description:
-        'Returns the architecture layer map with entity counts and violation counts per layer.',
-      inputSchema: {},
+      description: 'Returns the architecture layer map with entity counts and violation counts per layer.',
+      inputSchema: AnalysisToolSchemas.GetLayerMapInputShape,
       annotations: { readOnlyHint: true },
     },
-    async () => handleGetLayerMap({} as Record<string, never>, deps),
+    async (args) => handleGetLayerMap(args, deps),
   );
 }

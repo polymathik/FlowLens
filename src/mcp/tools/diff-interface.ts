@@ -1,60 +1,76 @@
 /**
- * diff_interface tool — compares the current graph state against a stored
- * snapshot identified by git SHA, reporting breaking and non-breaking changes.
+ * diff_interface tool — compares the current code graph against a stored
+ * snapshot (any ref git can resolve: full/short SHA, HEAD~1, branch, tag),
+ * reporting breaking and non-breaking interface changes.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { ServerDependencies } from '../server.js';
-import { computeDiff } from '../../analysis/diff-computer.js';
-import { buildResponse, toMCPContent, toMCPError } from '../response-builder.js';
-import { getLastIndexed } from '../last-indexed.js';
+import type { InterfaceDiffEntry } from '../../contracts/analysis/diff.js';
+import {
+  ANALYSIS_LIMITS, AnalysisToolSchemas,
+  type Detail, type DiffInterfaceInput, type DiffInterfaceOutput,
+} from '../../contracts/mcp/tools.js';
+import { resolveSnapshotRef } from '../../analysis/snapshot-refs.js';
+import { isInScope, normalizeScope } from '../../analysis/module-path.js';
+import { buildResponse, paginate, toMCPContent, toMCPError, type ToolResult } from '../response-builder.js';
+import { clampLimit } from '../limits.js';
+import { DEFAULT_DETAIL } from '../entity-view.js';
+import { openView } from '../tool-runtime.js';
+import { cachedDiff } from '../analysis-cache.js';
 
-export interface DiffInterfaceInput {
-  since: string;
-  scope?: string;
-  breaking_only?: boolean;
-  max_results?: number;
+/** Summary detail drops the before/after entity payloads. */
+export function toDiffEntryView(c: InterfaceDiffEntry, detail: Detail): InterfaceDiffEntry {
+  if (detail === 'full') return c;
+  const { before: _b, after: _a, ...rest } = c;
+  return rest;
 }
 
-const MAX_RESULTS_CAP = 250;
+function summarize(changes: InterfaceDiffEntry[]): DiffInterfaceOutput['summary'] {
+  const breaking = changes.filter((c) => c.severity === 'breaking').length;
+  const top = [...changes].sort((a, b) => b.affected_dependents - a.affected_dependents)[0];
+  return {
+    total_changes: changes.length,
+    breaking_changes: breaking,
+    non_breaking_changes: changes.length - breaking,
+    ...(top && top.affected_dependents > 0 ? { most_impacted_entity: top.entity_name } : {}),
+  };
+}
 
-export async function handleDiffInterface(
-  args: DiffInterfaceInput,
-  deps: ServerDependencies,
-) {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
-
-  const snapshot = await deps.snapshotManager.loadSnapshot(args.since);
-  if (!snapshot) {
-    return toMCPError(
-      `Snapshot not found for SHA: '${args.since}'`,
-      ['Run "flowlens snapshot" to create a snapshot first'],
-      lastIndexed,
-    );
+export async function handleDiffInterface(args: DiffInterfaceInput, deps: ServerDependencies): Promise<ToolResult> {
+  const view = await openView(deps);
+  const lastIndexed = view.lastIndexed;
+  const ref = await resolveSnapshotRef(args.since, deps.snapshotManager, deps.rootDir);
+  if (!ref.ok) {
+    return toMCPError({
+      error: ref.message,
+      code: ref.code === 'invalid_ref' ? 'invalid_argument' : 'no_snapshot',
+      suggestions: ref.suggestions,
+    }, lastIndexed);
   }
 
-  const breakingOnly = args.breaking_only ?? true;
-  const maxResults = Math.min(args.max_results ?? 50, MAX_RESULTS_CAP);
-
-  const diff = await computeDiff(deps.graph, snapshot, {
-    breaking_only: breakingOnly,
-    scope: args.scope,
+  const limit = clampLimit(args.max_results, ANALYSIS_LIMITS.diff);
+  const detail = args.detail ?? DEFAULT_DETAIL;
+  const scope = normalizeScope(args.scope);
+  const diff = await cachedDiff(view, ref.snapshot, {
+    breaking_only: args.breaking_only ?? true,
+    scope,
   });
+  // diff-computer scopes by raw string prefix; re-apply segment-boundary scope.
+  const changes = scope
+    ? diff.changes.filter((c) => isInScope(c.before?.file ?? '', scope) || isInScope(c.after?.file ?? '', scope))
+    : diff.changes;
 
-  const totalChanges = diff.changes.length;
-  const truncatedChanges = diff.changes.slice(0, maxResults);
-
-  const data = {
-    ...diff,
-    changes: truncatedChanges,
+  const { items, page } = paginate(changes, limit);
+  const data: DiffInterfaceOutput = {
+    requested_ref: args.since,
+    from_sha: diff.from_sha,
+    to_sha: diff.to_sha,
+    changes: items.map((c) => toDiffEntryView(c, detail)),
+    summary: changes === diff.changes ? diff.summary : summarize(changes),
   };
 
-  return toMCPContent(buildResponse(data, lastIndexed, {
-    max_results: maxResults,
-    actualCount: truncatedChanges.length,
-    total_count: totalChanges,
-  }));
+  return toMCPContent(buildResponse(data, lastIndexed, { page, detail }));
 }
 
 export function registerDiffInterface(server: McpServer, deps: ServerDependencies): void {
@@ -62,15 +78,10 @@ export function registerDiffInterface(server: McpServer, deps: ServerDependencie
     'diff_interface',
     {
       description:
-        'Compares the current code graph against a stored snapshot to detect breaking and non-breaking interface changes.',
-      inputSchema: {
-        since: z.string().describe('Git SHA of the snapshot to compare against'),
-        scope: z.string().optional().describe('Restrict diff to file path prefix'),
-        breaking_only: z.boolean().optional().default(true).describe('Only show breaking changes'),
-        max_results: z.number().optional().default(50).describe('Max results (default 50, max 250)'),
-      },
+        'Compares the current code graph against a stored snapshot (SHA, short SHA, HEAD~1, branch) to find breaking and non-breaking interface changes.',
+      inputSchema: AnalysisToolSchemas.DiffInterfaceInputShape,
       annotations: { readOnlyHint: true },
     },
-    async (args) => handleDiffInterface(args as DiffInterfaceInput, deps),
+    async (args) => handleDiffInterface(args, deps),
   );
 }
