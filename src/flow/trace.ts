@@ -27,6 +27,7 @@ import {
 import { expandIn, expandOut, scanIndex, type Candidate, type ExpandContext } from './expand.js';
 import type { FlowGraph } from './graph.js';
 import { buildLanes } from './lanes.js';
+import { callsInSpan } from './span-calls.js';
 import type { SourceProvider } from './source.js';
 
 export interface TraceOptions {
@@ -119,23 +120,32 @@ export function traceFlow(graph: FlowGraph, from: EntryPoint | string, opts: Tra
       s.cands.push(c);
     }
   }
-  if (direction === 'in') collectSpanTriggers(states, entries, triggers);
+  if (direction === 'in') collectSpanTriggers(ctx, states, entries, triggers);
 
   return assemble({ graph, root, entry, direction, states, dropped, maxNodes, opts, entries, triggers, plainEntry, ctx });
 }
 
-/** `in`: a caller inside an inline handler's span is triggered by that entry. */
-function collectSpanTriggers(states: Map<string, NodeState>, entries: EntryPoint[], out: Map<string, { entry: EntryPoint; depth: number }>): void {
+/**
+ * `in`: a caller inside an inline handler's span is triggered by that entry.
+ * The recorded call site of an aggregated edge is only its first one, so a call
+ * elsewhere in the span is looked up in the source.
+ */
+function collectSpanTriggers(ctx: ExpandContext, states: Map<string, NodeState>, entries: EntryPoint[], out: Map<string, { entry: EntryPoint; depth: number }>): void {
   for (const e of entries) {
     if (!e.span || e.kind === 'test') continue;
+    const span = e.span;
+    const text = ctx.source?.(e.file);
+    const hit = (c: Candidate): boolean => {
+      if (c.from !== e.entity_id) return false;
+      if (c.ref.file === e.file && c.ref.line >= span.line_start && c.ref.line <= span.line_end) return true;
+      const callee = c.provenance === 'graph' && (c.type === 'call' || c.type === 'create') ? ctx.graph.byId.get(c.to) : undefined;
+      return !!callee && text !== undefined && callsInSpan(text, callee.name, span.line_start, span.line_end) !== null;
+    };
     for (const s of states.values()) {
-      for (const c of s.cands) {
-        if (c.from === e.entity_id && c.ref.file === e.file && c.ref.line >= e.span.line_start && c.ref.line <= e.span.line_end) {
-          const k = e.label + e.entity_id;
-          const prev = out.get(k);
-          if (!prev || prev.depth > s.depth + 1) out.set(k, { entry: e, depth: s.depth + 1 });
-        }
-      }
+      if (!s.cands.some(hit)) continue;
+      const k = e.label + e.entity_id;
+      const prev = out.get(k);
+      if (!prev || prev.depth > s.depth + 1) out.set(k, { entry: e, depth: s.depth + 1 });
     }
   }
 }

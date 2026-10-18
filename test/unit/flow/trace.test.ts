@@ -233,3 +233,35 @@ describe('renderTraceText', () => {
     expect(text).toContain('3 nodes, 3 hops, depth 1');
   });
 });
+
+describe('traceFlow: inline handler spans', () => {
+  it('finds callees whose recorded (first) call site is in another handler of the same function', () => {
+    const text = ['export function createApp() {', "  api.get('/a', () => {", '    const p = parse(1);', '  });', "  api.get('/b', () => {", '    const q = parse(2);', '    return show(q);', '  });', '}', ''].join('\n');
+    const b = buildGraph({
+      'a.ts': { text, symbols: [{ qn: 'createApp', line: 1, end: 9 }] },
+      'u.ts': { symbols: [{ qn: 'parse', line: 1 }, { qn: 'show', line: 2 }] },
+    }, [{ from: 'a.ts/createApp', to: 'u.ts/parse', line: 3, weight: 2 }, { from: 'a.ts/createApp', to: 'u.ts/show', line: 7 }]);
+    const entry = (a: number, z: number) => ({ entity_id: b.id('a.ts/createApp'), qualified_name: 'a.ts/createApp', file: 'a.ts', line: a, kind: 'http_route' as const, label: `GET /${a}`, confidence: 0.85, evidence: 't', span: { line_start: a, line_end: z } });
+    const second = traceFlow(b.graph, entry(5, 8), { source: b.source });
+    expect(hopNames(second, b)).toEqual(['createApp>parse', 'createApp>show']);
+    expect(second.hops[0]).toMatchObject({ provenance: 'source_scan', ref: { line: 6 }, count: 1 });
+    expect(second.hops[1]).toMatchObject({ provenance: 'graph' });
+    const first = traceFlow(b.graph, entry(2, 4), { source: b.source });
+    expect(hopNames(first, b)).toEqual(['createApp>parse']);
+    expect(first.hops[0].provenance).toBe('graph');
+    expect(hopNames(traceFlow(b.graph, entry(5, 8)), b)).toEqual(['createApp>show']); // without a source reader: graph sites only
+  });
+});
+
+describe('traceFlow: in + inline handler spans', () => {
+  it('attributes a caller to every inline handler of its function that calls the target, not just the one with the recorded site', () => {
+    const text = ['export function createApp() {', "  api.get('/a', () => parse(1));", "  api.get('/b', () => parse(2));", "  api.get('/c', () => other());", '}', ''].join('\n');
+    const b = buildGraph({
+      'a.ts': { text, symbols: [{ qn: 'createApp', line: 1, end: 5 }] },
+      'u.ts': { symbols: [{ qn: 'parse', line: 1 }, { qn: 'other', line: 2 }] },
+    }, [{ from: 'a.ts/createApp', to: 'u.ts/parse', line: 2, weight: 2 }, { from: 'a.ts/createApp', to: 'u.ts/other', line: 4 }]);
+    const mk = (line: number, label: string) => ({ entity_id: b.id('a.ts/createApp'), qualified_name: 'a.ts/createApp', file: 'a.ts', line, kind: 'http_route' as const, label, confidence: 0.85, evidence: 't', span: { line_start: line, line_end: line } });
+    const t = traceFlow(b.graph, b.id('u.ts/parse'), { direction: 'in', entries: [mk(2, 'GET /a'), mk(3, 'GET /b'), mk(4, 'GET /c')], source: b.source });
+    expect(t.triggers.map((e) => e.label)).toEqual(['GET /a', 'GET /b']);
+  });
+});

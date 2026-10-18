@@ -12,6 +12,7 @@ import type { EntryPoint, FlowFollowType, FlowHop } from '../contracts/flow.js';
 import { FLOW_LIMITS } from '../contracts/flow.js';
 import type { FlowGraph } from './graph.js';
 import { scanSeedCalls } from './inline-seeds.js';
+import { callsInSpan } from './span-calls.js';
 import type { SourceProvider } from './source.js';
 
 /** A hop before it is placed in the trace. `far` is the node the BFS adds (callee for `out`, caller for `in`). */
@@ -118,10 +119,17 @@ export function expandOut(ctx: ExpandContext, n: Entity): Candidate[] {
   const out: Candidate[] = [];
   for (const actor of actors(graph, n)) {
     for (const r of graph.edgesFrom(actor.id)) {
-      if (!ctx.follow.has(r.type as FlowFollowType) || !inSpan(r.location.line, span)) continue;
+      if (!ctx.follow.has(r.type as FlowFollowType)) continue;
       const target = graph.byId.get(r.to);
       if (!allowed(ctx, target)) continue;
       const c = graphCandidate(r, target.id, { provenance: 'graph' });
+      if (!inSpan(r.location.line, span)) {
+        // the graph keeps only the first call site of an aggregated edge: look for another one inside the span
+        const text = span && (r.type === 'call' || r.type === 'create') ? ctx.source?.(n.file) : undefined;
+        const site = span && text !== undefined ? callsInSpan(text, target.name, span.line_start, span.line_end) : null;
+        if (!site) continue;
+        Object.assign(c, { ref: { file: n.file, line: site.line }, count: site.count, provenance: 'source_scan', confidence: Math.min(c.confidence, 0.85) });
+      }
       const via = dispatchTargets(graph, target);
       if (via.length > 0) {
         c.resolution = 'ambiguous';
