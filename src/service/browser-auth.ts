@@ -22,6 +22,7 @@ const COOKIE_ROUTES: Array<{ methods: Set<string>; re: RegExp }> = [
   { methods: new Set(['GET', 'DELETE']), re: /^\/api\/projects\/[^/]+$/ },
   { methods: new Set(['GET', 'POST']), re: /^\/api\/projects\/[^/]+\/canvas(\/.*)?$/ },
   { methods: new Set(['PUT']), re: /^\/api\/projects\/[^/]+\/canvas\/zones(\/state)?$/ }, // zone overrides and community state (Origin required)
+  { methods: new Set(['DELETE']), re: /^\/api\/projects\/[^/]+\/canvas\/history(\/topology\/build)?$/ }, // clear history / cancel build (Origin required)
   { methods: new Set(['GET']), re: /^\/api\/projects\/[^/]+\/health(\/summary|\/report)?$/ },
   { methods: new Set(['GET']), re: /^\/api\/projects\/[^/]+\/events$/ },
 ];

@@ -4,6 +4,7 @@
  *   DELETE /api/projects/:id[?force=1]       remove from registry (+ stop watcher, close DB);
  *                                            409 project_in_use while clients hold leases, unless force
  *   GET|PUT /api/projects/:id/canvas/zones   zone overrides (.flowlens/zones.json), see routes-zones.ts
+ *   GET|DELETE /api/projects/:id/canvas/history[/topology[/build|/status]]   commit history + sampled topology, see routes-history.ts
  *   *      /api/projects/:id/canvas/*        canvas graph API (createGraphApp) on the pooled graph
  *   GET    /api/projects/:id/health          HealthReport
  *   GET    /api/projects/:id/health/summary  ExplorerHealthSummary
@@ -23,6 +24,7 @@ import type { ServiceDeps } from '../contracts/service-deps.js';
 import { ServiceError } from './errors.js';
 import { HealthCache, healthFingerprint } from './health-cache.js';
 import { projectParam, route } from './routes-projects.js';
+import { mountHistoryRoutes } from './routes-history.js';
 import { mountZonesRoutes } from './routes-zones.js';
 
 export interface ExplorerProjectState {
@@ -82,6 +84,7 @@ export function mountExplorerProjects(app: Express, deps: ServiceDeps, state: Ex
   }));
 
   mountZonesRoutes(app, deps); // before the generic canvas router, which would 404 it
+  mountHistoryRoutes(app, deps); // history + sampled topology (M5a), same reason
 
   app.use(EXPLORER_ROUTES.canvas, (req: Request, res: Response, next: NextFunction) => {
     projectParam(deps, req, true)
