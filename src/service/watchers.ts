@@ -16,6 +16,8 @@ export type Logger = (msg: string) => void;
 
 export class WatcherManager {
   private watchers = new Map<string, FileWatcher>();
+  /** Resolves once a project's watcher has finished its initial scan. */
+  private readyPromises = new Map<string, Promise<void>>();
   private pool: GraphPool | null = null;
 
   constructor(
@@ -33,8 +35,20 @@ export class WatcherManager {
     return this.watchers.has(id);
   }
 
-  async start(project: PoolProject, debounceMs: number): Promise<void> {
-    if (this.watchers.has(project.id)) return;
+  /** Wait until the project's watcher (if any is starting or running) is ready. */
+  async whenReady(id: string): Promise<void> {
+    await this.readyPromises.get(id)?.catch(() => undefined);
+  }
+
+  start(project: PoolProject, debounceMs: number): Promise<void> {
+    const pending = this.readyPromises.get(project.id);
+    if (this.watchers.has(project.id) && pending) return pending;
+    const ready = this.startNow(project, debounceMs);
+    this.readyPromises.set(project.id, ready);
+    return ready;
+  }
+
+  private async startNow(project: PoolProject, debounceMs: number): Promise<void> {
     const watcher = this.factory();
     this.watchers.set(project.id, watcher);
     watcher.onChanges(async (events) => {
@@ -65,6 +79,7 @@ export class WatcherManager {
     const w = this.watchers.get(id);
     if (!w) return;
     this.watchers.delete(id);
+    this.readyPromises.delete(id);
     await w.stop();
     this.log(`[watch] stopped ${id}`);
     this.pool?.recheck(id);

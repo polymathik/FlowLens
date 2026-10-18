@@ -29,7 +29,7 @@ export function ChipInput({ values, onChange, placeholder, testId }: ChipInputPr
           <span
             key={v}
             data-testid="chip"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 4px 1px 8px', borderRadius: 10, background: '#f1f5f9', border: `1px solid ${COLORS.border}`, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 4px 1px 8px', borderRadius: 10, background: COLORS.subtle, border: `1px solid ${COLORS.border}`, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}
           >
             {v}
             <button

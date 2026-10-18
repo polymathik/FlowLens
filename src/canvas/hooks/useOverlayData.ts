@@ -4,7 +4,7 @@
  * takes precedence over the saved rules' violations.
  */
 import { useEffect, useState } from 'react';
-import { fetchCycles, fetchDiff, fetchViolations } from '../api/graph-client';
+import { useGraphClient } from '../components/explorer/project-context';
 import { useCanvasStore } from '../store/canvas-store';
 import type { OverlayExtraData } from '../overlays/types';
 
@@ -13,6 +13,7 @@ export function useOverlayData(graphVersion: number): OverlayExtraData {
   const diffSha = useCanvasStore((s) => s.diffSha);
   const preview = useCanvasStore((s) => s.previewViolations);
   const [data, setData] = useState<OverlayExtraData>({});
+  const { fetchCycles, fetchDiff, fetchViolations } = useGraphClient();
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +35,7 @@ export function useOverlayData(graphVersion: number): OverlayExtraData {
     return () => {
       cancelled = true;
     };
-  }, [activeOverlay, diffSha, preview, graphVersion]);
+  }, [activeOverlay, diffSha, preview, graphVersion, fetchCycles, fetchDiff, fetchViolations]);
 
   return data;
 }

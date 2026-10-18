@@ -7,14 +7,24 @@
  * wrapper, whose `transform` carries the node position.
  */
 import React from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { Handle, Position, useNodeId } from '@xyflow/react';
+import { useCanvasStore } from '../../store/canvas-store';
 import type { CanvasNodeType, NodeOverlayStyle } from '../../../contracts/canvas/index.js';
 
+/** Per-level palette as CSS variables (light/dark in styles/tokens.css). */
 export const LEVEL_PALETTE: Record<CanvasNodeType, { fill: string; stroke: string; text: string; muted: string }> = {
-  system: { fill: '#eef2ff', stroke: '#818cf8', text: '#312e81', muted: '#6366f1' },
-  module: { fill: '#f0fdfa', stroke: '#5eead4', text: '#134e4a', muted: '#0f766e' },
-  file: { fill: '#ffffff', stroke: '#bfdbfe', text: '#1e3a8a', muted: '#64748b' },
-  entity: { fill: '#ffffff', stroke: '#e2e8f0', text: '#0f172a', muted: '#64748b' },
+  system: { fill: 'var(--fl-node-system-fill)', stroke: 'var(--fl-node-system-stroke)', text: 'var(--fl-node-system-text)', muted: 'var(--fl-node-system-muted)' },
+  module: { fill: 'var(--fl-node-module-fill)', stroke: 'var(--fl-node-module-stroke)', text: 'var(--fl-node-module-text)', muted: 'var(--fl-node-module-muted)' },
+  file: { fill: 'var(--fl-node-file-fill)', stroke: 'var(--fl-node-file-stroke)', text: 'var(--fl-node-file-text)', muted: 'var(--fl-muted)' },
+  entity: { fill: 'var(--fl-node-file-fill)', stroke: 'var(--fl-border)', text: 'var(--fl-text)', muted: 'var(--fl-muted)' },
+};
+
+/** Minimap colours must be literal (SVG fill attributes cannot read CSS variables). */
+export const MINIMAP_STROKE: Record<CanvasNodeType, string> = {
+  system: '#818cf8',
+  module: '#5eead4',
+  file: '#93c5fd',
+  entity: '#cbd5e1',
 };
 
 const hidden: React.CSSProperties = { opacity: 0, pointerEvents: 'none' };
@@ -34,6 +44,8 @@ export interface NodeShellProps {
 
 export function NodeShell({ level, selected, overlay, accent, title, subtitle, icon, children, tooltip }: NodeShellProps) {
   const p = LEVEL_PALETTE[level];
+  const nodeId = useNodeId();
+  const highlighted = useCanvasStore((s) => (nodeId ? s.highlightedIds.includes(nodeId) : false));
   const stroke = overlay?.stroke ?? p.stroke;
   const strokeWidth = overlay?.strokeWidth ?? (level === 'system' ? 2 : 1.5);
   const body: React.CSSProperties = {
@@ -50,7 +62,9 @@ export function NodeShell({ level, selected, overlay, accent, title, subtitle, i
     opacity: overlay?.muted ? 0.7 : 1,
     boxShadow: selected
       ? '0 0 0 3px rgba(99,102,241,0.45), 0 4px 12px rgba(15,23,42,0.12)'
-      : '0 1px 2px rgba(15,23,42,0.06)',
+      : highlighted
+        ? '0 0 0 3px rgba(217,119,6,0.55), 0 4px 12px rgba(15,23,42,0.12)'
+        : '0 1px 2px rgba(15,23,42,0.06)',
     transform: overlay?.scale && overlay.scale !== 1 ? `scale(${overlay.scale})` : undefined,
     transformOrigin: 'center',
     display: 'flex',
@@ -65,6 +79,7 @@ export function NodeShell({ level, selected, overlay, accent, title, subtitle, i
       data-level={level}
       data-overlay={overlay ? `${overlay.tag}${overlay.muted ? ':muted' : ''}` : ''}
       data-selected={selected ? 'true' : 'false'}
+      data-highlighted={highlighted ? 'true' : 'false'}
       title={tooltip}
       style={body}
     >

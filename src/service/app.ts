@@ -8,6 +8,8 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { GRAPH_RPC_PROTOCOL, type PingResponse, type ServiceOptions } from '../contracts/service.js';
 import type { FileProjectRegistry } from '../projects/registry.js';
 import { authenticate } from './auth.js';
+import { authenticateBrowser } from './browser-auth.js';
+import type { SessionStore } from './sessions.js';
 import { errorBody, ServiceError, toServiceError } from './errors.js';
 import type { EventHub } from './events.js';
 import type { GraphPool } from './graph-pool.js';
@@ -34,14 +36,23 @@ export interface ServiceDeps {
   port?: number;
   /** Called on every authenticated request (daemon idle-exit bookkeeping). */
   onActivity?: () => void;
+  /** Explorer browser sessions (cookie auth); absent = bearer only. */
+  sessions?: SessionStore;
 }
 
 /** Extra routes (e.g. the explorer UI, wave 2), mounted before the 404/error handlers. */
 export type MountRoutes = (app: Express, deps: ServiceDeps) => void;
 
-export function requireAuth(deps: Pick<ServiceDeps, 'token' | 'onActivity'>) {
+export function requireAuth(deps: Pick<ServiceDeps, 'token' | 'onActivity' | 'sessions' | 'port'>) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const denied = authenticate(deps.token, req.headers, req.originalUrl);
+    let denied = authenticate(deps.token, req.headers, req.originalUrl);
+    if (denied?.code === 'unauthorized') {
+      const path = req.originalUrl.split('?')[0];
+      denied = authenticateBrowser(deps.sessions, deps.port, req.method, path, req.headers);
+      if (!denied) res.locals.authVia = 'cookie';
+    } else if (!denied) {
+      res.locals.authVia = 'bearer';
+    }
     if (denied) {
       res.status(denied.status).json(errorBody(denied.code, denied.message));
       return;

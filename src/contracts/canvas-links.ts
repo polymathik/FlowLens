@@ -30,6 +30,12 @@ export interface CanvasLinkOptions {
   overlay?: CanvasOverlay;
   /** Optional override of the canvas base URL. Defaults to env / localhost. */
   baseUrl?: string;
+  /**
+   * Project id (multi-project explorer, Phase 11). When set the link is
+   * `#/p/<projectId>/<kind>/<id>` and opens that project's map tab;
+   * without it the explorer maps the link to the active (or only) project.
+   */
+  projectId?: string;
 }
 
 const DEFAULT_BASE_URL = 'http://localhost:5173';
@@ -51,5 +57,6 @@ export function buildCanvasUrl(opts: CanvasLinkOptions): string {
   const base = resolveBaseUrl(opts.baseUrl).replace(/\/+$/, '');
   const encoded = encodeURIComponent(opts.identifier);
   const overlaySuffix = opts.overlay ? `?overlay=${opts.overlay}` : '';
-  return `${base}/#/${opts.kind}/${encoded}${overlaySuffix}`;
+  const project = opts.projectId ? `p/${encodeURIComponent(opts.projectId)}/` : '';
+  return `${base}/#/${project}${opts.kind}/${encoded}${overlaySuffix}`;
 }

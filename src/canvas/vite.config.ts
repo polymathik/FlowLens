@@ -11,8 +11,10 @@
  * Vendor libraries are split into stable, cacheable chunks. ELK is a single
  * ~1.4 MB pre-bundled module (GWT output) that cannot be split further; it
  * is isolated in its own chunk and the warning limit is raised to cover it.
- * Lazy-loading ELK (dynamic import / web worker) is a canvas-code change
- * owned by the canvas lane.
+ * ELK is loaded with a dynamic `import()` only when a file/symbol view is laid out.
+ *
+ * Dev: `flowlens canvas --dev` mounts this config in Vite middleware mode
+ * and proxies `/api` + `/auth` to the daemon.
  */
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -35,15 +37,6 @@ export default defineConfig({
   plugins: [react()],
   root: canvasRoot,
   base: '/',
-  server: {
-    port: 5173,
-    proxy: {
-      '/flowlens-api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-    },
-  },
   build: {
     outDir: resolve(canvasRoot, '../../dist/canvas/app'),
     emptyOutDir: true,

@@ -1,20 +1,24 @@
 /**
  * Shared inline styles for canvas chrome (toolbar, panels, inputs) so every
- * panel uses the same calm palette and spacing.
+ * panel uses the same calm palette and spacing. Colours are CSS custom
+ * properties (`styles/tokens.css`) so light and dark themes share one set
+ * of components.
  */
 import type React from 'react';
 
 export const COLORS = {
-  text: '#0f172a',
-  muted: '#64748b',
-  faint: '#94a3b8',
-  border: '#e2e8f0',
-  borderStrong: '#cbd5e1',
-  surface: '#ffffff',
-  canvas: '#f8fafc',
-  accent: '#4f46e5',
-  danger: '#dc2626',
-  ok: '#16a34a',
+  text: 'var(--fl-text)',
+  muted: 'var(--fl-muted)',
+  faint: 'var(--fl-faint)',
+  border: 'var(--fl-border)',
+  borderStrong: 'var(--fl-border-strong)',
+  surface: 'var(--fl-surface)',
+  canvas: 'var(--fl-canvas)',
+  accent: 'var(--fl-accent)',
+  danger: 'var(--fl-danger)',
+  ok: 'var(--fl-ok)',
+  accentSoft: 'var(--fl-accent-soft)',
+  subtle: 'var(--fl-subtle)',
 } as const;
 
 export const button: React.CSSProperties = {
@@ -32,7 +36,7 @@ export const buttonActive: React.CSSProperties = {
   ...button,
   borderColor: COLORS.accent,
   color: COLORS.accent,
-  background: '#eef2ff',
+  background: COLORS.accentSoft,
 };
 
 export const linkButton: React.CSSProperties = {
@@ -57,7 +61,7 @@ export const input: React.CSSProperties = {
 export const floatingPanel: React.CSSProperties = {
   position: 'absolute',
   zIndex: 20,
-  background: 'rgba(255,255,255,0.97)',
+  background: COLORS.surface,
   border: `1px solid ${COLORS.border}`,
   borderRadius: 10,
   boxShadow: '0 6px 24px rgba(15,23,42,0.10)',

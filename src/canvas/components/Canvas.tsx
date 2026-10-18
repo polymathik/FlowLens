@@ -42,7 +42,8 @@ import { SearchPanel } from './panels/SearchPanel';
 import { DetailPanel } from './panels/DetailPanel';
 import { OverlayLegend } from './panels/OverlayLegend';
 import { ArchitectureEditor } from './panels/rules/ArchitectureEditor';
-import { LEVEL_PALETTE } from './nodes/NodeShell';
+import { MINIMAP_STROKE } from './nodes/NodeShell';
+import { useColorMode } from './explorer/theme';
 import { COLORS } from './shared/ui';
 
 function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error' }) {
@@ -53,7 +54,7 @@ function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error
   );
 }
 
-const minimapColor = (n: Node) => LEVEL_PALETTE[(n.type as keyof typeof LEVEL_PALETTE) ?? 'entity']?.stroke ?? '#cbd5e1';
+const minimapColor = (n: Node) => MINIMAP_STROKE[(n.type as keyof typeof MINIMAP_STROKE) ?? 'entity'] ?? '#cbd5e1';
 
 function CanvasInner() {
   const graph = useGraphData();
@@ -62,6 +63,7 @@ function CanvasInner() {
   const [showRules, setShowRules] = useState(false);
   const [exporting, setExporting] = useState(false);
   const shiftHeld = useKeyPress('Shift');
+  const colorMode = useColorMode();
 
   useEffect(() => setNodes(graph.nodes), [graph.nodes, setNodes]);
 
@@ -85,10 +87,15 @@ function CanvasInner() {
 
   if (graph.loading) return <Centered>Loading graph…</Centered>;
   if (graph.error) return <Centered tone="error">Could not load the graph: {graph.error}</Centered>;
-  if (graph.entities.length === 0) return <Centered>No symbols indexed yet. Run “flowlens index” and reload.</Centered>;
+  if (graph.entities.length === 0) return <Centered>Nothing is indexed in this project yet. Run “flowlens index” in its folder; this tab updates by itself.</Centered>;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: COLORS.canvas }}>
+    <div
+      data-testid="map-view"
+      data-graph-version={graph.version}
+      data-node-count={graph.entities.length}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: COLORS.canvas }}
+    >
       <CanvasHeader
         graphVersion={graph.version}
         showFilter={showFilter}
@@ -118,8 +125,9 @@ function CanvasInner() {
           onlyRenderVisibleElements
           nodesConnectable={false}
           proOptions={{ hideAttribution: true }}
+          colorMode={colorMode}
         >
-          <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#cbd5e1" />
+          <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
           <Controls showInteractive={false} />
           <MiniMap nodeColor={minimapColor} nodeStrokeWidth={2} zoomable pannable style={{ width: 150, height: 100 }} />
         </ReactFlow>

@@ -29,8 +29,31 @@ export async function settle(page, { quietMs = 700, timeoutMs = 20000 } = {}) {
   throw new Error('canvas did not settle');
 }
 
+/** Explorer session config set by run.mjs: map project + bearer for API reads. */
+const cfg = { projectId: '', daemon: '', token: '' };
+export function configureExplorer(c) {
+  Object.assign(cfg, c);
+}
+
+/** Sign this browser context in (one-time code → cookie) and land on `hash`. */
+export async function signIn(page, base, hash = '#/home') {
+  const res = await fetch(`${cfg.daemon}/api/auth/code`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${cfg.token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ redirect: hash }),
+  });
+  const { code } = await res.json();
+  await page.goto(`${base}/auth?t=${encodeURIComponent(code)}`);
+}
+
+/** Map a single-project canvas hash ('' | '#/entity/…') onto project A's map tab. */
+export function mapHash(hash = '', projectId = cfg.projectId) {
+  const rest = hash.replace(/^#\/?/, '');
+  return `#/p/${encodeURIComponent(projectId)}/map${rest ? `/${rest}`.replace('/?', '?') : ''}`;
+}
+
 export async function openCanvas(page, base, hash = '') {
-  await page.goto(`${base}/${hash}`);
+  await signIn(page, base, mapHash(hash));
   await page.waitForSelector('.react-flow__node', { timeout: 60000 });
   await settle(page);
 }
@@ -91,8 +114,9 @@ export async function assertCleanLayout(page, label) {
   return nodes.length;
 }
 
+/** Read the project's canvas API (`api` = …/api/projects/<id>/canvas) with the CLI token. */
 export async function apiJson(api, path) {
-  const res = await fetch(`${api}/flowlens-api${path}`);
+  const res = await fetch(`${api}${path}`, { headers: { Authorization: `Bearer ${cfg.token}` } });
   return res.json();
 }
 

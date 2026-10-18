@@ -1,0 +1,139 @@
+/*
+ * Explorer shell: tab bar, Home, project header, Health screen.
+ * Tokens: tokens.css. One bold element per screen — the letter grade —
+ * everything around it stays quiet: neutral surfaces, hairline borders,
+ * indigo only on things you can act on.
+ */
+.fl-app { display: flex; flex-direction: column; height: 100%; background: var(--fl-canvas); color: var(--fl-text); }
+.fl-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fl-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+
+:where(.fl-app) button { font: inherit; color: inherit; }
+:where(.fl-app) :focus-visible { outline: 2px solid var(--fl-focus); outline-offset: 2px; }
+
+/* ---------- tab bar ---------- */
+.fl-tabbar { display: flex; align-items: stretch; gap: 2px; height: 42px; padding: 0 8px; background: var(--fl-subtle); border-bottom: 1px solid var(--fl-border); flex: 0 0 auto; }
+.fl-brand { display: flex; align-items: center; padding: 0 10px 0 6px; font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
+.fl-tabs { display: flex; align-items: stretch; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.fl-tab { position: relative; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 0 6px 0 12px; margin-top: 6px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; color: var(--fl-muted); cursor: pointer; font-size: 13px; white-space: nowrap; }
+.fl-tab:hover { color: var(--fl-text); background: color-mix(in srgb, var(--fl-surface) 60%, transparent); }
+.fl-tab[aria-selected='true'] { color: var(--fl-text); background: var(--fl-canvas); border-color: var(--fl-border); margin-bottom: -1px; }
+.fl-tab-label { overflow: hidden; text-overflow: ellipsis; background: none; border: none; padding: 0; cursor: pointer; }
+.fl-tab-home .fl-tab-label { font-weight: 600; }
+.fl-tab-grade { font-weight: 700; font-size: 11px; }
+.fl-tab-close { display: inline-grid; place-items: center; width: 20px; height: 20px; border: none; background: none; border-radius: 4px; color: var(--fl-faint); cursor: pointer; font-size: 14px; line-height: 1; }
+.fl-tab-close:hover { background: var(--fl-border); color: var(--fl-text); }
+.fl-tab-missing .fl-tab-label { text-decoration: line-through; text-decoration-color: var(--fl-faint); }
+.fl-tab-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--fl-accent); }
+.fl-tab-add { align-self: center; width: 28px; height: 28px; margin-left: 4px; border: 1px dashed var(--fl-border-strong); border-radius: 6px; background: none; color: var(--fl-muted); cursor: pointer; font-size: 16px; }
+.fl-tab-add:hover { color: var(--fl-accent); border-color: var(--fl-accent); }
+.fl-tabbar-end { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.fl-quiet-btn { padding: 4px 10px; border: 1px solid var(--fl-border-strong); border-radius: 6px; background: var(--fl-surface); cursor: pointer; font-size: 12px; }
+.fl-quiet-btn:hover { border-color: var(--fl-accent); color: var(--fl-accent); }
+.fl-primary-btn { padding: 6px 12px; border: 1px solid var(--fl-accent); border-radius: 6px; background: var(--fl-accent); color: var(--fl-accent-text) !important; cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: none; }
+.fl-primary-btn:hover { filter: brightness(1.08); }
+
+/* ---------- picker ---------- */
+.fl-picker { position: absolute; top: 40px; z-index: 50; width: min(380px, calc(100vw - 24px)); max-height: 60vh; overflow-y: auto; padding: 6px; background: var(--fl-surface); border: 1px solid var(--fl-border); border-radius: 10px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18); }
+.fl-picker-title { padding: 6px 8px 8px; font-size: 12px; color: var(--fl-muted); }
+.fl-picker-item { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; width: 100%; padding: 8px; border: none; border-radius: 6px; background: none; text-align: left; cursor: pointer; }
+.fl-picker-item:hover, .fl-picker-item:focus-visible { background: var(--fl-accent-soft); outline: none; }
+.fl-picker-item small { grid-column: 1 / -1; color: var(--fl-muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-picker-empty { padding: 10px 8px; font-size: 13px; color: var(--fl-muted); line-height: 1.5; }
+
+/* ---------- badges ---------- */
+.fl-badge { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--fl-border-strong); color: var(--fl-muted); white-space: nowrap; }
+.fl-badge-warn { color: var(--fl-warn); border-color: color-mix(in srgb, var(--fl-warn) 45%, transparent); background: var(--fl-warn-soft); }
+.fl-badge-danger { color: var(--fl-danger); border-color: color-mix(in srgb, var(--fl-danger) 45%, transparent); }
+.fl-badge-ok { color: var(--fl-ok); border-color: color-mix(in srgb, var(--fl-ok) 45%, transparent); }
+
+/* ---------- page frame ---------- */
+.fl-page { max-width: 1120px; margin: 0 auto; padding: 28px 24px 56px; }
+.fl-page-head h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+.fl-page-head p { margin-top: 4px; color: var(--fl-muted); font-size: 14px; max-width: 64ch; line-height: 1.5; }
+
+/* ---------- Home ---------- */
+.fl-cards { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-top: 20px; }
+.fl-card { display: grid; grid-template-columns: 76px 1fr; width: 100%; min-height: 128px; border: 1px solid var(--fl-border); border-radius: 12px; background: var(--fl-surface); text-align: left; cursor: pointer; overflow: hidden; box-shadow: var(--fl-shadow); }
+.fl-card:hover { border-color: var(--fl-border-strong); }
+.fl-card-grade { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-right: 1px solid var(--fl-border); background: color-mix(in srgb, var(--grade) 9%, var(--fl-surface)); }
+.fl-card-grade b { font-size: 40px; line-height: 1; font-weight: 800; color: var(--grade); letter-spacing: -0.04em; }
+.fl-card-grade span { font-size: 11px; color: var(--fl-muted); font-variant-numeric: tabular-nums; }
+.fl-card-body { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; min-width: 0; }
+.fl-card-name { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 15px; }
+.fl-card-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-card-top { font-size: 13px; line-height: 1.45; color: var(--fl-text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fl-card-meta { margin-top: auto; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--fl-muted); }
+.fl-card-missing .fl-card-grade { background: var(--fl-subtle); }
+.fl-card-missing .fl-card-grade b { color: var(--fl-faint); font-size: 26px; }
+
+.fl-empty { margin-top: 28px; padding: 28px; border: 1px dashed var(--fl-border-strong); border-radius: 12px; background: var(--fl-surface); max-width: 640px; line-height: 1.6; font-size: 14px; }
+.fl-empty h2 { font-size: 17px; margin-bottom: 6px; }
+.fl-empty ol { margin: 10px 0 0 20px; }
+code, .fl-code { font-family: var(--fl-mono); font-size: 0.92em; background: var(--fl-subtle); border: 1px solid var(--fl-border); padding: 1px 5px; border-radius: 4px; }
+
+/* ---------- project header ---------- */
+.fl-projhead { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 20px; background: var(--fl-surface); border-bottom: 1px solid var(--fl-border); flex: 0 0 auto; }
+.fl-projhead h2 { font-size: 15px; font-weight: 700; }
+.fl-projhead .fl-path { font-size: 12px; color: var(--fl-muted); font-family: var(--fl-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.fl-views { display: inline-flex; padding: 2px; border: 1px solid var(--fl-border); border-radius: 8px; background: var(--fl-subtle); }
+.fl-view { padding: 4px 14px; border: none; border-radius: 6px; background: none; cursor: pointer; font-size: 13px; color: var(--fl-muted); }
+.fl-view[aria-selected='true'] { background: var(--fl-surface); color: var(--fl-text); font-weight: 600; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08); }
+.fl-projhead-end { margin-left: auto; font-size: 12px; color: var(--fl-muted); }
+
+/* ---------- Health ---------- */
+.fl-health { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 28px; align-items: start; }
+.fl-health-side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 16px; }
+.fl-grade-block { display: grid; grid-template-columns: auto 1fr; gap: 4px 18px; align-items: center; padding: 20px; border-radius: 14px; background: var(--fl-surface); border: 1px solid var(--fl-border); }
+.fl-grade-letter { grid-row: span 2; font-size: 88px; line-height: 0.9; font-weight: 800; letter-spacing: -0.06em; color: var(--grade); }
+.fl-grade-score { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fl-grade-score small { font-size: 13px; font-weight: 500; color: var(--fl-muted); }
+.fl-verdict { grid-column: 1 / -1; margin-top: 10px; font-size: 14px; line-height: 1.5; }
+.fl-panel { padding: 16px 18px; border-radius: 12px; background: var(--fl-surface); border: 1px solid var(--fl-border); }
+.fl-panel h3 { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.fl-panel p { font-size: 13px; color: var(--fl-muted); line-height: 1.5; }
+.fl-bars { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.fl-bar-row { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 13px; }
+.fl-bar-row b { font-variant-numeric: tabular-nums; font-weight: 650; }
+.fl-bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--fl-border); overflow: hidden; }
+.fl-bar i { display: block; height: 100%; border-radius: 3px; background: var(--bar, var(--fl-accent)); }
+.fl-bar-row small { grid-column: 1 / -1; color: var(--fl-muted); font-size: 12px; line-height: 1.4; }
+.fl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.fl-banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; margin-bottom: 18px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--fl-warn) 40%, transparent); background: var(--fl-warn-soft); font-size: 13px; line-height: 1.5; }
+.fl-banner ul { margin: 4px 0 0 18px; }
+.fl-section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.fl-section-title h3 { font-size: 16px; font-weight: 700; }
+.fl-section-title span { font-size: 12px; color: var(--fl-muted); }
+
+.fl-findings { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.fl-finding { padding: 16px 18px; border-radius: 12px; background: var(--fl-surface); border: 1px solid var(--fl-border); border-left: 4px solid var(--sev); }
+.fl-finding-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--fl-muted); }
+.fl-sev { font-weight: 700; color: var(--sev); }
+.fl-finding h4 { margin: 6px 0 4px; font-size: 15px; font-weight: 650; line-height: 1.35; }
+.fl-finding p { font-size: 13.5px; line-height: 1.55; color: var(--fl-text); max-width: 72ch; }
+.fl-finding details { margin-top: 8px; font-size: 12.5px; }
+.fl-finding summary { cursor: pointer; color: var(--fl-muted); }
+.fl-evidence { list-style: none; margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.fl-evidence code { font-size: 12px; }
+.fl-finding .fl-actions { margin-top: 12px; }
+.fl-copied { font-size: 12px; color: var(--fl-ok); align-self: center; }
+.fl-prompt-fallback { width: 100%; min-height: 160px; margin-top: 8px; font-family: var(--fl-mono); font-size: 12px; padding: 8px; border-radius: 6px; border: 1px solid var(--fl-border-strong); background: var(--fl-subtle); color: var(--fl-text); }
+
+.fl-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; height: 100%; padding: 24px; text-align: center; color: var(--fl-muted); font-size: 14px; line-height: 1.6; }
+.fl-notice { max-width: 560px; padding: 28px; border-radius: 12px; border: 1px solid var(--fl-border); background: var(--fl-surface); text-align: left; color: var(--fl-text); }
+.fl-notice h2 { font-size: 18px; margin-bottom: 8px; }
+.fl-notice p { color: var(--fl-muted); margin-bottom: 8px; }
+.fl-notice .fl-actions { margin-top: 14px; }
+
+@media (max-width: 860px) {
+  .fl-health { grid-template-columns: 1fr; }
+  .fl-health-side { position: static; }
+  .fl-page { padding: 20px 16px 40px; }
+  .fl-cards { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+a.fl-quiet-btn, a.fl-primary-btn { text-decoration: none; color: var(--fl-text); display: inline-block; }

@@ -59,17 +59,11 @@ async function createHistory(dir: string): Promise<boolean> {
   }
 }
 
-export async function createIndexedFixture(parent?: string): Promise<IndexedFixture> {
-  const base = parent ?? (await mkdtemp(join(tmpdir(), 'flowlens-canvas-')));
-  const rootDir = join(base, 'sample-app');
-  await cp(SAMPLE_APP, rootDir, { recursive: true });
-  const hasGit = await createHistory(rootDir);
-
+/** Index `rootDir` into `<rootDir>/.flowlens/graph` with the test config. */
+export async function indexProject(rootDir: string): Promise<string> {
   const flowlensDir = join(rootDir, '.flowlens');
   await mkdir(flowlensDir, { recursive: true });
   await writeFile(join(flowlensDir, 'config.json'), JSON.stringify(CONFIG, null, 2));
-  await writeFile(join(flowlensDir, 'architecture.json'), await readFile(join(rootDir, 'architecture.json'), 'utf-8'));
-
   const store = new LevelGraphStore();
   await store.open(join(flowlensDir, 'graph'));
   try {
@@ -83,11 +77,42 @@ export async function createIndexedFixture(parent?: string): Promise<IndexedFixt
   } finally {
     await store.close();
   }
+  return flowlensDir;
+}
 
+export async function createIndexedFixture(parent?: string): Promise<IndexedFixture> {
+  const base = parent ?? (await mkdtemp(join(tmpdir(), 'flowlens-canvas-')));
+  const rootDir = join(base, 'sample-app');
+  await cp(SAMPLE_APP, rootDir, { recursive: true });
+  const hasGit = await createHistory(rootDir);
+  const flowlensDir = join(rootDir, '.flowlens');
+  await mkdir(flowlensDir, { recursive: true });
+  await writeFile(join(flowlensDir, 'architecture.json'), await readFile(join(rootDir, 'architecture.json'), 'utf-8'));
+  await indexProject(rootDir);
   return {
     rootDir,
     flowlensDir,
     hasGit,
     cleanup: () => rm(base, { recursive: true, force: true }),
   };
+}
+
+/**
+ * A second, different project for multi-project tests: a tiny notes app
+ * with extensionless relative imports and no cycles.
+ */
+export const NOTES_APP: Record<string, string> = {
+  'src/main.ts': "import { listNotes } from './notes/list';\nimport { formatTitle } from './text/format';\n\nexport function main(): string {\n  return listNotes().map(formatTitle).join('\\n');\n}\n",
+  'src/notes/list.ts': "import { Note, makeNote } from './note';\n\nexport function listNotes(): Note[] {\n  return [makeNote('first'), makeNote('second')];\n}\n",
+  'src/notes/note.ts': "export interface Note {\n  title: string;\n}\n\nexport function makeNote(title: string): Note {\n  return { title };\n}\n",
+  'src/text/format.ts': "import type { Note } from '../notes/note';\n\nexport function formatTitle(note: Note): string {\n  return note.title.toUpperCase();\n}\n",
+};
+
+export async function createNotesProject(parent: string): Promise<{ rootDir: string; flowlensDir: string }> {
+  const rootDir = join(parent, 'notes-app');
+  for (const [rel, text] of Object.entries(NOTES_APP)) {
+    await mkdir(join(rootDir, rel, '..'), { recursive: true });
+    await writeFile(join(rootDir, rel), text);
+  }
+  return { rootDir, flowlensDir: await indexProject(rootDir) };
 }

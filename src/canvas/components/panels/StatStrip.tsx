@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import type { CanvasSummary } from '../../../contracts/canvas/index.js';
-import { fetchSummary } from '../../api/graph-client';
+import { useGraphClient } from '../explorer/project-context';
 import { COLORS } from '../shared/ui';
 import { formatRelativeTime } from '../../utils/format';
 
@@ -19,6 +19,7 @@ function Stat({ label, value, tone, testId }: { label: string; value: React.Reac
 }
 
 export function StatStrip({ graphVersion }: { graphVersion: number }) {
+  const { fetchSummary } = useGraphClient();
   const [summary, setSummary] = useState<CanvasSummary | null>(null);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function StatStrip({ graphVersion }: { graphVersion: number }) {
     return () => {
       cancelled = true;
     };
-  }, [graphVersion]);
+  }, [graphVersion, fetchSummary]);
 
   if (!summary) return null;
   const n = (v: number) => v.toLocaleString();
