@@ -177,7 +177,7 @@ export interface CanvasState {
  * zoom < system → 'system', < module → 'module', < file → 'file', else 'entity'.
  */
 export const ZOOM_THRESHOLDS = {
-  system: 0.3,
+  system: 0.22,
   module: 0.7,
   file: 1.5,
 } as const;

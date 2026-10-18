@@ -79,5 +79,5 @@ export const ZONE_LAYOUT = {
   richCard: { width: 224, height: 52, row: 15 },
   zoneCard: { width: 244, height: 112 },
   /** Zoom below which only zone summaries are drawn (no cards, no card edges). */
-  summaryZoom: 0.3,
+  summaryZoom: 0.22,
 } as const;

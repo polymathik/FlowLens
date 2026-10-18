@@ -1,8 +1,8 @@
 /**
  * Level of detail by zoom (Map v2 M2), pure helpers:
  *
- *   zoom < 0.3   zone summaries only: labels, counts, quality; no cards, no card edges
- *   0.3 – 0.7    file cards (name, size, quality)
+ *   zoom < 0.22  zone summaries only: labels, counts, quality; no cards, no card edges
+ *   0.22 – 0.7   file cards (name, size, quality)
  *   (small views: the cards also list their symbols, up to 8 rows + "+N")
  *
  * Labels are counter-scaled so a zone name stays readable when the map is
