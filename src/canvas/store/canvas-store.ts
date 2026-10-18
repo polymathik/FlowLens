@@ -69,6 +69,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       groupBy: session.groupBy,
       zoneExpansion: session.zoneExpansion,
       zoneOverrides: EMPTY_ZONE_OVERRIDES,
+      communityAssignment: null,
       hoveredNodeId: null,
       zoneNotice: null,
 
@@ -125,6 +126,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
         remember();
       },
       setZoneOverrides: (overrides) => set({ zoneOverrides: overrides }),
+      setCommunityAssignment: (assignment) => set({ communityAssignment: assignment }),
       setHoveredNode: (id) => set((s) => (s.hoveredNodeId === id ? s : { hoveredNodeId: id })),
       setZoneNotice: (notice) => set((s) => (s.zoneNotice === notice ? s : { zoneNotice: notice })),
     };
