@@ -30,6 +30,17 @@ const PROBLEM_NODE = 'var(--fl-overlay-problem)';
 
 const MUTED: NodeOverlayStyle = { tag: 'none', fill: 'var(--fl-overlay-muted-fill)', stroke: 'var(--fl-overlay-muted-stroke)', muted: true };
 
+/** Red outline and "N rule breaks" badge of a node that is an endpoint of rule breaks. */
+export function violationNodeStyle(count: number): NodeOverlayStyle {
+  return {
+    tag: 'violations',
+    stroke: PROBLEM_NODE,
+    strokeWidth: 2.5,
+    fill: withAlpha(PROBLEM_NODE, 0.08),
+    badge: count > 1 ? `${count} rule breaks` : '1 rule break',
+  };
+}
+
 type Data = Record<string, unknown>;
 const num = (n: Node, key: string) => (n.data as Data)[key] as number | undefined;
 
@@ -130,14 +141,7 @@ export function applyOverlay(
       const members = rollUp(resolveViolations(extra.violations, index, visibleIds).members, nodes);
       return decorate(nodes, (n) => {
         const count = members.get(n.id);
-        if (!count) return { ...MUTED, tag: 'violations' };
-        return {
-          tag: 'violations',
-          stroke: PROBLEM_NODE,
-          strokeWidth: 2.5,
-          fill: withAlpha(PROBLEM_NODE, 0.08),
-          badge: count > 1 ? `${count} rule breaks` : '1 rule break',
-        };
+        return count ? violationNodeStyle(count) : { ...MUTED, tag: 'violations' };
       });
     }
 

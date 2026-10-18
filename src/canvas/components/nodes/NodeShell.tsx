@@ -65,8 +65,11 @@ export function NodeShell({ level, selected, overlay, accent, title, subtitle, i
     boxSizing: 'border-box',
     padding: level === 'entity' || level === 'portal' ? '6px 10px' : '8px 12px',
     borderRadius: level === 'entity' ? 6 : 10,
-    border: `${strokeWidth}px ${overlay?.strokeStyle ?? (level === 'portal' || level === 'scope' ? 'dashed' : 'solid')} ${stroke}`,
-    borderLeft: accent ? `4px solid ${accent}` : undefined,
+    // Longhands only: React warns when a shorthand (`border`) and `borderLeft` are re-rendered together.
+    borderWidth: strokeWidth,
+    borderStyle: overlay?.strokeStyle ?? (level === 'portal' || level === 'scope' ? 'dashed' : 'solid'),
+    borderColor: stroke,
+    ...(accent ? { borderLeftWidth: 4, borderLeftStyle: 'solid' as const, borderLeftColor: accent } : {}),
     background: overlay?.fill ?? p.fill,
     color: p.text,
     opacity: overlay?.muted ? 0.7 : 1,

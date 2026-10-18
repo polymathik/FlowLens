@@ -14,6 +14,7 @@
 import type { RelationType } from '../relations.js';
 import type { HierarchyKind } from '../hierarchy.js';
 import type { ZoneOverrides, ZoneSet, ZoningMode } from '../zones.js';
+import type { ArchitectureLayer } from '../architecture.js';
 import type { MapCut } from './zones-view.js';
 
 export type TypeCounts = Partial<Record<RelationType, number>>;
@@ -107,4 +108,6 @@ export interface ZoneViewOptions {
   revealRefs?: string[];
   /** Mounted-node budget (default `ZONE_LAYOUT.nodeBudget`). */
   nodeBudget?: number;
+  /** Architecture layers for the `layers` grouping (from `.flowlens/architecture.json`). */
+  layers?: ArchitectureLayer[];
 }

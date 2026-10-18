@@ -73,3 +73,20 @@ export function useFloatingEndpoints(source: string, target: string): FloatingEn
     targetPosition: sideOf(t, tp),
   };
 }
+
+export interface SideEndpoints {
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+}
+
+/** Middle of the right border of both nodes (edges that swing out to the right of a stack of layers). */
+export function useRightSideEndpoints(source: string, target: string): SideEndpoints | null {
+  const s = useInternalNode(source);
+  const t = useInternalNode(target);
+  if (!s || !t || !s.measured.width || !t.measured.width) return null;
+  const a = box(s);
+  const b = box(t);
+  return { sourceX: a.x + a.w, sourceY: a.y + a.h / 2, targetX: b.x + b.w, targetY: b.y + b.h / 2 };
+}

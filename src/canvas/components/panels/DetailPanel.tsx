@@ -117,9 +117,10 @@ export function DetailPanel({ graph, edges }: { graph: Pick<GraphData, 'index' |
     if (!edge?.data?.relationIds) return null;
     const relations = edge.data.relationIds.map((id) => graph.relationById.get(id)).filter((r): r is Relation => !!r && visibleTypes.has(r.type));
     return (
-      <Frame header={<span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{relations.length} relations</span>} onClose={() => selectEdge(null)}>
+      <Frame header={<span data-testid="edge-detail-title" style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{edge.data.breakLabel ?? `${relations.length} relations`}</span>} onClose={() => selectEdge(null)}>
+        {edge.data.ruleText && <div data-testid="edge-rule" style={{ color: COLORS.danger, marginBottom: 4 }}>{edge.data.ruleText}</div>}
         <div style={{ color: COLORS.muted, marginBottom: 4 }}>{describeCounts(countTypes(relations))}</div>
-        <RelationLines relations={relations} entityById={entityById} title="Where they are written" />
+        <RelationLines relations={relations} entityById={entityById} title={edge.data.breakLabel ? 'Where the rule is broken' : 'Where they are written'} />
       </Frame>
     );
   }

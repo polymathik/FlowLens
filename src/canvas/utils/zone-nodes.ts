@@ -79,6 +79,7 @@ export function buildCutNodes(h: Hierarchy, view: MapView): Node[] {
         churnRate: zone?.stats.churn,
         hotspotScore: zone?.stats.hotspot,
         customized: item.customized,
+        detail: zone?.detail,
       };
       return box(item.id, 'zone', data, item);
     }

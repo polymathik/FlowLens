@@ -8,6 +8,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ArchitectureConfig } from '../../../../contracts/architecture.js';
 import { ApiError } from '../../../api/graph-client';
+import { inferArchitecture } from '../../../../architecture/heuristic-inference.js';
 import { useGraphClient } from '../../explorer/project-context';
 import {
   addLayer,
@@ -19,14 +20,15 @@ import {
   toggleAccess,
   updateLayer,
 } from '../../../utils/architecture-draft';
-import { useCanvasStore } from '../../../store/canvas-store';
+import { useCanvasStore, useCanvasStoreApi } from '../../../store/canvas-store';
 import { LayerCard } from './LayerCard';
 import { useRulesPreview } from './useRulesPreview';
 import { COLORS, button, buttonActive, floatingPanel, linkButton } from '../../shared/ui';
 
 export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
   const setOverlay = useCanvasStore((s) => s.setOverlay);
-  const { fetchArchitecture, saveArchitecture } = useGraphClient();
+  const { fetchArchitecture, saveArchitecture, fetchEntities, fetchRelations } = useGraphClient();
+  const store = useCanvasStoreApi();
   const [draft, setDraft] = useState<ArchitectureConfig | null>(null);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -52,11 +54,23 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
     return m;
   }, [preview.violations]);
 
+  /** First draft from the folder structure and imports (the same heuristic as `flowlens init`). */
+  const suggest = async () => {
+    try {
+      const [entities, relations] = await Promise.all([fetchEntities(), fetchRelations()]);
+      edit(() => normalizeConfig(inferArchitecture(entities, relations)));
+      setStatus('Suggested from your folders and imports — review, then Save.');
+    } catch (err) {
+      setStatus(`Could not suggest layers: ${String((err as Error)?.message ?? err)}`);
+    }
+  };
+
   const save = async () => {
     if (!draft) return;
     try {
       const res = await saveArchitecture(toSavedConfig(draft));
       setDirty(false);
+      store.getState().bumpRulesRevision(); // the Layers view re-reads the saved rules
       setStatus(`Saved · ${res.violation_count} rule breaks`);
     } catch (err) {
       setStatus(err instanceof ApiError && err.issues.length ? `Not saved: ${err.issues[0].message}` : `Not saved: ${String(err)}`);
@@ -70,6 +84,11 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
         <button style={button} onClick={() => edit(addLayer)} disabled={!draft}>
           + Layer
         </button>
+        {draft?.layers.length === 0 && (
+          <button data-testid="rules-suggest" style={button} onClick={suggest} title="Propose layers from your folders and imports">
+            Suggest
+          </button>
+        )}
         <button data-testid="rules-save" style={dirty ? buttonActive : button} onClick={save} disabled={!draft || preview.issues.length > 0}>
           Save
         </button>

@@ -37,12 +37,13 @@ export function useMapModel(graph: Graph): MapModel {
   const groupBy = useCanvasStore((s) => s.groupBy);
   const expansion = useCanvasStore((s) => s.zoneExpansion);
   const overrides = useCanvasStore((s) => s.zoneOverrides);
+  const layers = useCanvasStore((s) => s.architectureLayers);
   const focusNodeId = useCanvasStore((s) => s.focusRequest?.nodeId ?? null);
   const { hierarchy, relations, relationById, index, annotations, version } = graph;
 
   const zones = useMemo<ZoneViewOptions>(
-    () => ({ mode: groupBy, overrides, expansion, revealRefs: focusNodeId ? [focusNodeId] : [] }),
-    [groupBy, overrides, expansion, focusNodeId],
+    () => ({ mode: groupBy, overrides, expansion, revealRefs: focusNodeId ? [focusNodeId] : [], layers: layers ?? undefined }),
+    [groupBy, overrides, expansion, focusNodeId, layers],
   );
   const view = useMemo(() => computeMapView(hierarchy, relations, drillPath, { showLockfiles, zones }), [hierarchy, relations, drillPath, showLockfiles, zones]);
   const annMap = useMemo(() => buildAnnotationMap(annotations), [annotations]);
@@ -73,7 +74,7 @@ export function useMapModel(graph: Graph): MapModel {
           h: NODE_SIZES[n.type as 'portal' | 'scope'].height,
           pin: n.type === 'portal' ? ((n.data as { direction?: string }).direction === 'out' ? ('last' as const) : ('first' as const)) : undefined,
         }));
-      const boxes = await layoutCut({ cut: view.cut, links: edges, extras, rowsOf: (id) => rowsFor(symbolCountOf(hierarchy, id)) });
+      const boxes = await layoutCut({ cut: view.cut, links: edges, extras, rowsOf: (id) => rowsFor(symbolCountOf(hierarchy, id)), stack: view.zoning?.mode === 'layers' });
       return new Map([...boxes].map(([id, b]) => [id, { x: b.x, y: b.y, w: b.w, h: b.h }]));
     },
     // The model is rebuilt when `key` changes; nodes / edges are derived from the same inputs.

@@ -71,6 +71,8 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       zoneOverrides: EMPTY_ZONE_OVERRIDES,
       hoveredNodeId: null,
       zoneNotice: null,
+      architectureLayers: null,
+      rulesRevision: 0,
 
       setZoomLevel: (level) => set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
       selectNode: (id) => set(id === null ? { selectedNodeId: null, selectedEdgeId: null, highlightedIds: [] } : { selectedNodeId: id, selectedEdgeId: null }),
@@ -127,6 +129,8 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       setZoneOverrides: (overrides) => set({ zoneOverrides: overrides }),
       setHoveredNode: (id) => set((s) => (s.hoveredNodeId === id ? s : { hoveredNodeId: id })),
       setZoneNotice: (notice) => set((s) => (s.zoneNotice === notice ? s : { zoneNotice: notice })),
+      setArchitectureLayers: (layers) => set({ architectureLayers: layers }),
+      bumpRulesRevision: () => set((s) => ({ rulesRevision: s.rulesRevision + 1 })),
     };
   });
 }

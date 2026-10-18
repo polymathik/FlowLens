@@ -13,6 +13,7 @@
 import type { RelationType } from '../relations.js';
 import type { ArchitectureViolation } from '../analysis/architecture.js';
 import type { ZoneOverrides, ZoningMode } from '../zones.js';
+import type { ArchitectureLayer } from '../architecture.js';
 
 /** Four discrete zoom tiers mapped from React Flow viewport zoom (names are historical; they are detail tiers). */
 export type ZoomLevel = 'system' | 'module' | 'file' | 'entity';
@@ -113,6 +114,10 @@ export interface CanvasState {
   hoveredNodeId: string | null;
   /** One-line message about zones (override save failed, zones collapsed for performance…). */
   zoneNotice: string | null;
+  /** Layers of `.flowlens/architecture.json` (Layers grouping); null until loaded, [] when the file defines none. */
+  architectureLayers: ArchitectureLayer[] | null;
+  /** Bumped when the rules are saved, so the map re-reads them. */
+  rulesRevision: number;
 
   // Drill-down
   /**
@@ -152,6 +157,8 @@ export interface CanvasState {
   setZoneOverrides: (overrides: ZoneOverrides) => void;
   setHoveredNode: (id: string | null) => void;
   setZoneNotice: (notice: string | null) => void;
+  setArchitectureLayers: (layers: ArchitectureLayer[] | null) => void;
+  bumpRulesRevision: () => void;
 }
 
 /**

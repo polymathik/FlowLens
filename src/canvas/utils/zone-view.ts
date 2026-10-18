@@ -24,7 +24,7 @@ type Slot = { t: 'inner'; id: string } | { t: 'hidden' } | { t: 'out'; chain: st
 export function computeZoneView(h: Hierarchy, relations: Relation[], containerId: string, options: MapViewOptions, zo: ZoneViewOptions): MapView {
   const files = visibleFiles(h, containerId, options.showLockfiles);
   let mode = zo.mode;
-  let zoneSet = getZones({ mode, hierarchy: h, scopeId: containerId, overrides: zo.overrides });
+  let zoneSet = getZones({ mode, hierarchy: h, scopeId: containerId, overrides: zo.overrides, layers: zo.layers });
   if (zoneSet.zones.length === 0 && mode !== 'folders') {
     // The requested grouping finds nothing here (e.g. no package boundary inside a package): group by folders.
     const byFolders = getZones({ mode: 'folders', hierarchy: h, scopeId: containerId, overrides: zo.overrides });

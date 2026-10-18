@@ -30,11 +30,12 @@ import '@xyflow/react/dist/style.css';
 import { useGraphData } from '../hooks/useGraphData';
 import { useOverlayData } from '../hooks/useOverlayData';
 import { useMapModel } from '../hooks/useMapModel';
-import { useCanvasView } from '../hooks/useCanvasView';
+import { useCanvasView, type LayerView } from '../hooks/useCanvasView';
 import { useCanvasLayout } from '../hooks/useCanvasLayout';
 import { useSemanticZoom } from '../hooks/useSemanticZoom';
 import { useNodeInteractions } from '../hooks/useNodeInteractions';
 import { useZoneOverridesLoader } from '../hooks/useZoneOverrides';
+import { useArchitectureLayersLoader, useLayerBreaks } from '../hooks/useLayerBreaks';
 import { useCanvasStoreApi } from '../store/canvas-store';
 import { expansionKey } from '../utils/zone-cut';
 import { useHashRoute } from '../router/useHashRoute';
@@ -83,6 +84,7 @@ function CanvasInner() {
   const colorMode = useColorMode();
 
   useZoneOverridesLoader();
+  useArchitectureLayersLoader();
   const overlayData = useOverlayData(graph.version);
   const model = useMapModel(graph);
   const containerId = model.view.containerId;
@@ -100,7 +102,12 @@ function CanvasInner() {
     },
     [setNodes],
   );
-  const view = useCanvasView(nodes, layoutEdges as Edge<CanvasEdgeData>[], graph.index, overlayData);
+  const breaks = useLayerBreaks(graph, model.view);
+  const layerView = useMemo<LayerView | undefined>(
+    () => (model.view.zoning?.mode === 'layers' && model.view.zoning.zoneSet.zones.length > 0 ? { breaks, relationById: graph.relationById, topIds: model.view.cut?.topIds ?? [] } : undefined),
+    [breaks, graph.relationById, model.view],
+  );
+  const view = useCanvasView(nodes, layoutEdges as Edge<CanvasEdgeData>[], graph.index, overlayData, layerView);
   useCanvasLayout({ model, visibleIds: view.visibleIds, commit });
   useSemanticZoom();
   useHashRoute(graph.entities, graph.hierarchy, !graph.loading && graph.entities.length > 0);
@@ -137,7 +144,7 @@ function CanvasInner() {
         onToggleRules={() => setShowRules((v) => !v)}
         onExport={onExport}
         exporting={exporting}
-        zoneControls={<ZoneControls view={model.view} hierarchy={graph.hierarchy} />}
+        zoneControls={<ZoneControls view={model.view} hierarchy={graph.hierarchy} onOpenRules={() => setShowRules(true)} />}
       />
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         <ZoneActionsContext.Provider value={zoneActions}>

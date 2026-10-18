@@ -14,28 +14,42 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, type Edge, type EdgeProps }
 import type { CanvasEdgeData } from '../../../contracts/canvas/index.js';
 import { PROBLEM_COLOR, relationColor } from '../../utils/relation-colors';
 import { useCanvasStore } from '../../store/canvas-store';
-import { useFloatingEndpoints } from './floating';
+import { useFloatingEndpoints, useRightSideEndpoints } from './floating';
 
 /** Opacity of an edge: strong when it touches the hovered / selected node, ~10% while others are focused, dimmed card-level edges across frames. */
 export function edgeOpacity(layer: CanvasEdgeData['layer'], hot: boolean | undefined, focusActive: boolean): number {
   if (hot) return 1;
   if (focusActive) return 0.1;
-  return layer === 'detail' ? 0.16 : layer === 'portal' ? 0.4 : layer === 'sibling' ? 0.55 : layer === 'bundle' ? 0.85 : 0.75;
+  return layer === 'detail' ? 0.16 : layer === 'portal' ? 0.4 : layer === 'sibling' ? 0.55 : layer === 'bundle' ? 0.85 : layer === 'focus' ? 0.8 : 0.75;
 }
 
 type CanvasEdgeProps = EdgeProps<Edge<CanvasEdgeData>>;
 
-function useBezier(p: CanvasEdgeProps) {
+type PathTriple = [path: string, labelX: number, labelY: number];
+
+/**
+ * Edge path. Normally a bezier between the floating border points; with `data.bulgeX` (layers stack) a
+ * C-shaped curve that leaves the right side of both boxes and swings out to `bulgeX`, so it passes
+ * around the layers in between. `data.curve` overrides the curvature (a rule-break edge beside the normal one).
+ */
+function useEdgePath(p: CanvasEdgeProps): PathTriple {
   const floating = useFloatingEndpoints(p.source, p.target);
-  return getBezierPath({
+  const side = useRightSideEndpoints(p.source, p.target);
+  const bulge = p.data?.bulgeX;
+  if (bulge !== undefined && side) {
+    const { sourceX: sx, sourceY: sy, targetX: tx, targetY: ty } = side;
+    return [`M ${sx},${sy} C ${bulge},${sy} ${bulge},${ty} ${tx},${ty}`, (sx + tx + 6 * bulge) / 8, (sy + ty) / 2];
+  }
+  const [path, labelX, labelY] = getBezierPath({
     sourceX: floating?.sourceX ?? p.sourceX,
     sourceY: floating?.sourceY ?? p.sourceY,
     sourcePosition: floating?.sourcePosition ?? p.sourcePosition,
     targetX: floating?.targetX ?? p.targetX,
     targetY: floating?.targetY ?? p.targetY,
     targetPosition: floating?.targetPosition ?? p.targetPosition,
-    curvature: 0.25,
+    curvature: p.data?.curve ?? 0.25,
   });
+  return [path, labelX, labelY];
 }
 
 function CountLabel({ x, y, text, color, title, opacity = 1 }: { x: number; y: number; text: string | number; color: string; title: string; opacity?: number }) {
@@ -72,14 +86,14 @@ function describe(data?: CanvasEdgeData): string {
 }
 
 export const RelationEdge = React.memo((props: CanvasEdgeProps) => {
-  const [path, labelX, labelY] = useBezier(props);
+  const [path, labelX, labelY] = useEdgePath(props);
   const focusActive = useCanvasStore((s) => s.hoveredNodeId !== null || s.selectedNodeId !== null);
   const color = relationColor(props.data?.dominantType);
   const aggregated = props.data?.kind === 'aggregated-edge';
   const layer = props.data?.layer;
   const opacity = edgeOpacity(layer, props.data?.hot, focusActive);
   // Card-level edges across frames stay unlabelled until they are hot; bundles and siblings carry their counts.
-  const labelled = aggregated && ((props.data?.count ?? 0) > 1 || layer === 'bundle') && (layer !== 'detail' || props.data?.hot);
+  const labelled = aggregated && ((props.data?.count ?? 0) > 1 || layer === 'bundle' || layer === 'focus') && (layer !== 'detail' || props.data?.hot);
   return (
     <>
       <BaseEdge
@@ -104,7 +118,10 @@ export const RelationEdge = React.memo((props: CanvasEdgeProps) => {
 
 function problemEdge(dash: string, width: number, animated: boolean) {
   return React.memo((props: CanvasEdgeProps) => {
-    const [path, labelX, labelY] = useBezier(props);
+    const [path, labelX, labelY] = useEdgePath(props);
+    const focusActive = useCanvasStore((s) => s.hoveredNodeId !== null || s.selectedNodeId !== null);
+    // Zone views draw problem edges in their layer's strength (card-level ones across frames stay faint); the flat view keeps them solid.
+    const opacity = props.data?.layer ? edgeOpacity(props.data.layer, props.data.hot, focusActive) : 1;
     return (
       <>
         <BaseEdge
@@ -112,14 +129,15 @@ function problemEdge(dash: string, width: number, animated: boolean) {
           path={path}
           markerEnd={props.markerEnd}
           style={{
+            opacity,
             stroke: PROBLEM_COLOR,
-            strokeWidth: width,
+            strokeWidth: props.style?.strokeWidth ?? width,
             strokeDasharray: dash,
             animation: animated ? 'dashmove 1s linear infinite' : undefined,
           }}
         />
-        {(props.data?.count ?? 0) > 1 && (
-          <CountLabel x={labelX} y={labelY} text={props.data!.count} color={PROBLEM_COLOR} title={describe(props.data)} />
+        {(props.data?.breakLabel || (props.data?.count ?? 0) > 1) && (props.data?.layer !== 'detail' || props.data?.hot) && (
+          <CountLabel x={labelX} y={labelY} text={props.data!.breakLabel ?? props.data!.count} color={PROBLEM_COLOR} title={props.data?.ruleText ?? describe(props.data)} />
         )}
       </>
     );

@@ -34,7 +34,7 @@ export const button: React.CSSProperties = {
 
 export const buttonActive: React.CSSProperties = {
   ...button,
-  borderColor: COLORS.accent,
+  border: `1px solid ${COLORS.accent}`, // same shorthand as `button`: React warns when a toggled style swaps a shorthand for a longhand
   color: COLORS.accent,
   background: COLORS.accentSoft,
 };
