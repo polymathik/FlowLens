@@ -1,0 +1,9 @@
+{
+  "name": "flow-app",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": { "flow-app": "./dist/cli.js" },
+  "scripts": { "seed": "tsx scripts/seed.ts", "start": "node dist/server.js", "lint": "eslint ." },
+  "dependencies": { "express": "^4.19.0", "commander": "^12.0.0", "@nestjs/common": "^10.0.0" }
+}
