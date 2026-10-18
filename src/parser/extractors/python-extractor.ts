@@ -13,6 +13,7 @@ import type { RelationType } from '../../contracts/relations.js';
 import type { LanguageExtractor } from '../../contracts/language-extractor.js';
 import { findChild, findChildText } from '../extractor-helpers.js';
 import { makeEntity } from './entity-builder.js';
+import { pythonVisibility, decoratorName } from './python-ast.js';
 import { extractPythonSymbols } from './python-symbols.js';
 import { extractPythonRelations } from './python-relations.js';
 
@@ -23,24 +24,6 @@ const CONTAINERS = new Set([
   'module', 'block', 'if_statement', 'elif_clause', 'else_clause', 'try_statement',
   'except_clause', 'finally_clause', 'with_statement', 'for_statement', 'while_statement',
 ]);
-
-export function pythonVisibility(name: string): Visibility {
-  if (name.startsWith('__') && !name.endsWith('__')) return 'private';
-  return name.startsWith('_') ? 'protected' : 'public';
-}
-
-/** `@name`, `@name(...)`, `@a.b`, `@a.b(...)` → dotted name. */
-export function decoratorName(dec: SgNode): string | null {
-  for (const child of dec.children()) {
-    const k = child.kind();
-    if (k === 'identifier' || k === 'attribute') return child.text();
-    if (k === 'call') {
-      const fn = child.children()[0];
-      if (fn && (fn.kind() === 'identifier' || fn.kind() === 'attribute')) return fn.text();
-    }
-  }
-  return null;
-}
 
 function extractEntities(root: SgNode, fp: string): Entity[] {
   const out: Entity[] = [];

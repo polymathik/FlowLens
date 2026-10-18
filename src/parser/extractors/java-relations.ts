@@ -16,7 +16,7 @@ import { RelationEmitter, loc } from '../symbols/emitter.js';
 import { emitImportEdges } from '../symbols/import-edges.js';
 import { containRelations } from '../relations/data-relations.js';
 import { aggregateRelations } from '../../graph/aggregate.js';
-import { annotationsOf } from './java-extractor.js';
+import { annotationsOf } from './java-ast.js';
 
 interface Frame {
   path: string[];

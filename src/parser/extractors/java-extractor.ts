@@ -13,6 +13,7 @@ import type { RelationType } from '../../contracts/relations.js';
 import type { LanguageExtractor } from '../../contracts/language-extractor.js';
 import { findChild, findChildText } from '../extractor-helpers.js';
 import { makeEntity } from './entity-builder.js';
+import { javaVisibility, annotationsOf, annotationName } from './java-ast.js';
 import { extractJavaSymbols } from './java-symbols.js';
 import { extractJavaRelations } from './java-relations.js';
 
@@ -25,28 +26,6 @@ const TYPE_DECLS: Record<string, { kind: EntityKind; body: string }> = {
   record_declaration: { kind: 'class', body: 'class_body' },
   annotation_type_declaration: { kind: 'interface', body: 'annotation_type_body' },
 };
-
-export function javaVisibility(node: SgNode): Visibility {
-  const mods = findChild(node, 'modifiers');
-  if (!mods) return 'internal';
-  for (const c of mods.children()) {
-    const k = c.kind();
-    if (k === 'public' || k === 'private' || k === 'protected') return k as Visibility;
-  }
-  return 'internal';
-}
-
-/** Annotation nodes in a declaration's modifiers. */
-export function annotationsOf(node: SgNode): SgNode[] {
-  const mods = findChild(node, 'modifiers');
-  if (!mods) return [];
-  return mods.children().filter((c) => c.kind() === 'marker_annotation' || c.kind() === 'annotation');
-}
-
-export function annotationName(node: SgNode): string | null {
-  const id = node.children().find((c) => c.kind() === 'identifier' || c.kind() === 'scoped_identifier');
-  return id ? id.text() : null;
-}
 
 function extractEntities(root: SgNode, fp: string): Entity[] {
   const out: Entity[] = [];
