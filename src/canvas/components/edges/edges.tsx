@@ -1,7 +1,8 @@
 /**
  * Edge components:
- * - RelationEdge: bezier coloured by the edge's display type, with a count
- *   label on aggregated edges and a tooltip listing every relation type.
+ * - RelationEdge: bezier coloured by the edge's display type, with a text
+ *   label on aggregated edges ("imports 12 · calls 3"; just the count on
+ *   portal links) and a tooltip listing every relation type.
  * - CycleEdge: animated red dashes for edges inside a dependency cycle.
  * - ViolationEdge: thick red dashes for edges that break an architecture rule.
  *
@@ -29,10 +30,11 @@ function useBezier(p: CanvasEdgeProps) {
   });
 }
 
-function CountLabel({ x, y, count, color, title }: { x: number; y: number; count: number; color: string; title: string }) {
+function CountLabel({ x, y, text, color, title }: { x: number; y: number; text: string | number; color: string; title: string }) {
   return (
     <EdgeLabelRenderer>
       <div
+        data-testid="edge-label"
         title={title}
         className="nodrag nopan"
         style={{
@@ -41,14 +43,15 @@ function CountLabel({ x, y, count, color, title }: { x: number; y: number; count
           fontSize: 10,
           fontWeight: 600,
           color,
-          backgroundColor: 'rgba(255,255,255,0.92)',
+          backgroundColor: 'var(--fl-surface)',
+          whiteSpace: 'nowrap',
           border: `1px solid ${color}40`,
           padding: '0 5px',
           borderRadius: 10,
           pointerEvents: 'all',
         }}
       >
-        {count}
+        {text}
       </div>
     </EdgeLabelRenderer>
   );
@@ -56,7 +59,7 @@ function CountLabel({ x, y, count, color, title }: { x: number; y: number; count
 
 function describe(data?: CanvasEdgeData): string {
   if (!data) return '';
-  return `${data.count} relation${data.count === 1 ? '' : 's'}: ${data.types.join(', ')}`;
+  return `${data.count} relation${data.count === 1 ? '' : 's'}: ${data.label ?? data.types.join(', ')}`;
 }
 
 export const RelationEdge = React.memo((props: CanvasEdgeProps) => {
@@ -72,7 +75,13 @@ export const RelationEdge = React.memo((props: CanvasEdgeProps) => {
         style={{ stroke: color, strokeWidth: aggregated ? 2 : 1.5, opacity: 0.75, ...props.style }}
       />
       {aggregated && (props.data?.count ?? 0) > 1 && (
-        <CountLabel x={labelX} y={labelY} count={props.data!.count} color={color} title={describe(props.data)} />
+        <CountLabel
+          x={labelX}
+          y={labelY}
+          text={props.data!.portal ? props.data!.count : props.data!.label || props.data!.count}
+          color={color}
+          title={describe(props.data)}
+        />
       )}
     </>
   );
@@ -95,7 +104,7 @@ function problemEdge(dash: string, width: number, animated: boolean) {
           }}
         />
         {(props.data?.count ?? 0) > 1 && (
-          <CountLabel x={labelX} y={labelY} count={props.data!.count} color={PROBLEM_COLOR} title={describe(props.data)} />
+          <CountLabel x={labelX} y={labelY} text={props.data!.count} color={PROBLEM_COLOR} title={describe(props.data)} />
         )}
       </>
     );

@@ -11,10 +11,13 @@
  */
 import { createContext, useContext } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
-import type {
-  CanvasState,
-  ZoomLevel as ContractZoomLevel,
-  OverlayType as ContractOverlayType,
+import {
+  DEFAULT_EDITOR_SCHEME,
+  EDITOR_SCHEMES,
+  type CanvasState,
+  type EditorScheme,
+  type ZoomLevel as ContractZoomLevel,
+  type OverlayType as ContractOverlayType,
 } from '../../contracts/canvas/index.js';
 import { DEFAULT_VISIBLE_RELATION_TYPES } from '../utils/relation-defaults';
 
@@ -25,11 +28,26 @@ export type CanvasStore = StoreApi<CanvasState>;
 
 let focusSeq = 0;
 
+const EDITOR_KEY = 'flowlens.editorScheme';
+
+/** Remembered "Open in editor" scheme (per browser; best effort — storage can be blocked). */
+function readEditorScheme(): EditorScheme {
+  try {
+    const v = window.localStorage.getItem(EDITOR_KEY);
+    return EDITOR_SCHEMES.includes(v as EditorScheme) ? (v as EditorScheme) : DEFAULT_EDITOR_SCHEME;
+  } catch {
+    return DEFAULT_EDITOR_SCHEME;
+  }
+}
+
 export function createCanvasStore(): CanvasStore {
   return createStore<CanvasState>()((set) => ({
     currentZoomLevel: 'system',
     selectedNodeId: null,
+    selectedEdgeId: null,
     focusRequest: null,
+    showLockfiles: false,
+    editorScheme: readEditorScheme(),
     visibleRelationTypes: new Set<string>(DEFAULT_VISIBLE_RELATION_TYPES),
     activeOverlay: null,
     searchQuery: '',
@@ -40,7 +58,17 @@ export function createCanvasStore(): CanvasStore {
     drillPath: [],
 
     setZoomLevel: (level) => set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
-    selectNode: (id) => set(id === null ? { selectedNodeId: null, highlightedIds: [] } : { selectedNodeId: id }),
+    selectNode: (id) => set(id === null ? { selectedNodeId: null, selectedEdgeId: null, highlightedIds: [] } : { selectedNodeId: id, selectedEdgeId: null }),
+    selectEdge: (id) => set({ selectedEdgeId: id, selectedNodeId: null }),
+    setShowLockfiles: (show) => set({ showLockfiles: show }),
+    setEditorScheme: (scheme) => {
+      try {
+        window.localStorage.setItem(EDITOR_KEY, scheme);
+      } catch {
+        /* storage blocked: the choice lasts for this session only */
+      }
+      set({ editorScheme: scheme });
+    },
     toggleRelationType: (type) =>
       set((state) => {
         const next = new Set(state.visibleRelationTypes);
@@ -60,7 +88,8 @@ export function createCanvasStore(): CanvasStore {
       set((s) => ({
         drillPath: [...target.drillPath],
         selectedNodeId: target.nodeId,
-        focusRequest: { nodeId: target.nodeId, seq: ++focusSeq },
+        selectedEdgeId: null,
+        focusRequest: target.nodeId ? { nodeId: target.nodeId, seq: ++focusSeq } : null,
         activeOverlay: target.overlay === undefined ? s.activeOverlay : target.overlay,
         highlightedIds: target.highlight ? [...target.highlight] : [],
       })),

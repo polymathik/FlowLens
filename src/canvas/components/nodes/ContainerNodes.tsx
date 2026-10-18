@@ -1,59 +1,93 @@
 /**
- * System, module and file nodes — containers the user can double-click to
- * open. Detail grows with the semantic zoom tier: the quality badge appears
- * from the "module" tier up.
+ * Package, folder, Config, file and file-scope nodes. Containers list what
+ * they hold (folder / file / symbol counts) and their largest files; the
+ * quality badge appears from the "module" detail tier up.
  */
 import React from 'react';
 import type { Node, NodeProps } from '@xyflow/react';
-import type { FileNodeData, ModuleNodeData, SystemNodeData } from '../../../contracts/canvas/index.js';
+import type { ConfigNodeData, FileNodeData, FolderNodeData, ScopeNodeData } from '../../../contracts/canvas/index.js';
 import { useCanvasStore } from '../../store/canvas-store';
 import { MetricsBadge } from '../shared/MetricsBadge';
 import { NodeShell } from './NodeShell';
 
-function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Subtitle({ count, quality }: { count: number; quality?: number }) {
+function Counts({ data }: { data: { folderCount: number; fileCount: number; symbolCount: number; qualityScore?: number } }) {
   const tier = useCanvasStore((s) => s.currentZoomLevel);
+  const parts = [data.folderCount > 0 ? plural(data.folderCount, 'folder') : null, data.fileCount > 0 ? plural(data.fileCount, 'file') : null, plural(data.symbolCount, 'symbol')];
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      {plural(count, 'symbol')}
-      {tier !== 'system' && <MetricsBadge score={quality} />}
+      {parts.filter(Boolean).join(' · ')}
+      {tier !== 'system' && <MetricsBadge score={data.qualityScore} />}
     </span>
   );
 }
 
-export const SystemNode = React.memo(({ data, selected }: NodeProps<Node<SystemNodeData, 'system'>>) => (
+function TopFiles({ names }: { names: string[] }) {
+  if (names.length === 0) return null;
+  return (
+    <ul data-testid="top-files" style={{ margin: '5px 0 0', padding: 0, listStyle: 'none', fontSize: 10.5, lineHeight: '14px', opacity: 0.85 }}>
+      {names.map((n) => (
+        <li key={n} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          ▤ {n}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export const FolderNode = React.memo(({ data, selected }: NodeProps<Node<FolderNodeData, 'folder' | 'package'>>) => (
   <NodeShell
-    level="system"
+    level={data.level}
     selected={selected}
     overlay={data.overlay}
-    title={`${data.label}${data.path.includes('.') ? '' : '/'}`}
-    subtitle={<Subtitle count={data.entityCount} quality={data.qualityScore} />}
-    tooltip={`${data.path} — double-click to open`}
+    icon={<span aria-hidden>{data.level === 'package' ? '◈' : '▸'}</span>}
+    title={data.level === 'package' ? data.label : `${data.label}/`}
+    subtitle={<Counts data={data} />}
+    tooltip={`${data.packageName ? `${data.packageName} — ` : ''}${data.path || '.'} — double-click to open`}
+  >
+    <TopFiles names={data.topFiles} />
+  </NodeShell>
+));
+
+export const ConfigNode = React.memo(({ data, selected }: NodeProps<Node<ConfigNodeData, 'config'>>) => (
+  <NodeShell
+    level="config"
+    selected={selected}
+    overlay={data.overlay}
+    icon={<span aria-hidden>⚙</span>}
+    title="Config"
+    subtitle={plural(data.fileCount, 'file')}
+    tooltip={`Configuration files${data.path ? ` in ${data.path}` : ''} — double-click to open`}
   />
 ));
 
-export const ModuleNode = React.memo(({ data, selected }: NodeProps<Node<ModuleNodeData, 'module'>>) => (
-  <NodeShell
-    level="module"
-    selected={selected}
-    overlay={data.overlay}
-    title={`${data.label}/`}
-    subtitle={<Subtitle count={data.entityCount} quality={data.qualityScore} />}
-    tooltip={`${data.path} — double-click to open`}
-  />
-));
+export const FileNode = React.memo(({ data, selected }: NodeProps<Node<FileNodeData, 'file'>>) => {
+  const tier = useCanvasStore((s) => s.currentZoomLevel);
+  return (
+    <NodeShell
+      level="file"
+      selected={selected}
+      overlay={data.overlay}
+      icon={<span aria-hidden style={{ fontSize: 11, color: '#94a3b8' }}>▤</span>}
+      title={data.label}
+      subtitle={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {data.symbolCount > 0 ? plural(data.symbolCount, 'symbol') : data.role && data.role !== 'source' ? data.role : 'no symbols'}
+          {tier !== 'system' && <MetricsBadge score={data.qualityScore} />}
+        </span>
+      }
+      tooltip={`${data.filePath} — double-click to see its contents`}
+    />
+  );
+});
 
-export const FileNode = React.memo(({ data, selected }: NodeProps<Node<FileNodeData, 'file'>>) => (
+export const ScopeNode = React.memo(({ data, selected }: NodeProps<Node<ScopeNodeData, 'scope'>>) => (
   <NodeShell
-    level="file"
+    level="scope"
     selected={selected}
     overlay={data.overlay}
-    icon={<span aria-hidden style={{ fontSize: 11, color: '#94a3b8' }}>▤</span>}
     title={data.label}
-    subtitle={<Subtitle count={data.entityCount} quality={data.qualityScore} />}
-    tooltip={`${data.filePath} — double-click to see its symbols`}
+    tooltip={`${data.filePath}: imports and exports of the file itself`}
   />
 ));

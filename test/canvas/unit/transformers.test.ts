@@ -1,110 +1,93 @@
 import { describe, it, expect } from 'vitest';
 import type { Node } from '@xyflow/react';
-import { transformEntitiesToNodes } from '../../../src/canvas/utils/node-transformer.js';
-import { transformRelationsToEdges, filterEdgesByRelationType } from '../../../src/canvas/utils/edge-transformer.js';
-import { buildGraphIndex } from '../../../src/canvas/utils/graph-index.js';
-import { getVisibleNodes } from '../../../src/canvas/utils/visible-nodes.js';
 import { RELATION_COLORS } from '../../../src/canvas/utils/relation-colors.js';
-import { sampleGraph, entity, relation } from '../helpers/factories.js';
+import { describeCounts } from '../../../src/canvas/utils/relation-labels.js';
+import { sampleHierarchy } from '../helpers/factories.js';
 
-const ids = (nodes: Node[]) => nodes.map((n) => n.id).sort();
+const { viewAt, applyRelationFilter } = sampleHierarchy();
 const data = (n: Node | undefined) => n?.data as Record<string, unknown>;
+const byId = (nodes: Node[], id: string) => nodes.find((n) => n.id === id);
+const pairs = (edges: { source: string; target: string }[]) => edges.map((e) => `${e.source}->${e.target}`).sort();
 
-describe('transformEntitiesToNodes', () => {
-  const { entities } = sampleGraph();
-  const nodes = transformEntitiesToNodes(entities);
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-
-  it('builds all four levels with parent references', () => {
-    expect(byId.get('system:src')?.type).toBe('system');
-    expect(data(byId.get('module:src/api'))).toMatchObject({ level: 'module', parentSystem: 'system:src', path: 'src/api' });
-    expect(data(byId.get('file:src/index.ts'))).toMatchObject({ level: 'file', parentSystem: 'system:src', parentModule: undefined });
-    expect(data(byId.get('Store'))).toMatchObject({ level: 'entity', entityKind: 'class', parentFile: 'file:src/core/store.ts', parentModule: 'module:src/core' });
+describe('view nodes (Map v2: only the open container is materialised)', () => {
+  it('project level: top-level folders as cards that list counts and top files', () => {
+    const { nodes } = viewAt([]);
+    expect(nodes.map((n) => n.id).sort()).toEqual(['folder:lib/util', 'folder:src']);
+    expect(data(byId(nodes, 'folder:lib/util'))).toMatchObject({ level: 'folder', label: 'lib/util', fileCount: 1, symbolCount: 1, topFiles: ['strings.ts'] });
+    expect(data(byId(nodes, 'folder:src'))).toMatchObject({ folderCount: 3, fileCount: 1, symbolCount: 5 });
+    expect(data(byId(nodes, 'folder:src')).topFiles).toHaveLength(3);
+    // every node carries explicit dimensions (deterministic layout / fit)
+    expect(nodes.every((n) => n.width! > 0 && n.height! > 0)).toBe(true);
   });
 
-  it('skips parameters and does not turn module/file pseudo-entities into nodes', () => {
-    expect(byId.has('p1')).toBe(false);
-    expect(byId.has('mod-ui')).toBe(false);
-    expect(byId.has('file:src/ui')).toBe(false);
-    expect(byId.has('file-view')).toBe(false);
+  it('keeps files as nodes and nests symbols; parameters are not nodes', () => {
+    const files = viewAt(['folder:src', 'folder:src/core']).nodes.filter((n) => n.type !== 'portal');
+    expect(files.map((n) => n.id)).toEqual(['file:src/core/store.ts']);
+    const fileView = viewAt(['folder:src', 'folder:src/core', 'file:src/core/store.ts']).nodes.filter((n) => n.type !== 'portal');
+    expect(fileView.map((n) => n.id)).toEqual(['Store']);
+    expect(data(fileView[0])).toMatchObject({ level: 'entity', entityKind: 'class' });
   });
 
-  it('puts churn and hotspot metrics on nodes, max-aggregated on containers', () => {
-    expect(data(byId.get('Store'))).toMatchObject({ churnRate: 0.05, hotspotScore: 0.6 });
-    expect(data(byId.get('module:src/core'))).toMatchObject({ churnRate: 0.05, hotspotScore: 0.6, qualityScore: 40 });
-    expect(data(byId.get('system:src'))).toMatchObject({ churnRate: 0.05, hotspotScore: 0.6 });
-    expect(data(byId.get('module:src/ui'))?.churnRate).toBeUndefined();
-  });
-});
-
-describe('transformRelationsToEdges', () => {
-  const { entities, relations } = sampleGraph();
-  const nodes = transformEntitiesToNodes(entities);
-  const index = buildGraphIndex(entities);
-  const edgesAt = (path: string[]) => {
-    const visible = new Set(getVisibleNodes(nodes, path).map((n) => n.id));
-    return transformRelationsToEdges(relations, visible, index);
-  };
-  const pairs = (path: string[]) => edgesAt(path).map((e) => `${e.source}->${e.target}`).sort();
-
-  it('aggregates to system level', () => {
-    expect(pairs([])).toEqual(['system:src->system:lib']);
-  });
-
-  it('aggregates to module level and to files at the system root (mixed levels)', () => {
-    expect(pairs(['system:src'])).toEqual([
-      'file:src/index.ts->module:src/api',
-      'module:src/api->module:src/core',
-      'module:src/api->module:src/ui',
-      'module:src/core->system:lib',
-    ]);
-  });
-
-  it('links files of the open module to sibling modules (and siblings to each other)', () => {
-    expect(pairs(['system:src', 'module:src/ui'])).toEqual([
-      'file:src/ui/view.ts->file:src/ui/widgets.ts',
-      'file:src/ui/widgets.ts->file:src/ui/view.ts',
-      'module:src/api->file:src/ui/view.ts',
-      'module:src/api->module:src/core',
-    ]);
-  });
-
-  it('records every aggregated type, most frequent first, with counts', () => {
-    const edge = edgesAt(['system:src', 'module:src/ui']).find((e) => e.source === 'file:src/ui/view.ts');
-    expect(edge?.data).toMatchObject({ kind: 'aggregated-edge', types: ['call', 'import'], dominantType: 'call', count: 2 });
-  });
-
-  it('emits a direct entity edge for a single symbol-to-symbol relation', () => {
-    const visible = new Set(['render', 'badge']);
-    const [edge] = transformRelationsToEdges([relation('render', 'badge', 'call')], visible, index);
-    expect(edge.data).toMatchObject({ kind: 'entity-edge', count: 1, dominantType: 'call' });
-    expect(edge.data?.relation?.from).toBe('render');
-  });
-
-  it('drops self-loops and unknown targets', () => {
-    const local = [entity('a', 'src/x/a.ts'), entity('b', 'src/x/b.ts')];
-    const idx = buildGraphIndex(local);
-    const edges = transformRelationsToEdges([relation('a', 'b'), relation('a', 'ghost')], new Set(['module:src/x']), idx);
-    expect(edges).toEqual([]);
+  it('puts churn / hotspot / quality metrics on containers (max / mean over symbols)', () => {
+    const { nodes } = viewAt(['folder:src']);
+    expect(data(byId(nodes, 'folder:src/core'))).toMatchObject({ churnRate: 0.05, hotspotScore: 0.6, qualityScore: 40 });
+    expect(data(byId(nodes, 'folder:src/ui'))?.churnRate).toBeUndefined();
   });
 });
 
-describe('filterEdgesByRelationType', () => {
-  const { entities, relations } = sampleGraph();
-  const nodes = transformEntitiesToNodes(entities);
-  const visible = new Set(getVisibleNodes(nodes, ['system:src', 'module:src/ui']).map((n) => n.id));
-  const edges = transformRelationsToEdges(relations, visible, buildGraphIndex(entities));
-
-  it('keeps an aggregated edge when a non-dominant type is visible and recolours it', () => {
-    const filtered = filterEdgesByRelationType(edges, new Set(['import']));
-    const viewToWidgets = filtered.find((e) => e.source === 'file:src/ui/view.ts');
-    expect(viewToWidgets?.data?.dominantType).toBe('import');
-    expect(viewToWidgets?.style?.stroke).toBe(RELATION_COLORS.import);
-    // widgets → view is call-only, so it is hidden.
-    expect(filtered.find((e) => e.source === 'file:src/ui/widgets.ts')).toBeUndefined();
+describe('view edges', () => {
+  it('sibling folders aggregate with exact counts and a readable label', () => {
+    const { edges } = viewAt(['folder:src']);
+    expect(pairs(edges.filter((e) => !e.data!.portal))).toEqual(['file:src/index.ts->folder:src/api', 'folder:src/api->folder:src/core', 'folder:src/api->folder:src/ui']);
+    const apiUi = edges.find((e) => e.id === 'agg:folder:src/api->folder:src/ui')!;
+    expect(apiUi.data).toMatchObject({ kind: 'entity-edge', count: 1, typeCounts: { import: 1 }, label: 'imports 1' });
+    const viewWidgets = viewAt(['folder:src', 'folder:src/ui']).edges.find((e) => e.id === 'agg:file:src/ui/view.ts->file:src/ui/widgets.ts')!;
+    expect(viewWidgets.data).toMatchObject({ kind: 'aggregated-edge', count: 2, label: 'calls 1 · imports 1' });
+    expect(viewWidgets.data!.relationIds).toHaveLength(2);
   });
 
-  it('hides edges whose types are all filtered out', () => {
-    expect(filterEdgesByRelationType(edges, new Set(['extend']))).toEqual([]);
+  it('links to things OUTSIDE the open container are portals, not gone', () => {
+    const { nodes, edges, view } = viewAt(['folder:src', 'folder:src/ui']);
+    expect(pairs(edges.filter((e) => !e.data!.portal))).toEqual(['file:src/ui/view.ts->file:src/ui/widgets.ts', 'file:src/ui/widgets.ts->file:src/ui/view.ts']);
+    const portals = nodes.filter((n) => n.type === 'portal');
+    expect(portals.map((p) => [p.id, (p.data as { count: number }).count])).toEqual([['portal:in:file:src/api/routes.ts', 1]]);
+    expect(view.accounting).toMatchObject({ portalIn: 1, portalOut: 0, edges: 3 });
+    const core = viewAt(['folder:src', 'folder:src/core']);
+    expect(core.nodes.filter((n) => n.type === 'portal').map((n) => n.id)).toEqual(['portal:in:file:src/api/routes.ts', 'portal:out:file:lib/util/strings.ts']);
+    expect(core.view.accounting).toMatchObject({ portalIn: 1, portalOut: 1, edges: 0 });
+  });
+
+  it('a single relation keeps its relation on the edge', () => {
+    const single = viewAt(['folder:src']).edges.find((e) => e.id === 'agg:file:src/index.ts->folder:src/api')!;
+    expect(single.data!.kind).toBe('entity-edge');
+    expect(single.data!.relation).toBeDefined();
+  });
+});
+
+describe('applyRelationFilter', () => {
+  const { nodes, edges } = viewAt(['folder:src', 'folder:src/ui']);
+
+  it('recounts to the visible types, recolours, and removes portals left empty', () => {
+    const r = applyRelationFilter(nodes, edges, new Set(['import']));
+    const viewToWidgets = r.edges.find((e) => e.source === 'file:src/ui/view.ts' && e.target === 'file:src/ui/widgets.ts')!;
+    expect(viewToWidgets.data).toMatchObject({ count: 1, dominantType: 'import', label: 'imports 1', kind: 'entity-edge' });
+    expect(viewToWidgets.style?.stroke).toBe(RELATION_COLORS.import);
+    // widgets -> view is call-only: hidden
+    expect(r.edges.find((e) => e.source === 'file:src/ui/widgets.ts' && e.target === 'file:src/ui/view.ts')).toBeUndefined();
+    expect(data(r.nodes.find((n) => n.id === 'portal:in:file:src/api/routes.ts'))).toMatchObject({ count: 1, hiddenByFilter: 0 });
+    // the calls-only view hides the import portal link entirely
+    const calls = applyRelationFilter(nodes, edges, new Set(['call']));
+    expect(calls.nodes.some((n) => n.type === 'portal')).toBe(false);
+  });
+
+  it('hides everything when no type matches', () => {
+    const r = applyRelationFilter(nodes, edges, new Set(['extend']));
+    expect(r.edges).toEqual([]);
+    expect(r.nodes.some((n) => n.type === 'portal')).toBe(false);
+  });
+
+  it('describeCounts honours the visible set', () => {
+    expect(describeCounts({ import: 12, call: 3 })).toBe('imports 12 · calls 3');
+    expect(describeCounts({ import: 12, call: 3 }, new Set(['call']))).toBe('calls 3');
   });
 });

@@ -3,6 +3,7 @@
  * project stat strip (right). Static layout — nothing floats over the canvas.
  */
 import React from 'react';
+import type { Hierarchy } from '../../../contracts/hierarchy.js';
 import { Toolbar } from './Toolbar';
 import { BreadcrumbBar } from './BreadcrumbBar';
 import { StatStrip } from './StatStrip';
@@ -10,7 +11,7 @@ import { COLORS } from '../shared/ui';
 
 type ToolbarProps = React.ComponentProps<typeof Toolbar>;
 
-export function CanvasHeader({ graphVersion, ...toolbar }: ToolbarProps & { graphVersion: number }) {
+export function CanvasHeader({ graphVersion, hierarchy, ...toolbar }: ToolbarProps & { graphVersion: number; hierarchy: Hierarchy }) {
   return (
     <header style={{ flex: '0 0 auto', zIndex: 30 }}>
       <Toolbar {...toolbar} />
@@ -27,7 +28,7 @@ export function CanvasHeader({ graphVersion, ...toolbar }: ToolbarProps & { grap
           fontSize: 12,
         }}
       >
-        <BreadcrumbBar />
+        <BreadcrumbBar hierarchy={hierarchy} />
         <StatStrip graphVersion={graphVersion} />
       </div>
     </header>

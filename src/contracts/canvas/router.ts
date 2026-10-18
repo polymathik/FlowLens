@@ -10,14 +10,23 @@
  *
  *   #/p/<projectId>/entity/<id>?overlay=cycles
  *
- * The parser accepts that prefix today and exposes it as `projectId`; the
- * single-project canvas ignores it.
+ * Map v2 (lane M1) adds the `path` kind — the open container itself, so the
+ * URL follows navigation and browser back / forward walk the drill history:
+ *
+ *   #/p/<projectId>/map/path/packages/server/src      folder / package / file by repo path
+ *   #/p/<projectId>/map/path/<file>/Cls.method        symbol by qualified name
+ *   #/p/<projectId>/map/path/.                        the project root
+ *
+ * `path` links are emitted only by the Map (never by MCP tools), so
+ * `CanvasLinkKind` in `canvas-links.ts` is unchanged.
  */
 import type { CanvasLinkKind, CanvasOverlay } from '../canvas-links.js';
 
+export type CanvasRouteTargetKind = CanvasLinkKind | 'path';
+
 export interface CanvasRouteTarget {
-  kind: CanvasLinkKind;
-  /** Decoded identifier: entity id / qualified name, or a file / module path. */
+  kind: CanvasRouteTargetKind;
+  /** Decoded identifier: entity id / qualified name, a file / module path, or (kind `path`) a hierarchy path. */
   identifier: string;
 }
 

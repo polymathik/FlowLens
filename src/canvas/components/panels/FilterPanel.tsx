@@ -1,6 +1,6 @@
 /**
- * Relation-type filter: toggles which kinds of relations draw edges.
- * Aggregated edges stay visible while any of their types is on.
+ * Relation-type filter (which kinds of relations draw edges and portals;
+ * counts always cover the visible types) and the lockfile toggle.
  */
 import React from 'react';
 import { useCanvasStore } from '../../store/canvas-store';
@@ -10,6 +10,8 @@ import { floatingPanel, sectionTitle } from '../shared/ui';
 export function FilterPanel() {
   const visible = useCanvasStore((s) => s.visibleRelationTypes);
   const toggle = useCanvasStore((s) => s.toggleRelationType);
+  const showLockfiles = useCanvasStore((s) => s.showLockfiles);
+  const setShowLockfiles = useCanvasStore((s) => s.setShowLockfiles);
 
   return (
     <div data-testid="filter-panel" style={{ ...floatingPanel, top: 12, right: 12, padding: '10px 14px', maxHeight: '60vh', overflowY: 'auto' }}>
@@ -21,6 +23,11 @@ export function FilterPanel() {
           <span>{type}</span>
         </label>
       ))}
+      <div style={{ ...sectionTitle, marginTop: 10 }}>Files</div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '2px 0' }}>
+        <input data-testid="show-lockfiles" type="checkbox" checked={showLockfiles} onChange={(e) => setShowLockfiles(e.target.checked)} />
+        <span>Show lockfiles (in Config)</span>
+      </label>
     </div>
   );
 }

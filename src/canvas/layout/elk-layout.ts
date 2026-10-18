@@ -1,8 +1,9 @@
 /**
  * ELK.js layout engine integration.
- * Computes layered positions for the file and symbol views. Disconnected
- * components are packed towards `elk.aspectRatio`, so a file with many
- * unconnected symbols becomes a grid instead of one very wide row.
+ * Layered placement for the connected part of a container view (the
+ * unconnected remainder is a sorted grid, see `grid-layout.ts`). Incoming
+ * portals are pinned to the first layer and outgoing ones to the last, so
+ * links read left to right: who depends on this → this → what it depends on.
  *
  * Conforms to the canvas `LayoutEngine` contract in
  * `src/contracts/canvas/layout.ts` — see `createElkEngine()` below.
@@ -14,7 +15,7 @@ import type {
   LayoutEngine,
   LayoutOptions as ContractLayoutOptions,
 } from '../../contracts/canvas/index.js';
-import type { LayoutBox, LayoutLink, Positions } from './force-layout';
+import type { LayoutBox, LayoutLink, Positions } from './types';
 
 const elk = new ELK();
 
@@ -46,8 +47,17 @@ export async function computeElkPositions(
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       'elk.separateConnectedComponents': 'true',
       'elk.aspectRatio': '1.6',
+      // Same input -> same picture.
+      'elk.randomSeed': '1',
     },
-    children: boxes.map((b) => ({ id: b.id, width: b.width, height: b.height })),
+    children: boxes.map((b) => ({
+      id: b.id,
+      width: b.width,
+      height: b.height,
+      ...(b.pin
+        ? { layoutOptions: { 'elk.layered.layering.layerConstraint': b.pin === 'first' ? 'FIRST_SEPARATE' : 'LAST_SEPARATE' } }
+        : {}),
+    })),
     edges: links
       .filter((l) => ids.has(l.source) && ids.has(l.target) && l.source !== l.target)
       .map((l, i) => ({ id: `e${i}`, sources: [l.source], targets: [l.target] })),

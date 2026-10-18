@@ -4,15 +4,16 @@
  * Accepted forms (contract: src/contracts/canvas/router.ts):
  *   #/entity/<encoded id>?overlay=complexity
  *   #/file/<encoded path>   #/module/<encoded path>
- *   #/p/<projectId>/entity/<id>…   (wave-2 project prefix; parsed, ignored for now)
+ *   #/p/<projectId>/entity/<id>…   (project prefix)
+ *   #/p/<projectId>/map/path/<repo path>   (Map v2: the open container; see contracts/canvas/router.ts)
  *
  * Identifiers are percent-encoded by `buildCanvasUrl`, but raw slashes are
  * tolerated so hand-typed links work too.
  */
-import type { CanvasRoute } from '../../contracts/canvas/index.js';
-import type { CanvasLinkKind, CanvasOverlay } from '../../contracts/canvas-links.js';
+import type { CanvasRoute, CanvasRouteTargetKind } from '../../contracts/canvas/index.js';
+import type { CanvasOverlay } from '../../contracts/canvas-links.js';
 
-const KINDS: ReadonlySet<string> = new Set<CanvasLinkKind>(['entity', 'module', 'file']);
+const KINDS: ReadonlySet<string> = new Set<CanvasRouteTargetKind>(['entity', 'module', 'file', 'path']);
 const OVERLAYS: ReadonlySet<string> = new Set<CanvasOverlay>([
   'complexity',
   'churn',
@@ -47,7 +48,7 @@ export function parseCanvasHash(hash: string): CanvasRoute {
   if (segments.length >= 2 && KINDS.has(segments[0])) {
     const identifier = safeDecode(segments.slice(1).join('/'));
     if (identifier) {
-      route.target = { kind: segments[0] as CanvasLinkKind, identifier };
+      route.target = { kind: segments[0] as CanvasRouteTargetKind, identifier };
     }
   }
 
@@ -60,7 +61,14 @@ export function parseCanvasHash(hash: string): CanvasRoute {
 export function buildCanvasHash(route: CanvasRoute): string {
   const parts: string[] = [];
   if (route.projectId) parts.push('p', encodeURIComponent(route.projectId));
-  if (route.target) parts.push(route.target.kind, encodeURIComponent(route.target.identifier));
+  if (route.target) {
+    // `path` identifiers are repo paths: keep '/' readable, encode each segment.
+    const id =
+      route.target.kind === 'path'
+        ? route.target.identifier.split('/').map(encodeURIComponent).join('/')
+        : encodeURIComponent(route.target.identifier);
+    parts.push(route.target.kind, id);
+  }
   const suffix = route.overlay ? `?overlay=${route.overlay}` : '';
   return `#/${parts.join('/')}${suffix}`;
 }

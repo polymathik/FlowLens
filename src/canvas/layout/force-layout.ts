@@ -1,5 +1,7 @@
 /**
- * Synchronous d3-force layout for the system / module views.
+ * Synchronous d3-force layout (no longer used by the Map: container levels
+ * use the deterministic ELK-layered + grid layout in `compute-layout.ts`).
+ * Kept for tests and callers that want an organic arrangement.
  *
  * Runs the simulation to completion off-screen (no per-tick React updates —
  * the old animated version re-rendered every node on every tick and took
@@ -18,18 +20,9 @@ import {
   type SimulationNodeDatum,
 } from 'd3-force';
 
-export interface LayoutBox {
-  id: string;
-  width: number;
-  height: number;
-}
+import type { LayoutBox, LayoutLink, Positions } from './types';
 
-export interface LayoutLink {
-  source: string;
-  target: string;
-}
-
-export type Positions = Map<string, { x: number; y: number }>;
+export type { LayoutBox, LayoutLink, Positions };
 
 interface SimNode extends SimulationNodeDatum {
   id: string;

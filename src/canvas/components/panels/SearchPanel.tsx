@@ -1,18 +1,19 @@
 /**
  * Search palette (toolbar button or Cmd/Ctrl+K). Fuzzy-matches symbol names
- * and qualified names; choosing a result drills to the symbol's file
- * (system → module → file), selects it and centres it once laid out.
+ * and qualified names; choosing a result opens the symbol's container
+ * (folders → file → class), selects it and centres it once laid out.
  * Arrow keys move through results, Enter opens, Escape closes.
  */
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { Entity } from '../../api/graph-client';
+import type { Hierarchy } from '../../../contracts/hierarchy.js';
 import { useCanvasStore } from '../../store/canvas-store';
 import { searchEntities } from '../../utils/fuzzy-search';
 import { targetForEntity } from '../../utils/navigation';
 import { EntityIcon } from '../shared/EntityIcon';
 import { COLORS } from '../shared/ui';
 
-export function SearchPanel({ entities }: { entities: Entity[] }) {
+export function SearchPanel({ entities, hierarchy }: { entities: Entity[]; hierarchy: Hierarchy }) {
   const open = useCanvasStore((s) => s.searchOpen);
   const setOpen = useCanvasStore((s) => s.setSearchOpen);
   const query = useCanvasStore((s) => s.searchQuery);
@@ -44,7 +45,8 @@ export function SearchPanel({ entities }: { entities: Entity[] }) {
   if (!open) return null;
 
   const choose = (entity: Entity) => {
-    navigateTo(targetForEntity(entity));
+    const target = targetForEntity(hierarchy, entity);
+    if (target) navigateTo(target);
     setOpen(false);
   };
 

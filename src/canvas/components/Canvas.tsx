@@ -3,16 +3,16 @@
  * surface with floating panels.
  *
  * Data flow:
- *   useGraphData → all nodes (all levels) + GraphIndex
- *   useCanvasView → visible nodes for the drill path, aggregated edges,
- *                   overlay decoration, relation filters, problem edges
- *   useCanvasLayout → layout on visible-set change, then focus or fit
- *   useHashRoute → deep links (#/entity/<id>?overlay=…)
+ *   useGraphData → entities, relations, code hierarchy (shared with Health) + GraphIndex
+ *   useMapModel → the OPEN container's children, links and portals → nodes/edges
+ *   useCanvasLayout → deterministic layout, commit, then focus or fit
+ *   useCanvasView → relation filter, overlay decoration, selection
+ *   useHashRoute / useDrillUrl → deep links in, drill path out (back / forward work)
  *
  * Interaction: wheel / pinch zooms; drag pans; hold Shift and scroll to pan
  * with a trackpad or wheel. Off-screen elements are not rendered.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -23,16 +23,20 @@ import {
   ReactFlowProvider,
   useKeyPress,
   useNodesState,
+  type Edge,
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useGraphData } from '../hooks/useGraphData';
 import { useOverlayData } from '../hooks/useOverlayData';
+import { useMapModel } from '../hooks/useMapModel';
 import { useCanvasView } from '../hooks/useCanvasView';
 import { useCanvasLayout } from '../hooks/useCanvasLayout';
 import { useSemanticZoom } from '../hooks/useSemanticZoom';
 import { useNodeInteractions } from '../hooks/useNodeInteractions';
 import { useHashRoute } from '../router/useHashRoute';
+import { useDrillUrl } from '../router/useDrillUrl';
+import type { CanvasEdgeData } from '../../contracts/canvas/index.js';
 import { exportCanvas, type ExportFormat } from '../utils/export-utils';
 import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges/edges';
@@ -59,30 +63,37 @@ const minimapColor = (n: Node) => MINIMAP_STROKE[(n.type as keyof typeof MINIMAP
 function CanvasInner() {
   const graph = useGraphData();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [layoutEdges, setLayoutEdges] = useState<Edge[]>([]);
   const [showFilter, setShowFilter] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [exporting, setExporting] = useState(false);
   const shiftHeld = useKeyPress('Shift');
   const colorMode = useColorMode();
 
-  useEffect(() => setNodes(graph.nodes), [graph.nodes, setNodes]);
-
   const overlayData = useOverlayData(graph.version);
-  const view = useCanvasView(nodes, graph.relations, graph.index, overlayData, graph.version);
-  useCanvasLayout({ ...view, setNodes });
+  const model = useMapModel(graph);
+  const commit = useCallback(
+    (laidOut: Node[], edges: Edge[]) => {
+      setNodes(laidOut);
+      setLayoutEdges(edges);
+    },
+    [setNodes],
+  );
+  const view = useCanvasView(nodes, layoutEdges as Edge<CanvasEdgeData>[], graph.index, overlayData);
+  useCanvasLayout({ model, visibleIds: view.visibleIds, commit });
   useSemanticZoom();
-  const allNodeIds = useMemo(() => new Set(graph.nodes.map((n) => n.id)), [graph.nodes]);
-  useHashRoute(graph.entities, allNodeIds, !graph.loading && graph.nodes.length > 0);
-  const handlers = useNodeInteractions(graph.index.entityById);
+  useHashRoute(graph.entities, graph.hierarchy, !graph.loading && graph.entities.length > 0);
+  useDrillUrl(graph.hierarchy, !graph.loading && graph.entities.length > 0);
+  const handlers = useNodeInteractions(graph.index.entityById, graph.hierarchy);
 
   const onExport = useCallback(
     (format: ExportFormat) => {
       setExporting(true);
-      exportCanvas(format, view.layoutNodes)
+      exportCanvas(format, view.displayNodes)
         .catch((err) => console.error('[flowlens] export failed', err))
         .finally(() => setExporting(false));
     },
-    [view.layoutNodes],
+    [view.displayNodes],
   );
 
   if (graph.loading) return <Centered>Loading graph…</Centered>;
@@ -98,6 +109,7 @@ function CanvasInner() {
     >
       <CanvasHeader
         graphVersion={graph.version}
+        hierarchy={graph.hierarchy}
         showFilter={showFilter}
         showRules={showRules}
         onToggleFilter={() => setShowFilter((v) => !v)}
@@ -114,6 +126,7 @@ function CanvasInner() {
           edgeTypes={edgeTypes}
           onNodeClick={handlers.onNodeClick}
           onNodeDoubleClick={handlers.onNodeDoubleClick}
+          onEdgeClick={handlers.onEdgeClick}
           onPaneClick={handlers.onPaneClick}
           minZoom={0.05}
           maxZoom={4}
@@ -134,9 +147,9 @@ function CanvasInner() {
         {showFilter && <FilterPanel />}
         {showRules && <ArchitectureEditor onClose={() => setShowRules(false)} />}
         <OverlayLegend nodes={view.displayNodes} />
-        <DetailPanel entityById={graph.index.entityById} />
+        <DetailPanel graph={graph} edges={view.displayEdges} />
       </div>
-      <SearchPanel entities={graph.entities} />
+      <SearchPanel entities={graph.entities} hierarchy={graph.hierarchy} />
     </div>
   );
 }

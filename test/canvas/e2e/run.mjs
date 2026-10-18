@@ -24,9 +24,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { scenarios as canvasScenarios } from './scenarios.mjs';
 import { explorerScenarios } from './explorer-scenarios.mjs';
+import { mapScenarios } from './map-scenarios.mjs';
 import { configureExplorer } from './canvas-page.mjs';
 
-const scenarios = [...canvasScenarios, ...explorerScenarios];
+const scenarios = [...canvasScenarios, ...explorerScenarios, ...mapScenarios];
 
 const ROOT = resolve(import.meta.dirname, '../../..');
 const args = process.argv.slice(2);

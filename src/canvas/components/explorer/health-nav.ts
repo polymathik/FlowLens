@@ -7,7 +7,7 @@ import type { HealthFinding } from '../../../contracts/health.js';
 import type { ExplorerRoute } from '../../../contracts/canvas/index.js';
 import { buildExplorerHash, mapRouteKey } from '../../router/explorer-route';
 import { setPendingHighlight } from '../../router/map-intents';
-import { fileId } from '../../utils/hierarchy';
+import { fileNodeId } from '../../../analysis/hierarchy/ids.js';
 
 export function findingMapRoute(projectId: string, finding: HealthFinding): ExplorerRoute {
   const f = finding.focus;
@@ -22,7 +22,7 @@ export function findingMapRoute(projectId: string, finding: HealthFinding): Expl
 
 /** Node ids to emphasise: the finding's entities plus file nodes of its files. */
 export function findingHighlightIds(finding: HealthFinding): string[] {
-  return [...new Set([...finding.focus.entity_ids, ...finding.focus.files.map(fileId)])];
+  return [...new Set([...finding.focus.entity_ids, ...finding.focus.files.map(fileNodeId)])];
 }
 
 /** Queue the highlight and return the hash to navigate to. */

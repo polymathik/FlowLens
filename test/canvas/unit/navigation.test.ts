@@ -5,8 +5,7 @@ import { resolveRouteTarget, targetForEntity } from '../../../src/canvas/utils/n
 import { fuzzyScore, searchEntities } from '../../../src/canvas/utils/fuzzy-search.js';
 import { zoomLevelFor } from '../../../src/canvas/utils/zoom.js';
 import { ZOOM_THRESHOLDS } from '../../../src/contracts/canvas/index.js';
-import { transformEntitiesToNodes } from '../../../src/canvas/utils/node-transformer.js';
-import { entity, sampleGraph } from '../helpers/factories.js';
+import { entity, sampleHierarchy } from '../helpers/factories.js';
 
 describe('parseCanvasHash', () => {
   it('parses links produced by buildCanvasUrl', () => {
@@ -28,29 +27,47 @@ describe('parseCanvasHash', () => {
   });
 });
 
-describe('resolveRouteTarget / targetForEntity', () => {
-  const { entities } = sampleGraph();
-  const nodeIds = new Set(transformEntitiesToNodes(entities).map((n) => n.id));
-  const lookup = { entities, nodeIds };
+describe('path links (Map v2)', () => {
+  it('round-trip with readable slashes, encoded segments and a project prefix', () => {
+    const route = { projectId: 'p1', target: { kind: 'path' as const, identifier: 'packages/@halcyon core/src' } };
+    const hash = buildCanvasHash(route);
+    expect(hash).toBe('#/p/p1/path/packages/%40halcyon%20core/src');
+    expect(parseCanvasHash(hash)).toEqual(route);
+    expect(parseCanvasHash('#/p/p1/path/.')).toEqual({ projectId: 'p1', target: { kind: 'path', identifier: '.' } });
+  });
+});
 
-  it('entity by id, qualified name or unique name → drill into its file', () => {
-    const expected = { drillPath: ['system:src', 'module:src/core', 'file:src/core/store.ts'], nodeId: 'Store' };
+describe('resolveRouteTarget / targetForEntity', () => {
+  const { entities, hierarchy } = sampleHierarchy();
+  const lookup = { entities, hierarchy };
+
+  it('entity by id, qualified name or unique name → its container with the symbol selected', () => {
+    const expected = { drillPath: ['folder:src', 'folder:src/core', 'file:src/core/store.ts'], nodeId: 'Store' };
     expect(resolveRouteTarget({ kind: 'entity', identifier: 'Store' }, lookup)).toEqual(expected);
     expect(resolveRouteTarget({ kind: 'entity', identifier: 'src/core/store.ts/Store' }, lookup)).toEqual(expected);
   });
 
-  it('file and module links', () => {
-    expect(resolveRouteTarget({ kind: 'file', identifier: 'src/index.ts' }, lookup)).toEqual({ drillPath: ['system:src'], nodeId: 'file:src/index.ts' });
-    expect(resolveRouteTarget({ kind: 'module', identifier: 'src/ui' }, lookup)).toEqual({ drillPath: ['system:src'], nodeId: 'module:src/ui' });
+  it('file and module links (any depth)', () => {
+    expect(resolveRouteTarget({ kind: 'file', identifier: 'src/index.ts' }, lookup)).toEqual({ drillPath: ['folder:src'], nodeId: 'file:src/index.ts' });
+    expect(resolveRouteTarget({ kind: 'module', identifier: 'src/ui' }, lookup)).toEqual({ drillPath: ['folder:src'], nodeId: 'folder:src/ui' });
     // get_module_interface links a file path with kind=module
     expect(resolveRouteTarget({ kind: 'module', identifier: 'src/ui/view.ts' }, lookup)?.nodeId).toBe('file:src/ui/view.ts');
+    expect(resolveRouteTarget({ kind: 'file', identifier: 'src/ui' }, lookup)).toBeNull();
     expect(resolveRouteTarget({ kind: 'module', identifier: 'src/nothing' }, lookup)).toBeNull();
     expect(resolveRouteTarget({ kind: 'entity', identifier: 'missing' }, lookup)).toBeNull();
   });
 
+  it('path links open the container itself; "." is the project', () => {
+    expect(resolveRouteTarget({ kind: 'path', identifier: 'src/ui' }, lookup)).toEqual({ drillPath: ['folder:src', 'folder:src/ui'], nodeId: null });
+    expect(resolveRouteTarget({ kind: 'path', identifier: 'src/ui/view.ts' }, lookup)).toEqual({ drillPath: ['folder:src', 'folder:src/ui', 'file:src/ui/view.ts'], nodeId: null });
+    expect(resolveRouteTarget({ kind: 'path', identifier: '.' }, lookup)).toEqual({ drillPath: [], nodeId: null });
+    expect(resolveRouteTarget({ kind: 'path', identifier: 'src/nope' }, lookup)).toBeNull();
+  });
+
   it('file / module pseudo-entities target their container node', () => {
-    expect(targetForEntity(entity('f', 'src/ui/view.ts', 'file'))).toEqual({ drillPath: ['system:src', 'module:src/ui'], nodeId: 'file:src/ui/view.ts' });
-    expect(targetForEntity(entity('m', 'src', 'module'))).toEqual({ drillPath: [], nodeId: 'system:src' });
+    const { hierarchy: h } = lookup;
+    expect(targetForEntity(h, entity('f', 'src/ui/view.ts', 'file'))).toEqual({ drillPath: ['folder:src', 'folder:src/ui'], nodeId: 'file:src/ui/view.ts' });
+    expect(targetForEntity(h, entity('m', 'src/ui', 'module'))).toEqual({ drillPath: ['folder:src'], nodeId: 'folder:src/ui' });
   });
 });
 

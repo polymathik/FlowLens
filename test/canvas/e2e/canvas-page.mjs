@@ -34,6 +34,7 @@ const cfg = { projectId: '', daemon: '', token: '' };
 export function configureExplorer(c) {
   Object.assign(cfg, c);
 }
+export const apiConfig = () => ({ ...cfg });
 
 /** Sign this browser context in (one-time code → cookie) and land on `hash`. */
 export async function signIn(page, base, hash = '#/home') {

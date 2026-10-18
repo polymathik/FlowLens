@@ -8,18 +8,19 @@
  */
 import { useEffect, useRef } from 'react';
 import type { Entity } from '../../contracts/entities.js';
+import type { Hierarchy } from '../../contracts/hierarchy.js';
 import { useCanvasStore } from '../store/canvas-store';
 import { LINK_OVERLAY_TO_STORE, resolveRouteTarget } from '../utils/navigation';
 import { useProjectContext } from '../components/explorer/project-context';
 import { mapRouteKey } from './explorer-route';
 import { markApplied, takePendingHighlight, wasApplied } from './map-intents';
 
-export function useHashRoute(entities: Entity[], nodeIds: ReadonlySet<string>, ready: boolean) {
+export function useHashRoute(entities: Entity[], hierarchy: Hierarchy, ready: boolean) {
   const navigateTo = useCanvasStore((s) => s.navigateTo);
   const setOverlay = useCanvasStore((s) => s.setOverlay);
   const { projectId, route, routeStamp } = useProjectContext();
-  const lookupRef = useRef({ entities, nodeIds });
-  lookupRef.current = { entities, nodeIds };
+  const lookupRef = useRef({ entities, hierarchy });
+  lookupRef.current = { entities, hierarchy };
 
   useEffect(() => {
     if (!ready || !route || route.tab !== 'project') return;
@@ -30,7 +31,7 @@ export function useHashRoute(entities: Entity[], nodeIds: ReadonlySet<string>, r
     const overlay = route.overlay ? LINK_OVERLAY_TO_STORE[route.overlay] : undefined;
     const target = route.target ? resolveRouteTarget(route.target, lookupRef.current) : null;
     const highlight = takePendingHighlight(pid, key);
-    if (target) navigateTo({ ...target, overlay, highlight: highlight?.filter((id) => lookupRef.current.nodeIds.has(id)) });
+    if (target) navigateTo({ ...target, overlay, highlight: highlight?.filter((id) => lookupRef.current.hierarchy.nodes.has(id)) });
     else if (overlay) setOverlay(overlay);
   }, [ready, route, routeStamp, projectId, navigateTo, setOverlay]);
 }
