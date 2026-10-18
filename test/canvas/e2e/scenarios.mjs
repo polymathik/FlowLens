@@ -188,7 +188,7 @@ export const scenarios = [
       assert((await page.inputValue('[data-testid="overlay-select"]')) === 'complexity-heatmap', 'overlay from link');
       assert((await page.textContent('[data-testid="breadcrumb"]')).includes('store.ts'), 'drilled to store.ts');
 
-      await page.evaluate(() => (window.location.hash = '#/p/some-project/file/src%2Fui%2Fwidgets.ts'));
+      await page.evaluate((id) => (window.location.hash = `#/p/${id}/file/src%2Fui%2Fwidgets.ts`), ctx.projects.a.id);
       await page.waitForSelector('.react-flow__node[data-id="file:src/ui/widgets.ts"] .flowlens-node[data-selected="true"]');
       await settle(page);
       await shot(ctx, '08-deeplink');

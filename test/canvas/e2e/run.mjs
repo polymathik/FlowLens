@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * Canvas E2E runner (Playwright + Chromium, no test framework needed).
+ * Canvas + explorer E2E runner (Playwright + Chromium, no test framework).
  *
- *   node test/canvas/e2e/run.mjs [--headed] [--only <name>] [--shots <dir>]
+ *   node test/canvas/e2e/run.mjs [--dev] [--headed] [--only <name>] [--shots <dir>]
  *
- * Starts test/canvas/e2e/serve.ts (indexes the sample-app fixture, graph API
- * + Vite dev server), runs every scenario in scenarios.mjs in a fresh page,
- * prints a pass/fail line per scenario and exits non-zero on any failure.
+ * Starts test/canvas/e2e/serve.ts (two indexed fixture projects + a missing
+ * one in a temp FLOWLENS_HOME, the daemon with the explorer, a watch lease
+ * on project A). Default: the daemon serves the BUILT bundle (run
+ * `npm run build:canvas` first); `--dev` puts the Vite dev host in front.
+ * Every scenario (scenarios.mjs + explorer-scenarios.mjs) runs in a fresh
+ * browser context; prints pass/fail per scenario, exits non-zero on failure.
  *
  * Playwright is resolved from the project first, then from
  * $PLAYWRIGHT_MODULE or /opt/npm-tools/node_modules/playwright. Chromium:
@@ -19,7 +22,11 @@ import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { scenarios } from './scenarios.mjs';
+import { scenarios as canvasScenarios } from './scenarios.mjs';
+import { explorerScenarios } from './explorer-scenarios.mjs';
+import { configureExplorer } from './canvas-page.mjs';
+
+const scenarios = [...canvasScenarios, ...explorerScenarios];
 
 const ROOT = resolve(import.meta.dirname, '../../..');
 const args = process.argv.slice(2);
@@ -35,9 +42,9 @@ async function loadPlaywright() {
   }
 }
 
-function startServer(workDir, apiPort, uiPort) {
+function startServer(workDir, dev) {
   return new Promise((resolveStart, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', 'test/canvas/e2e/serve.ts', workDir, String(apiPort), String(uiPort)], {
+    const child = spawn(process.execPath, ['--import', 'tsx', 'test/canvas/e2e/serve.ts', workDir, ...(dev ? ['--dev'] : [])], {
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -61,8 +68,6 @@ function startServer(workDir, apiPort, uiPort) {
 }
 
 const workDir = await mkdtemp(join(tmpdir(), 'flowlens-canvas-e2e-'));
-const apiPort = Number(process.env.E2E_API_PORT ?? 3300 + Math.floor(Math.random() * 500));
-const uiPort = Number(process.env.E2E_UI_PORT ?? apiPort + 1000);
 const shots = opt('--shots');
 if (shots) await mkdir(shots, { recursive: true });
 
@@ -70,7 +75,11 @@ let server;
 let browser;
 let failed = 0;
 try {
-  server = await startServer(workDir, apiPort, uiPort);
+  server = await startServer(workDir, flag('--dev'));
+  const { info } = server;
+  configureExplorer({ projectId: info.projects.a.id, daemon: info.daemon, token: info.token });
+  const api = `${info.daemon}/api/projects/${encodeURIComponent(info.projects.a.id)}/canvas`;
+  console.log(`explorer E2E (${info.mode}) at ${info.base}`);
   const { chromium } = await loadPlaywright();
   const executablePath =
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
@@ -79,13 +88,13 @@ try {
 
   for (const scenario of scenarios) {
     if (only && !scenario.name.includes(only)) continue;
-    const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+    const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true, ...(scenario.contextOptions ?? {}) });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     const t0 = Date.now();
     try {
-      await scenario.run({ page, base: server.info.base, api: server.info.api, hasGit: server.info.hasGit, shots });
+      await scenario.run({ page, context, base: info.base, api, hasGit: info.hasGit, projects: info.projects, shots });
       if (errors.length) throw new Error(`page errors: ${errors.join(' | ')}`);
       console.log(`  ok   ${scenario.name} (${Date.now() - t0} ms)`);
     } catch (err) {

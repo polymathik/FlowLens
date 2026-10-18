@@ -1,45 +1,66 @@
 /**
- * E2E server: index the sample-app fixture, start the graph API and a Vite
- * dev server for `src/canvas` (inline config, independent of the CLI), then
- * print one `READY {json}` line. Run via `node --import tsx`.
+ * E2E server for the multi-project explorer. In an isolated FLOWLENS_HOME:
+ * index two fixture projects (sample-app = A, notes-app = B), register
+ * them plus a third that is then deleted (missing), start the daemon with
+ * the explorer, hold a watch lease on A (live updates), and — with `--dev`
+ * — a Vite dev host in front of it. Prints one `READY {json}` line.
  *
- *   node --import tsx test/canvas/e2e/serve.ts <workDir> <apiPort> <uiPort>
+ *   node --import tsx test/canvas/e2e/serve.ts <workDir> [--dev]
+ *
+ * Without `--dev` the daemon serves the BUILT bundle (dist/canvas/app), so
+ * run `npm run build:canvas` first.
  */
-import { resolve } from 'node:path';
-import { createServer } from 'vite';
-import react from '@vitejs/plugin-react';
-import { createIndexedFixture } from '../helpers/fixture-project.js';
-import { startGraphServer } from '../../../src/canvas/api/graph-server.js';
+import { mkdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createIndexedFixture, createNotesProject } from '../helpers/fixture-project.js';
+import { startDaemon } from '../../../src/service/daemon.js';
+import { DaemonClient } from '../../../src/service/client.js';
+import { RemoteGraphStore } from '../../../src/service/remote-graph-store.js';
+import { startDevHost } from '../../../src/cli/canvas-host/dev-host.js';
+import type { ProjectWithStatus } from '../../../src/contracts/projects.js';
 
-const [workDir, apiPortArg = '3391', uiPortArg = '5391'] = process.argv.slice(2);
+const [workDir, ...flags] = process.argv.slice(2);
 if (!workDir) {
-  console.error('usage: serve.ts <workDir> [apiPort] [uiPort]');
+  console.error('usage: serve.ts <workDir> [--dev]');
   process.exit(2);
 }
+process.env.FLOWLENS_HOME = join(workDir, 'home');
+await mkdir(process.env.FLOWLENS_HOME, { recursive: true });
 
-const fixture = await createIndexedFixture(workDir);
-const api = await startGraphServer(fixture.flowlensDir, Number(apiPortArg));
-const vite = await createServer({
-  configFile: false,
-  root: resolve(import.meta.dirname, '../../../src/canvas'),
-  plugins: [react()],
-  logLevel: 'warn',
-  server: {
-    port: Number(uiPortArg),
-    strictPort: true,
-    host: '127.0.0.1',
-    proxy: { '/flowlens-api': { target: `http://127.0.0.1:${api.port}`, changeOrigin: true } },
-  },
-});
-await vite.listen();
+const a = await createIndexedFixture(join(workDir, 'a'));
+await mkdir(join(workDir, 'b'), { recursive: true });
+const b = await createNotesProject(join(workDir, 'b'));
+const goneRoot = join(workDir, 'gone-app');
+await mkdir(join(goneRoot, '.flowlens'), { recursive: true });
 
-console.log(
-  `READY ${JSON.stringify({ base: `http://127.0.0.1:${uiPortArg}`, api: `http://127.0.0.1:${api.port}`, hasGit: fixture.hasGit, rootDir: fixture.rootDir })}`,
-);
+const daemon = await startDaemon({ port: 0, log: () => {}, options: { exitWhenIdleMs: 0 } });
+const client = new DaemonClient(daemon.info);
+const register = (root: string) => client.request<ProjectWithStatus>('POST', '/api/projects/resolve', { root, register: true });
+const [pa, pb, pc] = [await register(a.rootDir), await register(b.rootDir), await register(goneRoot)];
+await rm(goneRoot, { recursive: true, force: true });
+
+// `flowlens canvas --watch` equivalent for project A.
+const watched = new RemoteGraphStore(async () => new DaemonClient(daemon.info), 'e2e');
+await watched.open(join(a.rootDir, '.flowlens', 'graph'));
+await watched.watch(100, () => {});
+
+const dev = flags.includes('--dev') ? await startDevHost({ daemonPort: daemon.info.port, port: 0 }) : null;
+const base = dev ? dev.origin : `http://127.0.0.1:${daemon.info.port}`;
+
+console.log(`READY ${JSON.stringify({
+  base,
+  daemon: `http://127.0.0.1:${daemon.info.port}`,
+  token: daemon.info.token,
+  hasGit: a.hasGit,
+  mode: dev ? 'dev' : 'bundle',
+  projects: { a: { id: pa.id, root: a.rootDir }, b: { id: pb.id, root: b.rootDir }, missing: { id: pc.id, root: goneRoot } },
+})}`);
 
 const shutdown = async () => {
-  await vite.close();
-  api.close();
+  await watched.close().catch(() => undefined);
+  await dev?.close();
+  client.destroy();
+  await daemon.shutdown();
   process.exit(0);
 };
 process.on('SIGTERM', shutdown);
