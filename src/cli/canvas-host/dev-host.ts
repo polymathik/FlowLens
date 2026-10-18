@@ -5,7 +5,8 @@
  */
 import express from 'express';
 import http from 'node:http';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join, normalize } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { CanvasHostError } from '../../contracts/canvas-host.js';
 import type { DevHost, DevHostOptions } from '../../contracts/canvas/explorer.js';
@@ -31,7 +32,18 @@ export async function startDevHost(opts: DevHostOptions, locations: CanvasLocati
   const port = (server.address() as AddressInfo).port;
   const origin = `http://${HOST}:${port}`;
   const proxy = createApiProxy(opts.daemonPort, { fromOrigin: origin });
-  app.use('/api', proxy);
+  // `src/canvas/api/*.ts` modules are also served under /api by Vite: let those through.
+  const apiSources = join(locations.sourceDir, 'api');
+  app.use('/api', (req, res, next) => {
+    let rel = '';
+    try {
+      rel = normalize(decodeURIComponent((req.url ?? '').split('?')[0])).replace(/^([/\\])+/, '');
+    } catch {
+      /* malformed URL: not a source file */
+    }
+    if (rel && !rel.startsWith('..') && existsSync(join(apiSources, rel))) return next();
+    proxy(req, res, next);
+  });
   app.use('/auth', proxy);
 
   const devServer = await vite.createServer({

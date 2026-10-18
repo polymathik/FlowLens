@@ -70,6 +70,8 @@ export function mountProjectRoutes(app: Express, deps: ServiceDeps): void {
     const lease = deps.pool.acquireLease(p, {
       watch: body.watch, debounceMs: body.debounce_ms, client: body.client,
     });
+    // A watch lease answers once the watcher is ready, so edits made right after are not missed.
+    if (body.watch) await deps.watchers.whenReady(p.id);
     res.json({ ok: true, lease_id: lease.id, ttl_ms: deps.options.leaseTtlMs, project_id: p.id });
   }));
 
