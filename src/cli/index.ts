@@ -10,6 +10,7 @@ import { doctorCommand } from './commands/doctor.js';
 import { exportCommand } from './commands/export.js';
 import { watchCommand } from './commands/watch.js';
 import { snapshotCommand } from './commands/snapshot.js';
+import { reportCommand } from './commands/report.js';
 
 const program = new Command();
 
@@ -27,5 +28,6 @@ program.addCommand(doctorCommand);
 program.addCommand(exportCommand);
 program.addCommand(watchCommand);
 program.addCommand(snapshotCommand);
+program.addCommand(reportCommand);
 
 program.parse();
