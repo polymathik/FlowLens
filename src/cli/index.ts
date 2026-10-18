@@ -13,6 +13,7 @@ import { snapshotCommand } from './commands/snapshot.js';
 import { reportCommand } from './commands/report.js';
 import { daemonCommand } from './commands/daemon.js';
 import { projectsCommand } from './commands/projects.js';
+import { agentCommand } from './commands/agent.js';
 
 const program = new Command();
 
@@ -33,5 +34,6 @@ program.addCommand(snapshotCommand);
 program.addCommand(reportCommand);
 program.addCommand(daemonCommand);
 program.addCommand(projectsCommand);
+program.addCommand(agentCommand);
 
 program.parse();

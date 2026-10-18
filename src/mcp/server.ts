@@ -22,6 +22,7 @@ import { registerCheckArchitecture } from './tools/check-architecture.js';
 import { registerGetSummary } from './tools/get-summary.js';
 import { registerGetHotspots } from './tools/get-hotspots.js';
 import { registerGetLayerMap } from './tools/get-layer-map.js';
+import { registerAgentPrompts, registerAgentResources } from './agent-resources.js';
 
 export interface ServerDependencies {
   graph: GraphStore;
@@ -59,6 +60,10 @@ export function createFlowLensServer(deps: ServerDependencies): McpServer {
   registerGetSummary(server, deps);
   registerGetHotspots(server, deps);
   registerGetLayerMap(server, deps);
+
+  // Phase 7: agent-native MCP resources and prompts
+  registerAgentResources(server, deps);
+  registerAgentPrompts(server, deps);
 
   return server;
 }
