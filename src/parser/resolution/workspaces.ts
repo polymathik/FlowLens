@@ -13,6 +13,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { readJsonc } from './jsonc.js';
+import { builtToSourceCandidates, getBuildLayout, isBuildOutput } from './build-layout.js';
 
 export interface WorkspacePackage {
   name: string;
@@ -23,6 +24,10 @@ export interface WorkspacePackage {
   main?: string;
   module?: string;
   types?: string;
+  /** Non-standard `source` entry (Parcel / Microbundle convention): points at the real source. */
+  source?: string;
+  /** `svelte` entry of Svelte component libraries. */
+  svelte?: string;
 }
 
 interface PackageJson {
@@ -33,6 +38,8 @@ interface PackageJson {
   module?: string;
   types?: string;
   typings?: string;
+  source?: string;
+  svelte?: string;
 }
 
 const cache = new Map<string, Map<string, WorkspacePackage>>();
@@ -61,6 +68,8 @@ export function getWorkspacePackages(rootDir: string): Map<string, WorkspacePack
         main: pkg.main,
         module: pkg.module,
         types: pkg.types ?? pkg.typings,
+        source: typeof pkg.source === 'string' ? pkg.source : undefined,
+        svelte: typeof pkg.svelte === 'string' ? pkg.svelte : undefined,
       });
     }
   }
@@ -130,27 +139,39 @@ function allSubdirs(dir: string, depth = 0): string[] {
 }
 
 /**
- * Candidate entry files (absolute, extension as written) for a workspace
- * package import. `subpath` is '' for the package root or e.g. 'utils'.
+ * Candidate entry files (absolute) for a workspace package import, **source
+ * first** (Map M0, D1). `subpath` is '' for the package root or e.g. 'utils'.
+ *
+ * Order:
+ *   1. targets that are already source, and the source file every build-output
+ *      target maps back to (`dist/x.js` → `src/x.ts`, via tsconfig
+ *      `outDir`/`rootDir`; see build-layout.ts) — in export-condition priority;
+ *   2. conventional `src/<subpath>` / `<subpath>` locations;
+ *   3. the build-output files themselves (only useful when they are indexed,
+ *      e.g. a package that has no sources in the repo).
+ * No candidate requires the build output to exist.
  */
 export function packageEntryCandidates(pkg: WorkspacePackage, subpath: string): string[] {
   const key = subpath ? `./${subpath}` : '.';
-  const out: string[] = [];
-  const fromExports = exportTargets(pkg.exports, key);
-  for (const t of fromExports) out.push(join(pkg.dir, t));
+  const targets: string[] = exportTargets(pkg.exports, key).map((t) => join(pkg.dir, t));
   if (!subpath) {
-    for (const f of [pkg.types, pkg.module, pkg.main]) if (f) out.push(join(pkg.dir, f));
-    out.push(join(pkg.dir, 'src', 'index'), join(pkg.dir, 'index'));
-  } else {
-    out.push(join(pkg.dir, 'src', subpath), join(pkg.dir, subpath));
+    for (const f of [pkg.source, pkg.svelte, pkg.types, pkg.module, pkg.main]) if (f) targets.push(join(pkg.dir, f));
   }
-  // dist/ → src/ fallback (built output is usually not indexed)
-  const withSrc = out.flatMap((p) => {
-    const rel = relative(pkg.dir, p);
-    const m = /^(dist|build|lib|out)\/(.*)$/.exec(rel);
-    return m ? [p, join(pkg.dir, 'src', m[2])] : [p];
-  });
-  return [...new Set(withSrc)];
+  const layout = getBuildLayout(pkg.dir);
+  const sources: string[] = [];
+  const built: string[] = [];
+  for (const t of targets) {
+    if (isBuildOutput(layout, t)) {
+      sources.push(...builtToSourceCandidates(layout, t));
+      built.push(t);
+    } else {
+      sources.push(t);
+    }
+  }
+  const conventional = subpath
+    ? [join(pkg.dir, 'src', subpath), join(pkg.dir, subpath)]
+    : [join(pkg.dir, 'src', 'index'), join(pkg.dir, 'index')];
+  return [...new Set([...sources, ...conventional, ...built])];
 }
 
 /** Collect string targets for `key` from an `exports` field (conditions in priority order). */
@@ -178,16 +199,30 @@ function exportTargets(exportsField: unknown, key: string): string[] {
   return key === '.' ? conditionTargets(obj) : [];
 }
 
-const CONDITION_ORDER = ['types', 'source', 'development', 'import', 'module', 'node', 'require', 'default'];
+/**
+ * Export conditions in priority order. `source` / `development` (and
+ * scoped variants such as `@acme/source`) come first because they point at
+ * the real source tree; `types` usually names a `.d.ts` in build output.
+ * Condition order inside `exports` is otherwise significant to Node, but for
+ * code *mapping* we want the source, not the runtime entry.
+ */
+const CONDITION_ORDER = ['source', 'development', 'svelte', 'types', 'import', 'module', 'node', 'require', 'default'];
+const SOURCE_CONDITION = /(^|[/:@-])(source|src|typescript|ts)$/;
+
+function conditionRank(c: string): number {
+  if (SOURCE_CONDITION.test(c) && !CONDITION_ORDER.includes(c)) return -1;
+  const i = CONDITION_ORDER.indexOf(c);
+  return i < 0 ? CONDITION_ORDER.length : i;
+}
 
 function conditionTargets(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   if (Array.isArray(value)) return value.flatMap(conditionTargets);
   if (!value || typeof value !== 'object') return [];
   const obj = value as Record<string, unknown>;
-  const ordered = [
-    ...CONDITION_ORDER.filter((c) => c in obj),
-    ...Object.keys(obj).filter((k) => !CONDITION_ORDER.includes(k)),
-  ];
+  const ordered = Object.keys(obj)
+    .map((k, i) => ({ k, i, r: conditionRank(k) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((x) => x.k);
   return ordered.flatMap((c) => conditionTargets(obj[c]));
 }

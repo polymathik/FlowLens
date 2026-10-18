@@ -105,7 +105,7 @@ function mergeMappings(a: PathMapping | null, b: PathMapping): PathMapping {
   };
 }
 
-function resolveExtends(ext: string, configDir: string): string | null {
+export function resolveExtends(ext: string, configDir: string): string | null {
   const candidates: string[] = [];
   if (ext.startsWith('.') || ext.startsWith('/')) {
     const abs = resolve(configDir, ext);
