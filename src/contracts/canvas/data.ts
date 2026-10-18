@@ -143,6 +143,8 @@ export interface ZoneNodeData extends CanvasNodeBase {
   symbolCount: number;
   topFiles: string[];
   customized?: boolean;
+  /** Share (0..1) of the dependency weight of the zone's files that stays inside it (communities). */
+  cohesion?: number;
 }
 
 /** Data payload for an entity-level node (class, function, etc.). */

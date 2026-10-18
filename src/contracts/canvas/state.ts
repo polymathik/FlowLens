@@ -109,6 +109,11 @@ export interface CanvasState {
   zoneExpansion: Record<string, boolean>;
   /** User adjustments from `GET /canvas/zones` (rename, colour, collapse, pins). */
   zoneOverrides: ZoneOverrides;
+  /**
+   * Last community assignment (file path → community key), kept so communities survive edits and
+   * reloads (persisted in `.flowlens/zone-state.json`). `null` until loaded.
+   */
+  communityAssignment: Record<string, string> | null;
   /** Node under the pointer (its edges stay strong, the rest dim). */
   hoveredNodeId: string | null;
   /** One-line message about zones (override save failed, zones collapsed for performance…). */
@@ -150,6 +155,7 @@ export interface CanvasState {
   /** Forget every explicit choice for the container (back to the defaults). */
   resetZoneExpansion: (containerId: string) => void;
   setZoneOverrides: (overrides: ZoneOverrides) => void;
+  setCommunityAssignment: (assignment: Record<string, string>) => void;
   setHoveredNode: (id: string | null) => void;
   setZoneNotice: (notice: string | null) => void;
 }

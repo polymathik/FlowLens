@@ -46,6 +46,11 @@ export interface Zone {
    * Lets the canvas navigate into the zone's container; absent for custom and graph-based zones.
    */
   nodeId?: string;
+  /**
+   * Share (0..1) of the dependency weight of this zone's files (children included) that stays
+   * inside the zone; set by graph-based modes. Shown in the chip tooltip.
+   */
+  cohesion?: number;
 }
 
 export interface ZoneSet {
@@ -60,6 +65,19 @@ export interface ZoneSet {
    * `folders` strategy ran instead: `mode` is then `'folders'` and this is the mode asked for.
    */
   fallbackFrom?: ZoningMode;
+  /** Graph-based modes (`communities`): how well the zones follow the dependencies. */
+  quality?: ZoneQuality;
+}
+
+/**
+ * How well a partition of the file graph matches its edges (Map v2 M3, additive).
+ * Computed over the zones as finally shown (after user overrides).
+ */
+export interface ZoneQuality {
+  /** Newman modularity of the innermost zones (resolution 1), -0.5..1. */
+  modularity: number;
+  /** Share of the edge weight whose two files sit in the same innermost zone, 0..1. */
+  intraRatio: number;
 }
 
 /** Tunables of the built-in strategies (all optional). */
@@ -163,4 +181,30 @@ export interface ZoneOverridesError {
   ok: false;
   error: { code: 'bad_request'; message: string };
   issues: ZoneOverridesIssue[];
+}
+
+/* ---------------- Community state (Map v2 M3) ---------------- */
+
+/**
+ * `.flowlens/zone-state.json` — the last community assignment, so communities keep their keys across
+ * re-indexes and reloads (warm start, see `ZoningInput.previousAssignment`). Derived data, safe to delete.
+ */
+export interface ZoneState {
+  version: 1;
+  /** File path → community key (the innermost zone of that file). */
+  assignment: Record<string, string>;
+}
+
+export const EMPTY_ZONE_STATE: ZoneState = { version: 1, assignment: {} };
+export const ZONE_STATE_FILE = 'zone-state.json';
+/** `GET|PUT /api/projects/:id/canvas/zones/state` — body and response are `ZoneState`. */
+export const ZONE_STATE_ROUTE = `${ZONES_ROUTE}/state`;
+/** PUT bodies above this size are refused with 413. */
+export const ZONE_STATE_MAX_BYTES = 2 * 1024 * 1024;
+export const ZONE_STATE_MAX_FILES = 50_000;
+
+/** Community-state store (file-backed, atomic writes, served by the explorer API). */
+export interface ZoneStateStore {
+  read(flowlensDir: string): Promise<ZoneState>;
+  write(flowlensDir: string, state: ZoneState): Promise<void>;
 }
