@@ -15,7 +15,7 @@ import { z } from 'zod';
 export const ENTITY_KINDS = [
   'file', 'module', 'namespace', 'class', 'interface',
   'function', 'method', 'variable', 'field', 'parameter',
-  'type', 'enum', 'enum_member', 'decorator',
+  'type', 'enum', 'enum_member', 'decorator', 'component',
 ] as const;
 
 export const RELATION_TYPES = [

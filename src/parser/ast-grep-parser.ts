@@ -2,15 +2,13 @@ import path from 'node:path';
 import { parse } from '@ast-grep/napi';
 import type { SgRoot } from '@ast-grep/napi';
 import type { Parser, ParseResult, ParseError } from '../contracts/parser.js';
-import type { Entity } from '../contracts/entities.js';
-import type { Relation } from '../contracts/relations.js';
-import type { PendingRelation } from '../contracts/symbols.js';
+import { isPending } from './pending.js';
 import {
   LANGUAGE_EXTENSIONS,
   extensionToLanguage,
   normalizeRelativePath,
 } from '../utils/paths.js';
-import { generateEntityId } from '../utils/id.js';
+import { countLines, createFileEntity } from './file-entity.js';
 import { ensureLanguagesRegistered } from './lang-registration.js';
 import { extractorRegistry } from './extractor-registry.js';
 import { typescriptExtractor, createTypescriptExtractor } from './extractors/typescript-extractor.js';
@@ -19,6 +17,8 @@ import { populateEntityMetrics } from '../metrics/compute-entity-metrics.js';
 import { dedupeEntities } from './entity-dedupe.js';
 import { findSyntaxErrorLines } from './ast-walk.js';
 import { aggregateRelations } from '../graph/aggregate.js';
+
+export { createFileEntity } from './file-entity.js';
 
 // ─── Register built-in extractors ────────────────────────────────
 extractorRegistry.register(typescriptExtractor);
@@ -57,30 +57,6 @@ const LANG_TO_AST_GREP: Record<string, string> = {
   yaml: 'yaml',
 };
 
-/** Line count; a trailing newline does not add a line. */
-function countLines(content: string): number {
-  if (content.length === 0) return 0;
-  const lines = content.split('\n');
-  return lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
-}
-
-/** File-level entity for any parsed or unparsed source file. */
-export function createFileEntity(filePath: string, language: string, lineCount: number): Entity {
-  const normalized = normalizeRelativePath(filePath);
-  const fileName = path.basename(normalized);
-  return {
-    id: generateEntityId(normalized, fileName, 'file'),
-    kind: 'file',
-    name: fileName,
-    qualified_name: normalized,
-    file: normalized,
-    location: { line_start: 1, line_end: Math.max(lineCount, 0), column_start: 0, column_end: 0 },
-    visibility: 'public',
-    language,
-    metrics: { line_count: lineCount },
-  };
-}
-
 function tryParse(lang: string, content: string, filePath: string, errors: ParseError[]): SgRoot | null {
   try {
     return parse(lang, content);
@@ -92,10 +68,6 @@ function tryParse(lang: string, content: string, filePath: string, errors: Parse
     });
     return null;
   }
-}
-
-function isPending(r: Relation): r is PendingRelation {
-  return r.to === '' && typeof r.target_name === 'string';
 }
 
 /**

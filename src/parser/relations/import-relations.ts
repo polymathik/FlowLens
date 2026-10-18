@@ -5,7 +5,7 @@
  * - The specifier is resolved with the shared module resolver (relative
  *   paths, `.js`→`.ts` mapping, tsconfig paths, workspace packages).
  * - A resolved specifier gives a direct file→file edge; `import type` marks
- *   it `meta.type_only`.
+ *   it `meta.type_only`; `export … from` marks it `meta.reexport` (barrels).
  * - A project-internal specifier that names no file becomes an explicit
  *   unresolved import (never a fabricated id); external packages are dropped.
  * - Every named binding also yields an optional pending import to the file
@@ -46,7 +46,7 @@ export function handleReExport(node: SgNode, ctx: TsRelationContext): void {
   const specifier = stringSpecifier(node);
   if (specifier === null) return;
   const typeOnly = node.children().some((c) => c.kind() === 'type');
-  addImportEdge(specifier, node, ctx, 1.0, typeOnly);
+  addImportEdge(specifier, node, ctx, 1.0, typeOnly, true);
 }
 
 /** `require('…')` and `import('…')`. Returns true when the call was an import. */
@@ -74,7 +74,11 @@ export function handleRequireOrDynamicImport(node: SgNode, ctx: TsRelationContex
 
 function addImportEdge(
   specifier: string, node: SgNode, ctx: TsRelationContext, confidence: number, typeOnly: boolean,
+  reexport = false,
 ): void {
+  const meta = typeOnly || reexport
+    ? { meta: { ...(typeOnly ? { type_only: true } : {}), ...(reexport ? { reexport: true } : {}) } }
+    : {};
   const res = resolveModuleSpecifier(specifier, ctx.filePath, ctx.rootDir);
   const { line, column } = loc(node);
   if (res.file) {
@@ -88,7 +92,7 @@ function addImportEdge(
       location: { file: ctx.filePath, line, column },
       weight: 1,
       confidence,
-      ...(typeOnly ? { meta: { type_only: true } } : {}),
+      ...meta,
     });
     return;
   }
@@ -104,7 +108,7 @@ function addImportEdge(
     resolution: 'unresolved',
     target_name: specifier,
     final: true,
-    ...(typeOnly ? { meta: { type_only: true } } : {}),
+    ...meta,
   } as import('../../contracts/symbols.js').PendingRelation);
 }
 
