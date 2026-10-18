@@ -1,20 +1,23 @@
 /**
- * The FlowLens daemon process: one per user (per `$FLOWLENS_HOME`). Binds
- * 127.0.0.1 on an ephemeral port, writes `daemon.json` (0600) once
- * listening, sweeps leases/idle graphs, and shuts down gracefully (stop
- * watchers → close SSE → close every DB → remove daemon.json).
+ * The FlowLens daemon process: one per user (per `$FLOWLENS_HOME`) and
+ * protocol key (so two FlowLens versions run side by side). Binds
+ * 127.0.0.1 on the preferred port (4280) or, when that is taken (e.g. by
+ * another version's daemon), an ephemeral one; writes
+ * `daemon-p<key>.json` (0600) once listening, sweeps leases/idle graphs,
+ * and shuts down gracefully (stop watchers → close SSE → close every DB →
+ * remove its info file).
  */
 import { randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Express } from 'express';
 import {
-  DAEMON_HOST, DEFAULT_SERVICE_OPTIONS, type DaemonInfo, type ServiceOptions,
+  DAEMON_HOST, DEFAULT_SERVICE_OPTIONS, GRAPH_RPC_PROTOCOL, type DaemonInfo, type ServiceOptions,
 } from '../contracts/service.js';
 import { LevelGraphStore } from '../graph/levelgraph-store.js';
 import { FileProjectRegistry } from '../projects/registry.js';
 import { createServiceApp, type MountRoutes, type ServiceDeps } from './app.js';
-import { removeDaemonInfo, writeDaemonInfo } from './daemon-info.js';
+import { OWN_PROTOCOL_KEY, removeDaemonInfo, writeDaemonInfo } from './daemon-info.js';
 import { EventHub } from './events.js';
 import { GraphPool, type StoreFactory } from './graph-pool.js';
 import { ProjectCache } from './project-cache.js';
@@ -27,7 +30,7 @@ import { SessionStore } from './sessions.js';
 
 export interface StartDaemonOptions {
   options?: Partial<ServiceOptions>;
-  /** Write `$FLOWLENS_HOME/daemon.json` (default true). */
+  /** Write `$FLOWLENS_HOME/daemon-p<key>.json` (default true). */
   writeInfo?: boolean;
   storeFactory?: StoreFactory;
   watcherFactory?: WatcherFactory;
@@ -166,6 +169,7 @@ export async function startDaemon(o: StartDaemonOptions = {}): Promise<DaemonHan
   const info: DaemonInfo = {
     pid: process.pid, host: DAEMON_HOST, port, token,
     version: FLOWLENS_VERSION, started_at: new Date(startedAt).toISOString(),
+    protocol: GRAPH_RPC_PROTOCOL, protocol_key: OWN_PROTOCOL_KEY,
   };
   if (writeInfo) writeDaemonInfo(info);
   log(`[daemon] listening on ${DAEMON_HOST}:${port} (pid ${process.pid}, v${FLOWLENS_VERSION})`);

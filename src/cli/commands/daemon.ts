@@ -1,10 +1,14 @@
 /**
  * `flowlens daemon start|stop|status` — manage the local graph service.
  * Normally you never need this: every command auto-starts the daemon.
+ * Each FlowLens version runs its own daemon (Phase 12 review H2); `status`
+ * lists all of them, `stop` stops this version's, `stop --all` also stops
+ * other versions' daemons that no client is using.
  */
 import { Command } from 'commander';
-import type { ProjectDetail } from '../../contracts/service.js';
-import { connectDaemon, findDaemon, stopDaemon } from '../../service/autostart.js';
+import { connectDaemon, findDaemon } from '../../service/autostart.js';
+import { listKnownDaemons, stopKnownDaemons, type KnownDaemon } from '../../service/known-daemons.js';
+import { flowlensHome } from '../../projects/paths.js';
 import { daemonInfoPath, daemonLogPath } from '../../service/daemon-info.js';
 import { startDaemon } from '../../service/daemon.js';
 import { printError, printSuccess, printWarning } from '../output.js';
@@ -39,47 +43,68 @@ const start = new Command('start')
   });
 
 const stop = new Command('stop')
-  .description('Stop the daemon (closes every project graph)')
-  .action(async () => {
-    const client = await findDaemon();
-    if (!client) {
-      printWarning('FlowLens daemon is not running');
-      return;
+  .description('Stop this version\'s daemon (closes every project graph)')
+  .option('--all', 'Also stop other FlowLens versions\' daemons that have no live clients')
+  .option('--force', 'With --all: stop them even while clients use them')
+  .action(async (opts: { all?: boolean; force?: boolean }) => {
+    const outcomes = await stopKnownDaemons({ all: Boolean(opts.all), force: Boolean(opts.force) });
+    let failed = false;
+    for (const { daemon: d, result } of outcomes) {
+      const label = `${d.own ? 'FlowLens daemon' : `FlowLens daemon v${d.info.version}${d.legacy ? ' (legacy)' : ''}`} (pid ${d.info.pid})`;
+      if (result === 'stopped') printSuccess(`Stopped ${label}`);
+      else if (result === 'removed_stale') printWarning(`Removed stale info file of ${label}: ${d.path}`);
+      else if (result === 'skipped_in_use') printWarning(`Left ${label} running: in use by ${d.leases ?? '?'} client(s). Add --force to stop it anyway.`);
+      else {
+        failed = true;
+        printError(`${label} did not exit in time`);
+      }
     }
-    const pid = client.info.pid;
-    if (await stopDaemon(client)) printSuccess(`Stopped FlowLens daemon (pid ${pid})`);
-    else {
-      printError(`Daemon (pid ${pid}) did not exit in time`);
-      process.exit(1);
+    if (!outcomes.some((o) => o.daemon.own && o.result === 'stopped')) printWarning('This version\'s FlowLens daemon is not running');
+    if (!opts.all) {
+      const others = (await listKnownDaemons()).filter((d) => !d.own && d.alive);
+      if (others.length > 0) console.log(`  ${others.length} daemon(s) of other FlowLens versions still running — "flowlens daemon stop --all" stops idle ones.`);
     }
+    if (failed) process.exit(1);
   });
 
+function describeDaemon(d: KnownDaemon): string {
+  const tag = d.own ? 'this version' : d.legacy ? 'legacy daemon.json' : 'other version';
+  const state = d.alive ? `up ${Math.round((d.pong?.uptime_ms ?? 0) / 1000)}s, ${d.leases ?? '?'} lease(s)` : 'not answering';
+  return `v${d.info.version} [${tag}] — pid ${d.info.pid}, 127.0.0.1:${d.info.port}, ${state}`;
+}
+
 const status = new Command('status')
-  .description('Show whether the daemon runs and which project graphs are open')
+  .description('Show every FlowLens daemon (this and other versions) and which project graphs are open')
   .option('--json', 'Machine-readable output')
   .action(async (opts: { json?: boolean }) => {
-    const client = await findDaemon();
-    if (!client) {
-      if (opts.json) console.log(JSON.stringify({ running: false }, null, 2));
-      else printWarning('FlowLens daemon is not running');
-      process.exitCode = 3;
+    const known = await listKnownDaemons();
+    const own = known.find((d) => d.own && d.alive && d.compatible);
+    if (opts.json) {
+      const strip = (d: KnownDaemon) => {
+        const { token: _token, ...info } = d.info;
+        return { ...info, own: d.own, legacy: d.legacy, alive: d.alive, leases: d.leases, info_path: d.path, uptime_ms: d.pong?.uptime_ms };
+      };
+      const ownInfo = own ? strip(own) : null;
+      console.log(JSON.stringify({
+        running: Boolean(own), ...(ownInfo ?? {}), projects: own?.projects ?? undefined, daemons: known.map(strip),
+      }, null, 2));
+      if (!own) process.exitCode = 3;
       return;
     }
-    try {
-      const pong = await client.ping();
-      const projects = await client.request<ProjectDetail[]>('GET', '/api/projects');
-      const { token: _token, ...info } = client.info;
-      if (opts.json) {
-        console.log(JSON.stringify({ running: true, ...info, uptime_ms: pong?.uptime_ms, projects }, null, 2));
-        return;
-      }
-      printSuccess(`FlowLens daemon v${info.version} — pid ${info.pid}, 127.0.0.1:${info.port}, up ${Math.round((pong?.uptime_ms ?? 0) / 1000)}s`);
+    if (!own) {
+      printWarning('This version\'s FlowLens daemon is not running');
+      process.exitCode = 3;
+    } else {
+      printSuccess(`FlowLens daemon ${describeDaemon(own)}`);
       console.log(`  info: ${daemonInfoPath()}\n  log:  ${daemonLogPath()}\n`);
-      console.log(renderTable(['NAME', 'ID', 'STATUS', 'GRAPH', 'LEASES', 'WATCHING'], projects.map((p) => [
+      console.log(renderTable(['NAME', 'ID', 'STATUS', 'GRAPH', 'LEASES', 'WATCHING'], (own.projects ?? []).map((p) => [
         p.name, p.id, p.status, p.graph.open ? 'open' : 'closed', String(p.graph.leases), p.graph.watching ? 'yes' : 'no',
       ])));
-    } finally {
-      client.destroy();
+    }
+    const others = known.filter((d) => d !== own);
+    if (others.length > 0) {
+      console.log(`\nOther FlowLens daemons in ${flowlensHome()}:`);
+      for (const d of others) console.log(`  ${describeDaemon(d)}\n    ${d.path}`);
     }
   });
 

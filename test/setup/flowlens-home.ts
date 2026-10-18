@@ -17,8 +17,7 @@ process.env.FLOWLENS_HOME = home;
 
 afterAll(async () => {
   process.env.FLOWLENS_HOME = home; // a test may have pointed it elsewhere
-  const { findDaemon, stopDaemon } = await import('../../src/service/autostart.js');
-  const daemon = await findDaemon().catch(() => null);
-  if (daemon) await stopDaemon(daemon);
+  const { stopKnownDaemons } = await import('../../src/service/known-daemons.js');
+  await stopKnownDaemons({ all: true, force: true }).catch(() => undefined);
   rmSync(home, { recursive: true, force: true });
 }, 30_000);

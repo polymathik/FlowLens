@@ -8,6 +8,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { GRAPH_RPC_PROTOCOL, type PingResponse, type ServiceOptions } from '../contracts/service.js';
 import type { FileProjectRegistry } from '../projects/registry.js';
 import { authenticate } from './auth.js';
+import { OWN_PROTOCOL_KEY } from './daemon-info.js';
 import { authenticateBrowser } from './browser-auth.js';
 import type { SessionStore } from './sessions.js';
 import { errorBody, ServiceError, toServiceError } from './errors.js';
@@ -72,6 +73,7 @@ export function createServiceApp(deps: ServiceDeps, mount?: MountRoutes): Expres
   app.get('/api/ping', (_req, res) => {
     const pong: PingResponse = {
       ok: true, pid: process.pid, version: deps.version, uptime_ms: Date.now() - deps.startedAt, protocol: GRAPH_RPC_PROTOCOL,
+      protocol_key: OWN_PROTOCOL_KEY,
     };
     res.json(pong);
   });

@@ -23,8 +23,25 @@ import type { ProjectWithStatus } from './projects.js';
 
 /* ---------------- discovery ---------------- */
 
+/**
+ * Legacy (pre-Phase-12) discovery file, written by older FlowLens daemons.
+ * Current daemons never read it to connect and never stop its daemon;
+ * `flowlens daemon status` still lists it.
+ */
 export const DAEMON_INFO_FILE = 'daemon.json';
 export const DAEMON_LOG_FILE = 'daemon.log';
+/**
+ * Phase 12 review H2: one daemon per protocol. Daemons of different
+ * FlowLens versions/protocols run side by side; each writes
+ * `$FLOWLENS_HOME/daemon-p<protocol_key>.json` (and `.log`), where
+ * `protocol_key` hashes the version, `GRAPH_RPC_PROTOCOL` and
+ * `SERVICE_PROTOCOL_REVISION`. A client only ever connects to — and only
+ * replaces — a daemon with its own key; others are stopped only by an
+ * explicit `flowlens daemon stop --all` when they have no live leases.
+ */
+export const DAEMON_INFO_PREFIX = 'daemon-p';
+/** Bump when a non-RPC service route changes incompatibly (2 = Phase 12 `reindex`). */
+export const SERVICE_PROTOCOL_REVISION = 2;
 export const DAEMON_HOST = '127.0.0.1';
 /** Set to `1` to bypass the daemon and open LevelDB directly (tests/CI). */
 export const NO_DAEMON_ENV = 'FLOWLENS_NO_DAEMON';
@@ -38,6 +55,10 @@ export interface DaemonInfo {
   /** FlowLens package version the daemon runs. */
   version: string;
   started_at: string;
+  /** Phase 12: the daemon's `GRAPH_RPC_PROTOCOL` (absent in legacy daemon.json). */
+  protocol?: string;
+  /** Phase 12: compatibility key used in the info file name (see DAEMON_INFO_PREFIX). */
+  protocol_key?: string;
 }
 
 /* ---------------- routes ---------------- */
@@ -198,6 +219,8 @@ export interface PingResponse {
   uptime_ms: number;
   /** `GRAPH_RPC_PROTOCOL` of the daemon's code (absent on pre-Phase-8 daemons). */
   protocol?: string;
+  /** Compatibility key (Phase 12; absent on older daemons). */
+  protocol_key?: string;
 }
 
 export interface VersionResponse {

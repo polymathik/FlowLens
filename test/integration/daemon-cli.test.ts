@@ -14,6 +14,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { isPidAlive } from '../../src/projects/file-lock.js';
+import { OWN_PROTOCOL_KEY } from '../../src/service/daemon-info.js';
 import { CLI_TS, TSX_LOADER, copyFixture, removeDir, runCli, tempDir } from '../helpers/service-env.js';
 
 type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
@@ -134,7 +135,8 @@ describe('daemon via the CLI', () => {
     const stop = await runCli(['daemon', 'stop'], root, env);
     expect(stop.code, stop.stderr).toBe(0);
     expect(isPidAlive(before.pid)).toBe(false);
-    expect(existsSync(join(home, 'daemon.json'))).toBe(false);
+    expect(existsSync(join(home, `daemon-p${OWN_PROTOCOL_KEY}.json`))).toBe(false);
+    expect(existsSync(join(home, 'daemon.json'))).toBe(false); // legacy file is never written
     const status = await runCli(['daemon', 'status'], root, env);
     expect(status.code).toBe(3);
     const check = await runCli(['check', '--cycles'], root, env);
