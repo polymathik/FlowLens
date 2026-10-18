@@ -113,9 +113,10 @@ agentCommand.addCommand(new Command('baseline')
 
 const installCommand = new Command('install').description('Install agent integrations');
 installCommand.addCommand(new Command('claude-code')
-  .description('Install Claude Code project hooks into .claude/settings.json')
-  .option('--command <command>', 'Base command hooks use to run FlowLens (default: node "<this install>/dist/cli/index.js")')
-  .option('--force', 'Replace existing FlowLens hook entries')
+  .description('Install Claude Code project hooks into .claude/settings.local.json (personal; --shared: .claude/settings.json)')
+  .option('--command <command>', 'Base command hooks use to run FlowLens (default: node "<this install>/dist/cli/index.js"; with --shared, "npx --no-install flowlens" when FlowLens is a project dependency)')
+  .option('--shared', 'Write the committed .claude/settings.json for the whole team instead of your personal settings.local.json')
+  .option('--force', 'Rewrite FlowLens hook entries even when they are up to date')
   .option('--format <format>', 'Output format: markdown, json', 'markdown')
   .option('--root <dir>', 'Project root (default: current directory)')
   .action((opts) => execute(async () => {
@@ -124,13 +125,17 @@ installCommand.addCommand(new Command('claude-code')
       project_dir: resolveAgentRoot(opts.root, {}),
       command: opts.command,
       force: Boolean(opts.force),
+      shared: Boolean(opts.shared),
     });
     const lines = [
       'FlowLens Claude Code hooks installed.',
-      `Settings: ${result.settings_path}`,
+      `Settings: ${result.settings_path} (${result.scope === 'shared' ? 'shared with the team' : 'personal, not committed'})`,
       `Hook command: ${result.command}`,
-      `Hooks added: ${result.hooks_added}; replaced: ${result.hooks_replaced ?? 0}; already present: ${result.hooks_existing}`,
+      `Hooks added: ${result.hooks_added}; refreshed: ${result.hooks_replaced ?? 0}; already up to date: ${result.hooks_existing}`,
+      result.hooks_moved ? `Moved ${result.hooks_moved} FlowLens hook(s) out of ${result.moved_from}` : '',
+      result.git_ignored_via ? `Kept out of git via: ${result.git_ignored_via}` : '',
       result.backup_path ? `Backup: ${result.backup_path}` : '',
+      ...(result.warnings ?? []).map((w) => `Warning: ${w}`),
     ].filter(Boolean);
     return done(format === 'json' ? JSON.stringify(result, null, 2) : lines.join('\n'));
   })));
@@ -138,20 +143,22 @@ agentCommand.addCommand(installCommand);
 
 const uninstallCommand = new Command('uninstall').description('Uninstall agent integrations');
 uninstallCommand.addCommand(new Command('claude-code')
-  .description('Remove FlowLens-managed Claude Code project hooks')
+  .description('Remove FlowLens-managed Claude Code project hooks (from settings.local.json and settings.json)')
+  .option('--shared', 'Only .claude/settings.json')
+  .option('--local', 'Only .claude/settings.local.json')
   .option('--format <format>', 'Output format: markdown, json', 'markdown')
   .option('--root <dir>', 'Project root (default: current directory)')
   .action((opts) => execute(async () => {
     const format = parseFormat(opts.format);
-    const result = await uninstallClaudeCodeHooks(resolveAgentRoot(opts.root, {}));
+    const scope = opts.shared ? 'shared' : opts.local ? 'local' : undefined;
+    const result = await uninstallClaudeCodeHooks(resolveAgentRoot(opts.root, {}), scope);
     const lines = result.settings_found === false
-      ? [`No Claude Code settings at ${result.settings_path}; nothing to remove.`]
+      ? [`No Claude Code settings in ${resolveAgentRoot(opts.root, {})}/.claude; nothing to remove.`]
       : [
         'FlowLens Claude Code hooks removed.',
-        `Settings: ${result.settings_path}`,
+        ...(result.files ?? []).map((f) => `${f.path}: ${f.hooks_removed} removed${f.backup_path ? ` (backup: ${f.backup_path})` : ''}`),
         `Hooks removed: ${result.hooks_removed}`,
-        result.backup_path ? `Backup: ${result.backup_path}` : '',
-      ].filter(Boolean);
+      ];
     return done(format === 'json' ? JSON.stringify(result, null, 2) : lines.join('\n'));
   })));
 agentCommand.addCommand(uninstallCommand);

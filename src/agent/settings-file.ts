@@ -1,5 +1,6 @@
 /**
- * Safe read/validate/backup/atomic-write for `.claude/settings.json`.
+ * Safe read/validate/backup/atomic-write for `.claude/settings.json` and
+ * `.claude/settings.local.json`.
  *
  * Rules (audit §4.5 P0):
  * - Unparseable JSON is never overwritten: callers get a ClaudeSettingsError.
@@ -12,7 +13,7 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { ClaudeSettings, ClaudeSettingsErrorCode } from '../contracts/agent.js';
+import type { ClaudeSettings, ClaudeSettingsErrorCode, ClaudeSettingsScope } from '../contracts/agent.js';
 
 export class ClaudeSettingsError extends Error {
   constructor(
@@ -31,8 +32,18 @@ export interface LoadedSettings {
   settings: ClaudeSettings;
 }
 
+/** `.claude/settings.json` (shared, committed). */
 export function claudeSettingsPath(projectDir: string): string {
   return join(projectDir, '.claude', 'settings.json');
+}
+
+/** `.claude/settings.local.json` (personal; Claude Code applies it over settings.json). */
+export function claudeLocalSettingsPath(projectDir: string): string {
+  return join(projectDir, '.claude', 'settings.local.json');
+}
+
+export function claudeSettingsPathFor(projectDir: string, scope: ClaudeSettingsScope): string {
+  return scope === 'shared' ? claudeSettingsPath(projectDir) : claudeLocalSettingsPath(projectDir);
 }
 
 export async function loadClaudeSettings(path: string): Promise<LoadedSettings> {

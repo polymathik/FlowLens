@@ -257,11 +257,25 @@ export const FLOWLENS_HOOK_MARKER = '# flowlens-managed';
 
 export type ClaudeSettingsErrorCode = 'invalid_json' | 'invalid_shape' | 'io';
 
+/**
+ * Which Claude Code settings file hooks go into (Phase 12 review M3):
+ * - `local` (default): `.claude/settings.local.json` — personal, kept out of
+ *   git; right for the default command, which embeds this machine's
+ *   absolute FlowLens path.
+ * - `shared`: `.claude/settings.json` — committed for the team; uses a
+ *   portable `npx --no-install flowlens` command when FlowLens is a local
+ *   dependency of the project, else warns about the absolute path.
+ */
+export type ClaudeSettingsScope = 'local' | 'shared';
+
 export interface ClaudeCodeHookInstallOptions {
   project_dir: string;
-  /** Base command used to invoke FlowLens; defaults to `node "<abs dist/cli/index.js>"`. */
+  /** Base command used to invoke FlowLens; defaults to `node "<abs dist/cli/index.js>"` (portable npx form when shared and possible). */
   command?: string;
+  /** Rewrite FlowLens hooks even when they are already up to date. */
   force?: boolean;
+  /** Write `.claude/settings.json` instead of `.claude/settings.local.json`. */
+  shared?: boolean;
 }
 
 export interface AgentInstallResult {
@@ -275,6 +289,15 @@ export interface AgentInstallResult {
   backup_path?: string;
   /** Base command written into the hooks. */
   command?: string;
+  /** Phase 12: which settings file was written. */
+  scope?: ClaudeSettingsScope;
+  /** FlowLens hooks removed from the other settings file (no duplicate hook runs). */
+  hooks_moved?: number;
+  /** The other settings file, when hooks were moved out of it. */
+  moved_from?: string;
+  /** Local scope: how `.claude/settings.local.json` is kept out of git (e.g. `.git/info/exclude`). */
+  git_ignored_via?: string;
+  warnings?: string[];
 }
 
 export interface AgentUninstallResult {
@@ -284,6 +307,8 @@ export interface AgentUninstallResult {
   backup_path?: string;
   /** False when no settings file existed (nothing was written). */
   settings_found?: boolean;
+  /** Phase 12: every settings file that was checked, with what was removed from it. */
+  files?: Array<{ path: string; hooks_removed: number; backup_path?: string }>;
 }
 
 /** What an agent command produced; the CLI writes it and sets the exit code. */

@@ -48,7 +48,7 @@ describe('agent hooks end to end', () => {
 
     const install = runCli(['agent', 'install', 'claude-code', '--command', TSX_CLI_COMMAND, '--format', 'json'], { cwd: proj });
     expect(install.status).toBe(0);
-    const settings = JSON.parse(await readFile(join(proj, '.claude/settings.json'), 'utf-8')) as ClaudeSettings;
+    const settings = JSON.parse(await readFile(join(proj, '.claude/settings.local.json'), 'utf-8')) as ClaudeSettings;
     commands = {
       session: settings.hooks!.SessionStart[0].hooks[0].command,
       prompt: settings.hooks!.UserPromptSubmit[0].hooks[0].command,
@@ -152,7 +152,7 @@ describe('agent hooks end to end', () => {
   }, E2E_TIMEOUT);
 
   it('refuses to touch malformed settings (exit 2), then uninstalls cleanly', async () => {
-    const path = join(proj, '.claude/settings.json');
+    const path = join(proj, '.claude/settings.local.json');
     const good = await readFile(path, 'utf-8');
     await writeFile(path, '{ broken');
     const bad = runCli(['agent', 'install', 'claude-code'], { cwd: proj });

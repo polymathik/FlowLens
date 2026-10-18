@@ -1,89 +1,107 @@
 /**
- * Claude Code hook installer/uninstaller for `.claude/settings.json`.
+ * Claude Code hook installer/uninstaller (Phase 7, revised in Phase 12
+ * review M3).
  *
- * Ownership: every FlowLens hook command ends with the shell comment
- * `# flowlens-managed` (FLOWLENS_HOOK_MARKER). Hooks run in shell form
- * (`sh -c` / Git Bash / PowerShell), where a trailing `#` comment is ignored,
- * so the marker is invisible at runtime but lets uninstall/--force find our
- * entries regardless of the `--command` used. Legacy (pre-marker) entries are
- * recognised by their `agent context --hook --event …` / `agent guard --hook`
- * arguments and migrated on install.
+ * Where hooks go (verified against code.claude.com/docs/en/settings,
+ * "Settings files and precedence"): Claude Code reads both
+ * `.claude/settings.json` ("Shared project … commit it") and
+ * `.claude/settings.local.json` ("Project local … You, in this one project
+ * only"), applying the local file over the shared one. The default hook
+ * command embeds this machine's absolute FlowLens path, so by default we
+ * write the LOCAL file and make sure git ignores it (Claude Code only
+ * auto-ignores it when it creates the file itself). `--shared` writes the
+ * shared file, preferring the portable `npx --no-install flowlens` when
+ * FlowLens is a local dependency, and warns when the command is still an
+ * absolute path.
  *
- * File safety lives in settings-file.ts (no overwrite of invalid JSON,
- * timestamped backup, atomic write).
+ * Hooks from both files would run, so install moves FlowLens hooks out of
+ * the other file: machine-specific ones always; portable shared ones are
+ * left in place with a warning (a teammate may rely on them).
+ *
+ * The pure merge/remove logic lives in claude-hooks.ts; file safety
+ * (invalid JSON is never overwritten, timestamped backup, atomic write) in
+ * settings-file.ts.
  */
 import type {
   AgentInstallResult,
   AgentUninstallResult,
   ClaudeCodeHookInstallOptions,
   ClaudeHookCommand,
-  ClaudeSettings,
-  HookGroup,
+  ClaudeSettingsScope,
 } from '../contracts/agent.js';
-import { FLOWLENS_HOOK_MARKER } from '../contracts/agent.js';
-import { defaultHookBaseCommand } from './hook-command.js';
+import { buildClaudeCodeHookSettings, listFlowLensHooks, mergeHooks, removeFlowLensHooks } from './claude-hooks.js';
+import { ensureLocalSettingsIgnored } from './git-exclude.js';
+import { defaultHookBaseCommand, embedsAbsolutePath, portableHookBaseCommand } from './hook-command.js';
 import {
   backupClaudeSettings,
+  claudeLocalSettingsPath,
   claudeSettingsPath,
+  claudeSettingsPathFor,
   loadClaudeSettings,
   writeClaudeSettingsAtomic,
 } from './settings-file.js';
 
-/** Root argument passed to every hook; Claude Code substitutes the placeholder. */
-export const HOOK_ROOT_ARG = '--root "${CLAUDE_PROJECT_DIR}"';
+export {
+  buildClaudeCodeHookSettings, HOOK_ROOT_ARG, HOOK_TIMEOUTS, isFlowLensHook, removeFlowLensHooks,
+} from './claude-hooks.js';
 
-/** Explicit per-hook timeouts in seconds (Claude Code defaults: 600, or 30 on UserPromptSubmit). */
-export const HOOK_TIMEOUTS = { SessionStart: 30, UserPromptSubmit: 15, PostToolUse: 60 } as const;
-
-const LEGACY_PATTERN = /\bagent (context --hook --event (session_start|prompt_submit)|guard --hook)\b/;
-
-export function isFlowLensHook(hook: { command?: unknown }): boolean {
-  if (typeof hook.command !== 'string') return false;
-  return hook.command.includes(FLOWLENS_HOOK_MARKER) || LEGACY_PATTERN.test(hook.command);
-}
-
-function managed(command: string): string {
-  return `${command} ${FLOWLENS_HOOK_MARKER}`;
-}
-
-export function buildClaudeCodeHookSettings(command = defaultHookBaseCommand()): ClaudeSettings {
-  const hook = (args: string, timeout: number, statusMessage: string): ClaudeHookCommand => ({
-    type: 'command',
-    command: managed(`${command} ${args} ${HOOK_ROOT_ARG}`),
-    timeout,
-    statusMessage,
-  });
-  return {
-    hooks: {
-      SessionStart: [{
-        matcher: 'startup|resume|clear|compact',
-        hooks: [hook('agent context --hook --event session_start', HOOK_TIMEOUTS.SessionStart, 'FlowLens: loading codebase context')],
-      }],
-      UserPromptSubmit: [{
-        hooks: [hook('agent context --hook --event prompt_submit', HOOK_TIMEOUTS.UserPromptSubmit, 'FlowLens: matching prompt to the code graph')],
-      }],
-      PostToolUse: [{
-        matcher: 'Edit|MultiEdit|Write',
-        hooks: [hook('agent guard --hook --reindex --strict', HOOK_TIMEOUTS.PostToolUse, 'FlowLens: checking the edit')],
-      }],
-    },
-  };
+/** Remove FlowLens hooks matching `filter` from one settings file (backup + atomic write). */
+async function removeFrom(path: string, filter?: (h: ClaudeHookCommand) => boolean): Promise<{ removed: number; backup?: string; found: boolean }> {
+  const loaded = await loadClaudeSettings(path);
+  if (!loaded.exists) return { removed: 0, found: false };
+  const removed = removeFlowLensHooks(loaded.settings, filter);
+  if (removed === 0) return { removed: 0, found: true };
+  const backup = await backupClaudeSettings(path);
+  await writeClaudeSettingsAtomic(path, loaded.settings);
+  return { removed, backup, found: true };
 }
 
 export async function installClaudeCodeHooks(
   options: ClaudeCodeHookInstallOptions,
 ): Promise<AgentInstallResult> {
-  const settingsPath = claudeSettingsPath(options.project_dir);
+  const scope: ClaudeSettingsScope = options.shared ? 'shared' : 'local';
+  const settingsPath = claudeSettingsPathFor(options.project_dir, scope);
+  const otherPath = scope === 'shared' ? claudeLocalSettingsPath(options.project_dir) : claudeSettingsPath(options.project_dir);
+  const warnings: string[] = [];
+
+  // Validate both files before writing either (invalid JSON → ClaudeSettingsError, nothing written).
   const loaded = await loadClaudeSettings(settingsPath);
-  const command = options.command ?? defaultHookBaseCommand();
+  const other = await loadClaudeSettings(otherPath);
+
+  const command = options.command
+    ?? (scope === 'shared' ? portableHookBaseCommand(options.project_dir) : null)
+    ?? defaultHookBaseCommand();
+  if (scope === 'shared' && embedsAbsolutePath(command)) {
+    warnings.push(`The hook command embeds an absolute path on this machine (${command}); teammates who use the committed .claude/settings.json need FlowLens at the same path. Add FlowLens as a devDependency (then hooks use "npx --no-install flowlens"), pass --command, or install without --shared.`);
+  }
+
   const planned = buildClaudeCodeHookSettings(command);
   const stats = mergeHooks(loaded.settings, planned, options.force ?? false);
-
   let backupPath: string | undefined;
   if (stats.changed) {
     backupPath = await backupClaudeSettings(settingsPath);
     await writeClaudeSettingsAtomic(settingsPath, loaded.settings);
   }
+
+  // No duplicate hook runs: move FlowLens hooks out of the other file.
+  let moved = 0;
+  if (other.exists && listFlowLensHooks(other.settings).length > 0) {
+    const machineSpecific = (h: ClaudeHookCommand) => scope === 'shared' || embedsAbsolutePath(h.command);
+    const result = await removeFrom(otherPath, machineSpecific);
+    moved = result.removed;
+    const left = listFlowLensHooks((await loadClaudeSettings(otherPath)).settings).length;
+    if (left > 0) {
+      warnings.push(`${otherPath} also has ${left} portable FlowLens hook(s) (shared with the team); Claude Code runs hooks from both files. Remove them with "flowlens agent uninstall claude-code --shared" if they are not needed.`);
+    }
+  }
+
+  let gitIgnoredVia: string | undefined;
+  if (scope === 'local') {
+    const ignored = ensureLocalSettingsIgnored(options.project_dir);
+    if (ignored.kind === 'already' || ignored.kind === 'added') gitIgnoredVia = ignored.via;
+    else if (ignored.kind === 'failed') warnings.push(`Could not add .claude/settings.local.json to git's excludes (${ignored.message}); add it to .gitignore yourself.`);
+  }
+
   return {
     provider: 'claude-code',
     settings_path: settingsPath,
@@ -92,98 +110,36 @@ export async function installClaudeCodeHooks(
     hooks_replaced: stats.replaced,
     backup_path: backupPath,
     command,
+    scope,
+    ...(moved > 0 ? { hooks_moved: moved, moved_from: otherPath } : {}),
+    ...(gitIgnoredVia ? { git_ignored_via: gitIgnoredVia } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
-export async function uninstallClaudeCodeHooks(projectDir: string): Promise<AgentUninstallResult> {
-  const settingsPath = claudeSettingsPath(projectDir);
-  const loaded = await loadClaudeSettings(settingsPath);
-  if (!loaded.exists) {
-    return { provider: 'claude-code', settings_path: settingsPath, hooks_removed: 0, settings_found: false };
+/**
+ * Remove FlowLens hooks from both settings files (or only one with
+ * `scope`). `settings_path` names the file hooks were removed from (the
+ * local file when nothing was removed).
+ */
+export async function uninstallClaudeCodeHooks(projectDir: string, scope?: ClaudeSettingsScope): Promise<AgentUninstallResult> {
+  const paths = scope ? [claudeSettingsPathFor(projectDir, scope)] : [claudeLocalSettingsPath(projectDir), claudeSettingsPath(projectDir)];
+  // Validate every file first, so a malformed one leaves all of them untouched.
+  for (const p of paths) await loadClaudeSettings(p);
+  const files: NonNullable<AgentUninstallResult['files']> = [];
+  let found = false;
+  for (const path of paths) {
+    const r = await removeFrom(path);
+    found ||= r.found;
+    if (r.found) files.push({ path, hooks_removed: r.removed, ...(r.backup ? { backup_path: r.backup } : {}) });
   }
-  const removed = removeFlowLensHooks(loaded.settings);
-  let backupPath: string | undefined;
-  if (removed > 0) {
-    backupPath = await backupClaudeSettings(settingsPath);
-    await writeClaudeSettingsAtomic(settingsPath, loaded.settings);
-  }
+  const changed = files.filter((f) => f.hooks_removed > 0);
   return {
     provider: 'claude-code',
-    settings_path: settingsPath,
-    hooks_removed: removed,
-    backup_path: backupPath,
-    settings_found: true,
+    settings_path: changed[0]?.path ?? files[0]?.path ?? paths[0],
+    hooks_removed: changed.reduce((n, f) => n + f.hooks_removed, 0),
+    backup_path: changed[0]?.backup_path,
+    settings_found: found,
+    files,
   };
-}
-
-/** Remove every FlowLens-owned hook; drop groups/events only when we emptied them. */
-export function removeFlowLensHooks(settings: ClaudeSettings): number {
-  if (!settings.hooks) return 0;
-  let removed = 0;
-  for (const event of Object.keys(settings.hooks)) {
-    const count = removeOwnedFromEvent(settings.hooks, event);
-    removed += count;
-  }
-  return removed;
-}
-
-function removeOwnedFromEvent(hooks: Record<string, HookGroup[]>, event: string, keep?: ClaudeHookCommand): number {
-  const groups = hooks[event] ?? [];
-  let removed = 0;
-  const kept: HookGroup[] = [];
-  for (const group of groups) {
-    const before = group.hooks.length;
-    const remaining = group.hooks.filter((hook) => hook === keep || !isFlowLensHook(hook));
-    removed += before - remaining.length;
-    if (remaining.length > 0 || before === 0) kept.push({ ...group, hooks: remaining });
-  }
-  if (removed === 0) return 0;
-  if (kept.length > 0) hooks[event] = kept;
-  else delete hooks[event];
-  return removed;
-}
-
-function mergeHooks(
-  target: ClaudeSettings,
-  source: ClaudeSettings,
-  force: boolean,
-): { added: number; existing: number; replaced: number; changed: boolean } {
-  target.hooks ??= {};
-  const stats = { added: 0, existing: 0, replaced: 0, changed: false };
-
-  for (const [event, groups] of Object.entries(source.hooks ?? {})) {
-    for (const group of groups) {
-      for (const hook of group.hooks) {
-        const owned = ownedHooks(target.hooks[event] ?? []);
-        const marked = owned.filter((h) => h.command.includes(FLOWLENS_HOOK_MARKER));
-        if (marked.length > 0 && !force) {
-          stats.existing += 1;
-          if (removeOwnedFromEvent(target.hooks, event, marked[0]) > 0) stats.changed = true;
-          continue;
-        }
-        if (owned.length > 0) {
-          removeOwnedFromEvent(target.hooks, event);
-          stats.replaced += 1;
-        } else {
-          stats.added += 1;
-        }
-        target.hooks[event] ??= [];
-        findOrCreateGroup(target.hooks[event], group.matcher).hooks.push(hook);
-        stats.changed = true;
-      }
-    }
-  }
-  return stats;
-}
-
-function ownedHooks(groups: HookGroup[]): ClaudeHookCommand[] {
-  return groups.flatMap((group) => group.hooks.filter(isFlowLensHook));
-}
-
-function findOrCreateGroup(groups: HookGroup[], matcher?: string): HookGroup {
-  const existing = groups.find((group) => (group.matcher ?? '') === (matcher ?? ''));
-  if (existing) return existing;
-  const created: HookGroup = matcher === undefined ? { hooks: [] } : { matcher, hooks: [] };
-  groups.push(created);
-  return created;
 }
