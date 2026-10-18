@@ -46,6 +46,12 @@ describe('http route detection', () => {
     expect(labels(b).sort()).toEqual(['GET /h/ok', 'GET /v1/ping', 'GET /v1/users'].sort());
   });
 
+  it('mounts a function-local Hono sub-app (no entity of its own) under app.route(prefix, sub)', () => {
+    const text = "import { Hono } from 'hono';\nexport function createApp() {\n  const app = new Hono();\n  const api = new Hono();\n  api.get('/health', (c) => c.json({ ok: true }));\n  api.all('*', (c) => c.json({}, 404));\n  app.route('/api', api);\n  app.get('*', (c) => c.text('ui'));\n  return app;\n}\n";
+    const b = buildGraph({ 'src/app.ts': { text, symbols: [{ qn: 'createApp', line: 2, end: 10 }] } });
+    expect(labels(b).sort()).toEqual(['ALL /api/*', 'GET *', 'GET /api/health']);
+  });
+
   it('reads Fastify route objects with several methods', () => {
     const b = buildGraph({ 'src/f.ts': { text: "import Fastify from 'fastify';\nconst fastify = Fastify();\nfastify.route({ method: ['GET', 'POST'], url: '/multi', handler });\nfunction handler(){}", symbols: [{ qn: 'handler', line: 4 }] } });
     expect(labels(b).sort()).toEqual(['GET /multi', 'POST /multi']);

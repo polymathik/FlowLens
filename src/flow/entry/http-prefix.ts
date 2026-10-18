@@ -85,6 +85,11 @@ export function collectMounts(
         edges.push({ fromFile: src.file, fromRecv: recv, prefix, toFile: src.file, toRecv: target });
         continue;
       }
+      if (routers.get(src.file)?.has(target)) {
+        // a function-local sub-app (`const api = new Hono()` inside createApp) has no entity of its own
+        edges.push({ fromFile: src.file, fromRecv: recv, prefix, toFile: src.file, toRecv: target });
+        continue;
+      }
       const viaDefault = defaultImportFile(graph, src, target);
       const recvInTarget = viaDefault ? defaultExportRecv(sourceOf(viaDefault)) : null;
       if (viaDefault && recvInTarget && routers.get(viaDefault)?.has(recvInTarget)) {
