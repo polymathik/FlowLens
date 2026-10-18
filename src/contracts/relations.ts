@@ -3,9 +3,39 @@ export type RelationType =
   | 'override' | 'mixin' | 'use' | 'contain' | 'create'
   | 'parameter' | 'return' | 'throw' | 'decorate';
 
+/**
+ * How the target of a relation was determined (Phase 8, additive).
+ *
+ * - `direct`     — target found syntactically in the same file (or the import
+ *                  specifier resolved straight to a project file).
+ * - `resolved`   — target found in another file through the project symbol
+ *                  table (pass 2: imports, re-exports, package scope).
+ * - `unresolved` — the reference points into the project (e.g. a name bound to
+ *                  a project import) but no entity could be found. `to` is ''
+ *                  and `target_name` holds the symbolic reference.
+ * - `ambiguous`  — more than one candidate matched; `to` is '' and
+ *                  `meta.candidates` lists them.
+ *
+ * Unresolved/ambiguous relations are never written as graph edges; the store
+ * keeps them in a separate keyspace (see `GraphStore.getUnresolvedRelations`)
+ * so analyses never see fabricated ids. Absent `resolution` means `direct`
+ * (relations produced before Phase 8).
+ */
+export type RelationResolution = 'direct' | 'resolved' | 'unresolved' | 'ambiguous';
+
+export interface RelationMeta {
+  /** `import type …` / `import { type X }` — erased at runtime (TS only). */
+  type_only?: boolean;
+  /** For ambiguous relations: the candidate entity ids. */
+  candidates?: string[];
+  /** For import edges added through a barrel: the file the specifier named. */
+  via?: string;
+}
+
 export type Relation = {
   id: string;
   from: string;
+  /** Target entity id. '' when `resolution` is 'unresolved' or 'ambiguous'. */
   to: string;
   type: RelationType;
   location: {
@@ -13,6 +43,15 @@ export type Relation = {
     line: number;
     column: number;
   };
+  /**
+   * Number of occurrences aggregated into this edge. Edges are unique per
+   * (from, type, to); repeated occurrences increment `weight` and keep the
+   * first occurrence's location/id.
+   */
   weight: number;
   confidence: number;
+  resolution?: RelationResolution;
+  /** Symbolic target (e.g. `Base`, `ns.helper`, `Parent.method`) for pass-2 / unresolved relations. */
+  target_name?: string;
+  meta?: RelationMeta;
 };
