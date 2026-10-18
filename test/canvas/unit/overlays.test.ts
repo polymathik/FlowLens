@@ -44,7 +44,7 @@ describe('metric overlays', () => {
 
   it('complexity uses the quality band colour', () => {
     const out = applyOverlay(nodes, 'complexity-heatmap', {}, index);
-    expect(overlayOf(out, 'module:src/core')?.stroke).toBe('#ea580c'); // 40 → needs care
+    expect(overlayOf(out, 'module:src/core')?.stroke).toBe('var(--fl-heat-poor)'); // 40 → needs care (theme token)
   });
 });
 
@@ -81,5 +81,24 @@ describe('cycles and violations map to the visible level', () => {
     const { nodes } = view(SRC);
     const out = applyOverlay(nodes, 'interface-diff', { diffChanges: [{ entity_id: 'Store', change_type: 'added' }, { entity_id: 'Store', change_type: 'removed' }] }, index);
     expect(overlayOf(out, 'module:src/core')?.badge).toBe('removed');
+  });
+});
+
+describe('overlay colours follow the theme (Phase 12)', () => {
+  it('every light token has a dark-mode value in both dark blocks', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(new URL('../../../src/canvas/styles/tokens.css', import.meta.url), 'utf8');
+    const blocks = css.split(/\n(?=@media|:root\[data-theme='dark'\])/);
+    const names = (b: string) => new Set([...b.matchAll(/(--fl-(?:heat|overlay|diff|minimap)[\w-]*):/g)].map((m) => m[1]));
+    const light = names(blocks[0]);
+    expect(light.size).toBeGreaterThan(10);
+    for (const dark of blocks.slice(1, 3)) expect([...light].filter((n) => !names(dark).has(n))).toEqual([]);
+  });
+
+  it('soft fills of tokens use color-mix', async () => {
+    const { withAlpha, churnColor } = await import('../../../src/canvas/utils/color-scales');
+    expect(withAlpha('var(--fl-heat-bad)', 0.16)).toBe('color-mix(in srgb, var(--fl-heat-bad) 16%, transparent)');
+    expect(withAlpha('#112233', 1)).toBe('#112233ff');
+    expect(churnColor(1, 2)).toBe('color-mix(in srgb, var(--fl-heat-churn-high) 50%, var(--fl-heat-churn-low))');
   });
 });

@@ -54,7 +54,7 @@ function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error
   );
 }
 
-const minimapColor = (n: Node) => MINIMAP_STROKE[(n.type as keyof typeof MINIMAP_STROKE) ?? 'entity'] ?? '#cbd5e1';
+const minimapColor = (n: Node) => MINIMAP_STROKE[(n.type as keyof typeof MINIMAP_STROKE) ?? 'entity'] ?? 'var(--fl-minimap-entity)';
 
 function CanvasInner() {
   const graph = useGraphData();

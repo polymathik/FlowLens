@@ -179,6 +179,16 @@ export const explorerScenarios = [
       await page.click('[data-testid="view-map"]');
       await waitMap(page);
       await shot(ctx, '17-map-dark');
+      // Phase 12: overlay fills and minimap use the dark theme tokens.
+      const minimap = await page.evaluate(() => [...document.querySelectorAll('.react-flow__minimap-node')].map((n) => getComputedStyle(n).fill));
+      const lightMinimap = ['rgb(129, 140, 248)', 'rgb(94, 234, 212)', 'rgb(147, 197, 253)', 'rgb(203, 213, 225)'];
+      assert(minimap.length > 0 && minimap.every((f) => !lightMinimap.includes(f)), `dark minimap fills (${minimap.slice(0, 3)})`);
+      await page.selectOption('[data-testid="overlay-select"]', 'cycles');
+      await page.waitForSelector('.flowlens-node[data-overlay="cycles:muted"]');
+      const muted = await page.evaluate(() => getComputedStyle(document.querySelector('.flowlens-node[data-overlay="cycles:muted"]')).backgroundColor);
+      const [r, g, b] = muted.match(/\d+/g).map(Number);
+      assert(r + g + b < 200, `muted overlay node is dark (${muted})`);
+      await shot(ctx, '17b-map-dark-cycles');
     },
   },
   {
