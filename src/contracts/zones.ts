@@ -41,6 +41,11 @@ export interface Zone {
   stats: HierarchyStats;
   /** True when a user override changed name, colour, collapse or membership. */
   customized?: boolean;
+  /**
+   * Hierarchy node this zone mirrors (package / folder / config-group id), when it has one.
+   * Lets the canvas navigate into the zone's container; absent for custom and graph-based zones.
+   */
+  nodeId?: string;
 }
 
 export interface ZoneSet {
@@ -50,7 +55,25 @@ export interface ZoneSet {
   rootIds: string[];
   /** File node id → the innermost zone containing it (files in no zone are absent). */
   zoneOfFile: Record<string, string>;
+  /**
+   * Set when the requested mode has no registered strategy (yet) and the
+   * `folders` strategy ran instead: `mode` is then `'folders'` and this is the mode asked for.
+   */
+  fallbackFrom?: ZoningMode;
 }
+
+/** Tunables of the built-in strategies (all optional). */
+export interface ZoningOptions {
+  /** Nesting levels below the scope (default `ZONE_DEFAULT_MAX_DEPTH`); deeper folders merge into their ancestor zone. */
+  maxDepth?: number;
+  /** Zones with more files than this start collapsed (default `ZONE_DEFAULT_COLLAPSE_ABOVE`). */
+  collapseAbove?: number;
+}
+
+export const ZONE_DEFAULT_MAX_DEPTH = 3;
+export const ZONE_DEFAULT_COLLAPSE_ABOVE = 60;
+/** Key of the muted zone that holds config files and lockfiles (`zone:<mode>:<config>`). */
+export const ZONE_CONFIG_KEY = '<config>';
 
 /** Input to every zoning producer. */
 export interface ZoningInput {
@@ -60,7 +83,15 @@ export interface ZoningInput {
   /** Restrict zoning to the files below this hierarchy node (default: the project). */
   scopeId?: string;
   overrides?: ZoneOverrides;
+  options?: ZoningOptions;
 }
+
+/**
+ * A zoning producer. Built-ins (`packages`, `folders`) are registered by
+ * `src/analysis/zones`; later modes add theirs with `registerZoning(mode, fn)`.
+ * Strategies are pure and must return the same `ZoneSet` for the same input.
+ */
+export type ZoningStrategy = (input: ZoningInput) => ZoneSet;
 
 /** `.flowlens/zones.json` — user adjustments, keyed by stable zone key. */
 export interface ZoneOverrides {
@@ -82,8 +113,37 @@ export interface ZoneOverride {
 
 export const EMPTY_ZONE_OVERRIDES: ZoneOverrides = { version: 1, zones: {}, pins: {} };
 
+/**
+ * Override addressing: zone keys in `zones`, `pins` values and `mergeInto`
+ * are `<mode>:<key>` (`packages:@halcyon/core`, `folders:packages/server/src`).
+ * Entries for another mode than the one being computed are ignored.
+ */
+export const zoneOverrideKey = (mode: ZoningMode, key: string): string => `${mode}:${key}`;
+
 /** Overrides store (file-backed, atomic writes, served by the explorer API). */
 export interface ZoneOverridesStore {
   read(flowlensDir: string): Promise<ZoneOverrides>;
   write(flowlensDir: string, overrides: ZoneOverrides): Promise<void>;
+}
+
+/* ---------------- REST (per project, same auth as the other canvas routes) ---------------- */
+
+/** File inside a project's `.flowlens/` directory. */
+export const ZONES_FILE = 'zones.json';
+/** `GET|PUT /api/projects/:id/canvas/zones` — body and response are `ZoneOverrides`. */
+export const ZONES_ROUTE = '/api/projects/:id/canvas/zones';
+/** PUT bodies above this size are refused with 413. */
+export const ZONE_OVERRIDES_MAX_BYTES = 256 * 1024;
+
+export interface ZoneOverridesIssue {
+  /** Dotted path into the body, e.g. `zones.folders:src.color`. */
+  path: string;
+  message: string;
+}
+
+/** 400 body of an invalid PUT (same `issues` shape the canvas http helper already understands). */
+export interface ZoneOverridesError {
+  ok: false;
+  error: { code: 'bad_request'; message: string };
+  issues: ZoneOverridesIssue[];
 }

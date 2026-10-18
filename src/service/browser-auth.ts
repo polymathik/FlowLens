@@ -21,6 +21,7 @@ const COOKIE_ROUTES: Array<{ methods: Set<string>; re: RegExp }> = [
   { methods: new Set(['GET']), re: /^\/api\/projects$/ },
   { methods: new Set(['GET', 'DELETE']), re: /^\/api\/projects\/[^/]+$/ },
   { methods: new Set(['GET', 'POST']), re: /^\/api\/projects\/[^/]+\/canvas(\/.*)?$/ },
+  { methods: new Set(['PUT']), re: /^\/api\/projects\/[^/]+\/canvas\/zones$/ }, // zone overrides (Origin required)
   { methods: new Set(['GET']), re: /^\/api\/projects\/[^/]+\/health(\/summary|\/report)?$/ },
   { methods: new Set(['GET']), re: /^\/api\/projects\/[^/]+\/events$/ },
 ];

@@ -14,6 +14,8 @@ import { errorBody, ServiceError, toServiceError } from './errors.js';
 import { mountGraphRoutes } from './routes-graph.js';
 import { mountProjectRoutes } from './routes-projects.js';
 import { mountReindexRoute } from './routes-reindex.js';
+import { zonesBodyParser } from './routes-zones.js';
+import { ZONES_ROUTE } from '../contracts/zones.js';
 
 export type { MountRoutes, ServiceDeps } from '../contracts/service-deps.js';
 
@@ -40,6 +42,7 @@ export function createServiceApp(deps: ServiceDeps, mount?: MountRoutes): Expres
   const app = express();
   app.disable('x-powered-by');
   app.use('/api', requireAuth(deps));
+  app.use(ZONES_ROUTE, zonesBodyParser()); // 256 KB cap for this route, before the daemon-wide parser
   app.use('/api', express.json({ limit: '512mb' }));
 
   app.get('/api/ping', (_req, res) => {
