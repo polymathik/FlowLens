@@ -238,6 +238,7 @@ export type ServiceErrorCode =
   | 'not_found' // unknown route or project id (404)
   | 'bad_request' // invalid body / method / args (400)
   | 'project_missing' // project root or .flowlens/ gone (409)
+  | 'project_in_use' // DELETE of a project that clients still lease, without ?force=1 (409)
   | 'graph_locked' // another process holds the LevelDB lock (423)
   | 'shutting_down' // daemon is stopping (503)
   | 'internal'; // anything else (500)
@@ -253,6 +254,7 @@ export const SERVICE_ERROR_STATUS: Record<ServiceErrorCode, number> = {
   not_found: 404,
   bad_request: 400,
   project_missing: 409,
+  project_in_use: 409,
   graph_locked: 423,
   shutting_down: 503,
   internal: 500,

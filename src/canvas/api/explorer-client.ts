@@ -13,8 +13,9 @@ export const fetchSession = () => requestJson<SessionResponse>('/api/session');
 export const fetchProjects = () => requestJson<ProjectDetail[]>('/api/projects');
 export const fetchHealth = (id: string) => requestJson<HealthReport>(`${p(id)}/health`);
 export const fetchHealthSummary = (id: string) => requestJson<ExplorerHealthSummary>(`${p(id)}/health/summary`);
-export const removeProject = (id: string) =>
-  requestJson<{ ok: true; removed: boolean }>(p(id), { method: 'DELETE' });
+/** `force` removes it even while clients hold leases (otherwise 409 project_in_use). */
+export const removeProject = (id: string, force = false) =>
+  requestJson<{ ok: true; removed: boolean }>(`${p(id)}${force ? '?force=1' : ''}`, { method: 'DELETE' });
 export const reportUrl = (id: string, format: HealthReportFormat) => `${p(id)}/health/report?format=${format}`;
 
 /** Per-project SSE (`graph-changed`, `hello`). */

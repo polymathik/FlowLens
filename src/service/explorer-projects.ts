@@ -1,7 +1,8 @@
 /**
  * Per-project explorer routes on the daemon:
  *
- *   DELETE /api/projects/:id                 remove from registry (+ stop watcher, close DB)
+ *   DELETE /api/projects/:id[?force=1]       remove from registry (+ stop watcher, close DB);
+ *                                            409 project_in_use while clients hold leases, unless force
  *   *      /api/projects/:id/canvas/*        canvas graph API (createGraphApp) on the pooled graph
  *   GET    /api/projects/:id/health          HealthReport
  *   GET    /api/projects/:id/health/summary  ExplorerHealthSummary
@@ -65,6 +66,10 @@ export function mountExplorerProjects(app: Express, deps: ServiceDeps, state: Ex
     const id = String(req.params.id);
     const existing = await deps.registry.get(id);
     if (!existing) throw new ServiceError('not_found', `Unknown project: ${id}`);
+    const leases = deps.pool.state(id).leases;
+    if (leases > 0 && req.query.force !== '1') {
+      throw new ServiceError('project_in_use', `${existing.name} is in use by ${leases} client(s); remove with ?force=1 (they re-register on their next request).`);
+    }
     await deps.watchers.stop(id);
     await deps.pool.close(id, true);
     const removed = await deps.registry.remove(id);
