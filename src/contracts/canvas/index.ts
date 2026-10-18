@@ -8,6 +8,7 @@ export * from './layout.js';
 export * from './map-view.js';
 export * from './zones-view.js';
 export * from './focus.js';
+export * from './flow-view.js';
 export * from './router.js';
 export * from './api.js';
 export * from './explorer.js';

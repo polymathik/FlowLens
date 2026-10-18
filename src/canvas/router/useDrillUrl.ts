@@ -36,7 +36,7 @@ export function useDrillUrl(hierarchy: Hierarchy, ready: boolean): void {
     if (!projectId || !container) return;
     const current = window.location.hash;
     if (!current.startsWith(`#/p/${encodeURIComponent(projectId)}/map`)) return; // not showing this project's map
-    if (/\/map\/focus(\/|$)/.test(current)) return; // a Focus link is not the drill path (useFocusUrl owns it)
+    if (/\/map\/(focus|flow)(\/|$)/.test(current)) return; // a Focus / Flow link is not the drill path (useFocusUrl / useFlowUrl own it)
     const linkOverlay = Object.entries(LINK_OVERLAY_TO_STORE).find(([, v]) => v === overlayRef.current)?.[0];
     const hash = buildExplorerHash({
       tab: 'project',

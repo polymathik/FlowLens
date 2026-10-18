@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import type { Hierarchy } from '../../../contracts/hierarchy.js';
 import type { FocusInfo } from '../../../contracts/canvas/index.js';
-import { pathTo } from '../../../analysis/hierarchy/index.js';
+import { pathTo, resolveRef } from '../../../analysis/hierarchy/index.js';
 import { useCanvasStore } from '../../store/canvas-store';
 import { crumbsFor, layoutCrumbs, type Crumb } from '../../utils/breadcrumb';
 import { COLORS, floatingPanel, linkButton } from '../shared/ui';
@@ -37,7 +37,7 @@ function CrumbButton({ crumb, last, onOpen }: { crumb: Crumb; last: boolean; onO
 }
 
 /**
- * Focus mode: `Project / folder / … / Focus: parseSession`. The crumbs are the focused item's ancestors
+ * Focus / Flow mode: `Project / folder / … / Focus: parseSession` (or `… / Flow: GET /api/x`). The crumbs are the focused item's ancestors
  * (each one leaves Focus mode and opens that container); the last crumb is the focus itself.
  */
 export function BreadcrumbBar({ hierarchy, focusInfo }: { hierarchy: Hierarchy; focusInfo?: FocusInfo }) {
@@ -47,8 +47,12 @@ export function BreadcrumbBar({ hierarchy, focusInfo }: { hierarchy: Hierarchy; 
   const focus = useCanvasStore((s) => s.focus);
   const setFocus = useCanvasStore((s) => s.setFocus);
   const [menuOpen, setMenuOpen] = useState(false);
-  const focused = focus !== null;
-  const above = focusInfo && hierarchy.nodes.has(focusInfo.focusId) ? pathTo(hierarchy, focusInfo.focusId).slice(0, -1) : [];
+  const flow = useCanvasStore((s) => s.flow);
+  const setFlow = useCanvasStore((s) => s.setFlow);
+  const focused = focus !== null || flow !== null;
+  const flowRoot = flow?.resolved?.entityId;
+  const flowNode = flowRoot ? (hierarchy.nodes.has(flowRoot) ? flowRoot : resolveRef(hierarchy, flowRoot)) : null;
+  const above = flow ? (flowNode ? pathTo(hierarchy, flowNode).slice(0, -1) : []) : focusInfo && hierarchy.nodes.has(focusInfo.focusId) ? pathTo(hierarchy, focusInfo.focusId).slice(0, -1) : [];
   const crumbs = crumbsFor(hierarchy, focused ? above : drillPath);
   const { head, hidden, tail } = layoutCrumbs(crumbs);
   const lastId = focused ? '' : crumbs[crumbs.length - 1].id;
@@ -56,6 +60,7 @@ export function BreadcrumbBar({ hierarchy, focusInfo }: { hierarchy: Hierarchy; 
     setMenuOpen(false);
     if (!focused) return drillToLevel(c.level);
     setFocus(null);
+    setFlow(null);
     setDrillPath(pathTo(hierarchy, c.id));
   };
   const sep = (key: string) => (
@@ -95,7 +100,15 @@ export function BreadcrumbBar({ hierarchy, focusInfo }: { hierarchy: Hierarchy; 
           <CrumbButton crumb={c} last={c.id === lastId} onOpen={open} />
         </React.Fragment>
       ))}
-      {focused && (
+      {flow && (
+        <>
+          {sep('f')}
+          <span data-testid="crumb-flow" aria-current="page" title={`Flow mode: ${flow.resolved?.title ?? flow.label ?? flow.id}`} style={{ fontWeight: 600, color: COLORS.text, padding: '2px 4px', whiteSpace: 'nowrap', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            Flow: {flow.resolved?.title ?? flow.label ?? flow.id}
+          </span>
+        </>
+      )}
+      {focus && !flow && (
         <>
           {sep('f')}
           <span data-testid="crumb-focus" aria-current="page" title={`Focus mode: ${focusInfo?.label ?? focus?.id}`} style={{ fontWeight: 600, color: COLORS.text, padding: '2px 4px', whiteSpace: 'nowrap', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>

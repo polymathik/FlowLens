@@ -30,9 +30,11 @@ import { communityScenarios } from './community-scenarios.mjs';
 import { layersScenarios } from './layers-scenarios.mjs';
 import { focusScenarios } from './focus-scenarios.mjs';
 import { timelineScenarios } from './timeline-scenarios.mjs';
+import { flowScenarios } from './flow-scenarios.mjs';
+import { flowHalcyonScenarios } from './flow-halcyon-scenarios.mjs';
 import { configureExplorer } from './canvas-page.mjs';
 
-const scenarios = [...canvasScenarios, ...explorerScenarios, ...mapScenarios, ...zoneScenarios, ...communityScenarios, ...layersScenarios, ...focusScenarios, ...timelineScenarios];
+const scenarios = [...canvasScenarios, ...explorerScenarios, ...mapScenarios, ...zoneScenarios, ...communityScenarios, ...layersScenarios, ...focusScenarios, ...timelineScenarios, ...flowScenarios, ...flowHalcyonScenarios];
 
 const ROOT = resolve(import.meta.dirname, '../../..');
 const args = process.argv.slice(2);

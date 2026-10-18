@@ -13,6 +13,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly issues: ConfigIssue[] = [],
     readonly code?: string,
+    /** The parsed JSON error body, when there was one (Flow errors carry `candidates` and `suggestions`). */
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -32,8 +34,9 @@ export async function requestJson<T>(url: string, init?: RequestInit): Promise<T
     let issues: ConfigIssue[] = [];
     let message = `${url} returned ${res.status}: ${res.statusText}`;
     let code: string | undefined;
+    let parsed: unknown;
     try {
-      const body = (await res.json()) as { error?: string | { code?: string; message?: string }; issues?: ConfigIssue[] };
+      const body = (parsed = await res.json()) as { error?: string | { code?: string; message?: string }; issues?: ConfigIssue[] };
       if (Array.isArray(body.issues)) issues = body.issues;
       if (typeof body.error === 'string') message = body.error;
       else if (body.error) {
@@ -44,7 +47,7 @@ export async function requestJson<T>(url: string, init?: RequestInit): Promise<T
       /* non-JSON error body */
     }
     if (res.status === 401) for (const fn of signedOutListeners) fn();
-    throw new ApiError(message, res.status, issues, code);
+    throw new ApiError(message, res.status, issues, code, parsed);
   }
   return res.json() as Promise<T>;
 }
