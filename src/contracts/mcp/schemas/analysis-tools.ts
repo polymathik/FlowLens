@@ -10,8 +10,8 @@ import {
 } from './common.js';
 
 export const ANALYSIS_LIMITS = {
-  cycles: { default: 50, cap: 250 },
-  metrics: { default: 25, cap: 250 },
+  cycles: { default: 10, cap: 250 },
+  metrics: { default: 20, cap: 250 },
   diff: { default: 50, cap: 250 },
   architecture: { default: 50, cap: 250 },
   hotspots: { default: 20, cap: 250 },
@@ -24,6 +24,7 @@ export const CycleGranularitySchema = z.enum(['file', 'module', 'function', 'all
 
 export const DetectedCycleSchema = z.strictObject({
   id: z.string(),
+  /** Members (path members first). MCP responses cap this at 25; `length` is the full size. */
   entities: z.array(z.string()),
   granularity: CycleGranularitySchema,
   severity: CycleSeveritySchema,

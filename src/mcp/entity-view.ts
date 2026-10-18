@@ -9,7 +9,7 @@ import type { Detail, EntityView } from '../contracts/mcp/tools.js';
 
 export const DEFAULT_DETAIL: Detail = 'summary';
 
-const KEY_METRICS = ['cognitive_complexity', 'quality_score', 'hotspot_score'] as const;
+const KEY_METRICS = ['cognitive_complexity', 'quality_score'] as const;
 
 export function keyMetrics(m: EntityMetrics | undefined): Partial<EntityMetrics> | undefined {
   if (!m) return undefined;

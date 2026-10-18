@@ -14,10 +14,10 @@ import {
 import { InterfaceDiffEntrySchema } from './analysis-tools.js';
 
 export const LIMITS = {
-  context: { default: 25, cap: 250, depthDefault: 2, depthCap: 5 },
-  dependents: { default: 50, cap: 250 },
-  moduleInterface: { default: 50, cap: 250 },
-  traverse: { default: 50, cap: 500, depthDefault: 3, depthCap: 10 },
+  context: { default: 20, cap: 250, depthDefault: 2, depthCap: 5 },
+  dependents: { default: 25, cap: 250 },
+  moduleInterface: { default: 25, cap: 250 },
+  traverse: { default: 20, cap: 500, depthDefault: 3, depthCap: 10 },
 } as const;
 
 const entityField = () =>
@@ -40,8 +40,10 @@ export const ContextRelationSchema = z.strictObject({
   relation_type: RelationTypeSchema,
   depth: z.number().int().positive(),
   entity: EntityViewSchema,
-  location: SourcePointSchema,
+  /** Line of the relation in its source file. */
+  line: z.number(),
   /** full detail only */
+  location: SourcePointSchema.optional(),
   relation: RelationSchema.optional(),
 });
 
@@ -74,7 +76,10 @@ export const DependentEntrySchema = z.strictObject({
   relation_type: RelationTypeSchema,
   depth: z.number().int().positive(),
   is_direct: z.boolean(),
-  location: SourcePointSchema,
+  /** Line of the referencing relation (in the dependent's file). */
+  line: z.number(),
+  /** full detail only */
+  location: SourcePointSchema.optional(),
   relation: RelationSchema.optional(),
 });
 

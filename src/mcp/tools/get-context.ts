@@ -83,8 +83,10 @@ export async function handleGetContext(args: GetContextInput, deps: ServerDepend
     relation_type: h.rel.type,
     depth: h.depth,
     entity: toEntityView(view.byId.get(h.neighbourId)!, detail, { metrics: includeMetrics }),
-    location: { file: h.rel.location.file, line: h.rel.location.line },
-    ...(detail === 'full' ? { relation: h.rel } : {}),
+    line: h.rel.location.line,
+    ...(detail === 'full'
+      ? { location: { file: h.rel.location.file, line: h.rel.location.line }, relation: h.rel }
+      : {}),
   }));
 
   const data: GetContextOutput = {

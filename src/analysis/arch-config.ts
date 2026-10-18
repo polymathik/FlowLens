@@ -33,7 +33,7 @@ export async function loadArchConfig(flowlensDir: string): Promise<ArchConfigLoa
       message: `${issue.path.join('.') || '(root)'}: ${issue.message}`,
     };
   }
-  const config = parsed.data as unknown as ArchitectureConfig;
+  const config: ArchitectureConfig = parsed.data;
   const names = new Set(config.layers.map((l) => l.name));
   for (const layer of config.layers) {
     for (const ref of [...(layer.may_only_access ?? []), ...(layer.must_not_access ?? [])]) {

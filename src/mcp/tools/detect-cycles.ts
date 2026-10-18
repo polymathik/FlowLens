@@ -46,10 +46,23 @@ export async function handleDetectCycles(args: DetectCyclesInput, deps: ServerDe
 
   const { items, page } = paginate(all, limit);
   const data: DetectCyclesOutput = {
-    cycles: items,
+    cycles: items.map(compactCycle),
     summary: { total_cycles: all.length, by_severity: bySeverity, by_granularity: byGranularity },
   };
   return toMCPContent(buildResponse(data, view.lastIndexed, { page }));
+}
+
+export const MAX_CYCLE_MEMBERS = 25;
+
+/** Response-size guard: cap member lists, drop labels identical to ids. */
+function compactCycle(c: DetectedCycle): DetectedCycle {
+  const { path_labels, ...rest } = c;
+  const sameLabels = !path_labels || path_labels.every((l, i) => l === c.path?.[i]);
+  return {
+    ...rest,
+    entities: c.entities.slice(0, MAX_CYCLE_MEMBERS),
+    ...(sameLabels ? {} : { path_labels }),
+  };
 }
 
 export function registerDetectCycles(server: McpServer, deps: ServerDependencies): void {

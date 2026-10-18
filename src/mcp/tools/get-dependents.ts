@@ -72,8 +72,10 @@ export async function handleGetDependents(args: GetDependentsInput, deps: Server
     relation_type: h.rel.type,
     depth: h.depth,
     is_direct: h.depth === 1,
-    location: { file: h.rel.location.file, line: h.rel.location.line },
-    ...(detail === 'full' ? { relation: h.rel } : {}),
+    line: h.rel.location.line,
+    ...(detail === 'full'
+      ? { location: { file: h.rel.location.file, line: h.rel.location.line }, relation: h.rel }
+      : {}),
   }));
 
   const data: GetDependentsOutput = {

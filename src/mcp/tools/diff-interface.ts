@@ -11,13 +11,13 @@ import {
   ANALYSIS_LIMITS, AnalysisToolSchemas,
   type Detail, type DiffInterfaceInput, type DiffInterfaceOutput,
 } from '../../contracts/mcp/tools.js';
-import { computeDiff } from '../../analysis/diff-computer.js';
 import { resolveSnapshotRef } from '../../analysis/snapshot-refs.js';
 import { isInScope, normalizeScope } from '../../analysis/module-path.js';
 import { buildResponse, paginate, toMCPContent, toMCPError, type ToolResult } from '../response-builder.js';
 import { clampLimit } from '../limits.js';
 import { DEFAULT_DETAIL } from '../entity-view.js';
-import { getLastIndexed } from '../last-indexed.js';
+import { openView } from '../tool-runtime.js';
+import { cachedDiff } from '../analysis-cache.js';
 
 /** Summary detail drops the before/after entity payloads. */
 export function toDiffEntryView(c: InterfaceDiffEntry, detail: Detail): InterfaceDiffEntry {
@@ -38,7 +38,8 @@ function summarize(changes: InterfaceDiffEntry[]): DiffInterfaceOutput['summary'
 }
 
 export async function handleDiffInterface(args: DiffInterfaceInput, deps: ServerDependencies): Promise<ToolResult> {
-  const lastIndexed = await getLastIndexed(deps.fileIndexPath);
+  const view = await openView(deps);
+  const lastIndexed = view.lastIndexed;
   const ref = await resolveSnapshotRef(args.since, deps.snapshotManager, deps.rootDir);
   if (!ref.ok) {
     return toMCPError({
@@ -51,7 +52,7 @@ export async function handleDiffInterface(args: DiffInterfaceInput, deps: Server
   const limit = clampLimit(args.max_results, ANALYSIS_LIMITS.diff);
   const detail = args.detail ?? DEFAULT_DETAIL;
   const scope = normalizeScope(args.scope);
-  const diff = await computeDiff(deps.graph, ref.snapshot, {
+  const diff = await cachedDiff(view, ref.snapshot, {
     breaking_only: args.breaking_only ?? true,
     scope,
   });

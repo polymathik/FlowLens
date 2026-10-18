@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveEntity, isResolveError } from '../../../src/mcp/entity-resolver.js';
+import { resolveEntity, isResolveError, MAX_CANDIDATES } from '../../../src/mcp/entity-resolver.js';
 import { LevelGraphStore } from '../../../src/graph/levelgraph-store.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -60,18 +60,33 @@ describe('EntityResolver', () => {
     expect(isResolveError(r)).toBe(false);
   });
 
-  it('returns error with suggestions for ambiguous partial', async () => {
+  it('returns a structured ambiguous error with candidates for ambiguous partials', async () => {
     const r = await resolveEntity(store, 'Service');
     expect(isResolveError(r)).toBe(true);
     if (isResolveError(r)) {
       expect(r.error).toContain('Ambiguous');
+      expect(r.code).toBe('ambiguous');
+      expect(r.candidates?.map((c) => c.id)).toEqual(expect.arrayContaining(['abc123', 'def456']));
+      expect(r.candidates?.[0]).toMatchObject({ file: expect.any(String), line: 1 });
       expect(r.suggestions.length).toBeGreaterThan(0);
     }
   });
 
-  it('returns error for not found', async () => {
-    const r = await resolveEntity(store, 'NonExistent');
+  it('caps candidates at MAX_CANDIDATES', async () => {
+    await store.putNodes(Array.from({ length: 15 }, (_, i) =>
+      makeEntity(`dup${i}`, 'Dup', `src/d${i}.ts/Dup`, `src/d${i}.ts`)));
+    const r = await resolveEntity(store, 'Dup');
+    expect(isResolveError(r) && r.candidates?.length).toBe(MAX_CANDIDATES);
+    expect(isResolveError(r) && r.error).toContain('15 entities');
+  });
+
+  it('returns not_found with did-you-mean suggestions', async () => {
+    const r = await resolveEntity(store, 'UserServise');
     expect(isResolveError(r)).toBe(true);
-    if (isResolveError(r)) expect(r.error).toContain('not found');
+    if (isResolveError(r)) {
+      expect(r.error).toContain('not found');
+      expect(r.code).toBe('not_found');
+      expect(r.suggestions[0]).toContain('src/user-service.ts/UserService');
+    }
   });
 });

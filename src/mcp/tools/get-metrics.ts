@@ -10,7 +10,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ServerDependencies } from '../server.js';
 import type { Entity, EntityMetrics } from '../../contracts/entities.js';
-import type { GraphStore } from '../../contracts/graph.js';
 import {
   ANALYSIS_LIMITS, AnalysisToolSchemas,
   type Detail, type GetMetricsInput, type GetMetricsOutput, type MetricSortField, type MetricsEntry,
@@ -20,20 +19,13 @@ import { buildResponse, paginate, toMCPContent, type ToolResult } from '../respo
 import { clampLimit } from '../limits.js';
 import { DEFAULT_DETAIL, keyMetrics, round } from '../entity-view.js';
 import { entityCanvasUrl, openView, resolveOrError } from '../tool-runtime.js';
-import type { GraphView } from '../graph-view.js';
+import { viewAsGraphStore, type GraphView } from '../graph-view.js';
 
 const ASCENDING: ReadonlySet<MetricSortField> = new Set(['quality_score']);
 
-/** Adapter so the shared coupling formula runs on the in-memory view. */
-function viewAsEdgeSource(view: GraphView): GraphStore {
-  return {
-    getEdgesTo: async (id: string) => view.edgesTo(id),
-    getEdgesFrom: async (id: string) => view.edgesFrom(id),
-  } as unknown as GraphStore;
-}
-
 async function withCoupling(view: GraphView, e: Entity): Promise<EntityMetrics> {
-  const coupling = await computeCouplingMetrics(e.id, viewAsEdgeSource(view));
+  // Shared coupling formula from metrics/coupling.ts, run on the cached view.
+  const coupling = await computeCouplingMetrics(e.id, view.cached('store-facade', () => viewAsGraphStore(view)));
   return { line_count: 0, ...e.metrics, ...coupling, instability: round(coupling.instability ?? 0) };
 }
 

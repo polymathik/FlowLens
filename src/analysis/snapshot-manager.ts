@@ -5,7 +5,7 @@
  * and a lightweight `index.json` is maintained for fast listing.
  */
 
-import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, unlink, mkdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GraphStore } from '../contracts/graph.js';
@@ -17,6 +17,10 @@ export function isValidSnapshotKey(sha: string): boolean {
 }
 
 export class SnapshotManager {
+  /** Parsed snapshots by `<sha>:<mtimeMs>` (snapshots are immutable per key). */
+  private readonly loaded = new Map<string, SnapshotData>();
+  private static readonly LOADED_MAX = 2;
+
   constructor(private readonly snapshotsDir: string) {}
 
   /** Whether a snapshot file exists for exactly this key. */
@@ -71,8 +75,15 @@ export class SnapshotManager {
     const filePath = join(this.snapshotsDir, `${sha}.graph.json`);
     if (!existsSync(filePath)) return null;
 
-    const content = await readFile(filePath, 'utf-8');
-    return JSON.parse(content) as SnapshotData;
+    const key = `${sha}:${(await stat(filePath)).mtimeMs}`;
+    const hit = this.loaded.get(key);
+    if (hit) return hit;
+    const data = JSON.parse(await readFile(filePath, 'utf-8')) as SnapshotData;
+    this.loaded.set(key, data);
+    if (this.loaded.size > SnapshotManager.LOADED_MAX) {
+      this.loaded.delete(this.loaded.keys().next().value!);
+    }
+    return data;
   }
 
   /**

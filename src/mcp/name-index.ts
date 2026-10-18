@@ -111,7 +111,8 @@ function refine(candidates: Entity[]): Entity[] {
   if (candidates.length <= 1) return candidates;
   const nonParams = candidates.filter((e) => e.kind !== 'parameter');
   const pool = nonParams.length > 0 ? nonParams : candidates;
-  const qns = new Set(pool.map((e) => e.qualified_name));
+  // Only code containers absorb their members; files/modules don't absorb their contents.
+  const qns = new Set(pool.filter((e) => e.kind !== 'file' && e.kind !== 'module').map((e) => e.qualified_name));
   return pool.filter((e) => !hasAncestorIn(e.qualified_name, qns));
 }
 

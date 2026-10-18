@@ -77,6 +77,29 @@ export class GraphView {
   }
 }
 
+/**
+ * Read-only GraphStore facade over a view, so shared analysis functions that
+ * take a GraphStore (diff computer, coupling metrics) run on cached data.
+ */
+export function viewAsGraphStore(view: GraphView): GraphStore {
+  const readOnly = async (): Promise<never> => {
+    throw new Error('GraphView store facade is read-only');
+  };
+  return {
+    getNode: async (id) => view.byId.get(id) ?? null,
+    getNodesByKind: async (kind) => view.nodes.filter((n) => n.kind === kind),
+    getNodesByFile: async (file) => view.byFile.get(file) ?? [],
+    getEdgesFrom: async (id, type) => view.edgesFrom(id).filter((r) => !type || r.type === type),
+    getEdgesTo: async (id, type) => view.edgesTo(id).filter((r) => !type || r.type === type),
+    getAllNodes: async () => view.nodes,
+    getAllEdges: async () => view.edges,
+    putNode: readOnly, deleteNode: readOnly, deleteNodesByFile: readOnly,
+    putEdge: readOnly, deleteEdge: readOnly, deleteEdgesByFile: readOnly,
+    putNodes: readOnly, putEdges: readOnly,
+    open: readOnly, close: readOnly, clear: readOnly,
+  };
+}
+
 function push(map: Map<string, Relation[]>, key: string, rel: Relation): void {
   const list = map.get(key);
   if (list) list.push(rel);

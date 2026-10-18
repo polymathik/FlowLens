@@ -79,4 +79,15 @@ describe('HotspotAnalyzer', () => {
     const hotspots = await computeHotspots(store, churn);
     expect(hotspots).toHaveLength(0);
   });
+  it('omits score-0 entities unless include_zero, and carries churn details', async () => {
+    await store.putNodes([makeEntity('a', 'churned', 'src/a.ts', 5), makeEntity('b', 'still', 'src/b.ts', 50)]);
+    const churn = new Map<string, FileChurnData>([
+      ['src/a.ts', { file: 'src/a.ts', change_count: 3, period_days: 90, churn_rate: 3 / 90, last_changed: '2026-10-01T00:00:00Z' }],
+    ]);
+    const hot = await computeHotspots(store, churn);
+    expect(hot.map((h) => h.entity_id)).toEqual(['a']);
+    expect(hot[0]).toMatchObject({ change_count: 3, last_changed: '2026-10-01T00:00:00Z', qualified_name: 'src/a.ts/churned' });
+    const all = await computeHotspots(store, churn, { include_zero: true });
+    expect(all.map((h) => h.entity_id)).toEqual(['a', 'b']);
+  });
 });

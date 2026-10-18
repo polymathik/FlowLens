@@ -11,7 +11,10 @@ import { detectCyclesInData, SEVERITY_ORDER } from '../analysis/cycle-detector.j
 import { validateArchitectureData, buildLayerMap } from '../analysis/architecture-validator.js';
 import { loadArchConfig } from '../analysis/arch-config.js';
 import { isInScope } from '../analysis/module-path.js';
-import type { GraphView } from './graph-view.js';
+import type { InterfaceDiff } from '../contracts/analysis/diff.js';
+import type { SnapshotData } from '../contracts/analysis/snapshots.js';
+import { computeDiff } from '../analysis/diff-computer.js';
+import { viewAsGraphStore, type GraphView } from './graph-view.js';
 
 export interface ArchContext {
   config: ArchitectureConfig;
@@ -56,4 +59,14 @@ function cycleInScope(c: DetectedCycle, view: GraphView, scope: string): boolean
 export function cachedViolations(view: GraphView, arch: ArchContext): ArchitectureViolation[] {
   return view.cached(`violations:${arch.key}`, () =>
     validateArchitectureData(view.nodes, view.edges, arch.config, arch.layerMap));
+}
+
+/** Interface diff vs a snapshot, memoised per (snapshot, options) for this graph load. */
+export function cachedDiff(
+  view: GraphView,
+  snapshot: SnapshotData,
+  options: { breaking_only?: boolean; scope?: string },
+): Promise<InterfaceDiff> {
+  const key = `diff:${snapshot.sha}:${snapshot.timestamp}:${options.breaking_only ?? false}:${options.scope ?? ''}`;
+  return view.cached(key, () => computeDiff(viewAsGraphStore(view), snapshot, options));
 }

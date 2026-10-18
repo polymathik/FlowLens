@@ -18,10 +18,10 @@ import { buildResponse, paginate, toMCPContent, toMCPError, type ToolResult } fr
 import { clampLimit } from '../limits.js';
 import { DEFAULT_DETAIL, toEntityView } from '../entity-view.js';
 import { entityCanvasUrl, openView, resolveOrError } from '../tool-runtime.js';
-import { computeDiff } from '../../analysis/diff-computer.js';
 import { resolveSnapshotRef } from '../../analysis/snapshot-refs.js';
 import { moduleOfFile } from '../../analysis/module-path.js';
 import { toDiffEntryView } from './diff-interface.js';
+import { cachedDiff } from '../analysis-cache.js';
 
 /** Kinds that are never part of a module's exported interface. */
 const NON_EXPORT_KINDS = new Set<Entity['kind']>(['file', 'module', 'parameter']);
@@ -49,7 +49,7 @@ export async function handleGetModuleInterface(
     }
     diffSha = ref.sha;
     const scope = entity.kind === 'module' ? entity.file + '/' : entity.file;
-    diffChanges = (await computeDiff(deps.graph, ref.snapshot, { scope })).changes;
+    diffChanges = (await cachedDiff(view, ref.snapshot, { scope })).changes;
   }
 
   const members = entity.kind === 'module'
