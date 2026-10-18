@@ -46,6 +46,11 @@ import { useFocusActions } from '../focus/focus-actions';
 import { useFocusKeys } from '../focus/useFocusKeys';
 import { FocusBar } from '../focus/FocusBar';
 import { FocusButton } from '../focus/FocusButton';
+import { useFlowUrl } from '../flow/useFlowUrl';
+import { useFlowActions } from '../flow/flow-actions';
+import { useFlowKeys } from '../flow/useFlowKeys';
+import { FlowButton } from '../flow/FlowButton';
+import { FlowLayer } from '../flow/ui/FlowLayer';
 import type { FocusEmphasis } from '../focus/focus-emphasis';
 import type { CanvasEdgeData } from '../../contracts/canvas/index.js';
 import { exportCanvas, type ExportFormat } from '../utils/export-utils';
@@ -123,12 +128,15 @@ function CanvasInner() {
   const view = useCanvasView(nodes, layoutEdges as Edge<CanvasEdgeData>[], graph.index, overlayData, layerView, focusView);
   const focusActions = useFocusActions(graph.hierarchy);
   useFocusKeys(focusActions, !!menu || showRules);
+  const flowActions = useFlowActions(graph.hierarchy, graph.index.entityById);
+  useFlowKeys(flowActions, !!menu || showRules);
   const focusCards = model.view.cut?.items.filter((i) => i.kind === 'file' || !i.expanded).length ?? 0;
   useCanvasLayout({ model, visibleIds: view.visibleIds, commit });
   useSemanticZoom();
   useHashRoute(graph.entities, graph.hierarchy, !graph.loading && graph.entities.length > 0);
   useDrillUrl(graph.hierarchy, !graph.loading && graph.entities.length > 0);
   useFocusUrl(graph.hierarchy, !graph.loading && graph.entities.length > 0);
+  useFlowUrl(graph.hierarchy, !graph.loading && graph.entities.length > 0);
   const handlers = useNodeInteractions(graph.index.entityById, graph.hierarchy);
 
   const onExport = useCallback(
@@ -163,6 +171,7 @@ function CanvasInner() {
         exporting={exporting}
         zoneControls={<ZoneControls view={model.view} hierarchy={graph.hierarchy} onOpenRules={() => setShowRules(true)} />}
         focusButton={<FocusButton actions={focusActions} />}
+        flowButton={<FlowButton actions={flowActions} />}
         focusInfo={model.view.focus}
         focusBar={<FocusBar info={model.view.focus} cards={focusCards} onExit={focusActions.exit} />}
       />
@@ -197,6 +206,7 @@ function CanvasInner() {
           <MiniMap nodeColor={minimapColor} nodeStrokeWidth={2} zoomable pannable style={{ width: 150, height: 100 }} />
         </ReactFlow>
         </ZoneActionsContext.Provider>
+        <FlowLayer actions={flowActions} entities={graph.entities} entityById={graph.index.entityById} />
         <ZoneNotice view={model.view} />
         {menu && <ZoneMenu target={menu} view={model.view} hierarchy={graph.hierarchy} onClose={() => setMenu(null)} />}
         {showFilter && <FilterPanel />}

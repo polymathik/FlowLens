@@ -14,6 +14,7 @@ import { collapseZone, pinFile, recolorZone, renameZone, unpinFile, zoneRef } fr
 import { expansionKey, zoneItemIds } from '../../utils/zone-cut';
 import { pathTo } from '../../../analysis/hierarchy/index.js';
 import { focusIdOf, useFocusActions } from '../../focus/focus-actions';
+import { NO_ENTITIES, flowTargetOf, useFlowActions } from '../../flow/flow-actions';
 
 export interface MenuTarget {
   nodeId: string;
@@ -26,6 +27,7 @@ type Mode = 'main' | 'rename' | 'move';
 export function ZoneMenu({ target, view, hierarchy, onClose }: { target: MenuTarget; view: MapView; hierarchy: Hierarchy; onClose: () => void }) {
   const apply = useApplyZoneOverride();
   const focusActions = useFocusActions(hierarchy);
+  const flowActions = useFlowActions(hierarchy, NO_ENTITIES);
   const setDrillPath = useCanvasStore((s) => s.setDrillPath);
   const overrides = useCanvasStore((s) => s.zoneOverrides);
   const setZoneExpansion = useCanvasStore((s) => s.setZoneExpansion);
@@ -61,6 +63,12 @@ export function ZoneMenu({ target, view, hierarchy, onClose }: { target: MenuTar
   const focusItem = (
     <button role="menuitem" data-testid="zone-menu-focus" onClick={() => { focusActions.enter(item.kind === 'zone' ? (item.hierarchyId ?? item.zoneId) : item.id); onClose(); }}>
       Focus on this
+    </button>
+  );
+  const flowId = item.kind === 'zone' ? (item.hierarchyId ?? item.zoneId) : item.id;
+  const flowItem = flowTargetOf(hierarchy, NO_ENTITIES, flowId) && (
+    <button role="menuitem" data-testid="zone-menu-flow" onClick={() => { flowActions.enter(flowId, 'out'); onClose(); }}>
+      Trace from here
     </button>
   );
   const style: React.CSSProperties = { left: Math.min(target.x, window.innerWidth - 230), top: Math.min(target.y, window.innerHeight - 260), ['--z' as string]: 'var(--fl-zone-5)' };
@@ -106,6 +114,7 @@ export function ZoneMenu({ target, view, hierarchy, onClose }: { target: MenuTar
             {item.expanded ? 'Collapse by default' : 'Expand by default'}
           </button>
           {focusIdOf(hierarchy, item.hierarchyId ?? item.zoneId) && focusItem}
+          {flowItem}
           {item.hierarchyId && <button role="menuitem" onClick={open}>Open</button>}
         </>
       )}
@@ -114,6 +123,7 @@ export function ZoneMenu({ target, view, hierarchy, onClose }: { target: MenuTar
           <button role="menuitem" data-testid="zone-menu-move" onClick={() => setMode('move')}>Move to zone…</button>
           {pinned && <button role="menuitem" onClick={() => done(apply((o) => unpinFile(o, filePath)))}>Remove pin</button>}
           {focusItem}
+          {flowItem}
           <button role="menuitem" onClick={open}>Open</button>
         </>
       )}
