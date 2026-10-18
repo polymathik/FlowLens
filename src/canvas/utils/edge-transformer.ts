@@ -13,6 +13,9 @@ import { describeCounts, rankTypeCounts, totalOf } from './relation-labels';
 
 type EdgeLayer = NonNullable<CanvasEdgeData['layer']>;
 
+/** Focus mode: above this many edges, single-relation edges are labelled only when hovered. */
+export const FOCUS_LABEL_LIMIT = 36;
+
 /** Bundles get thicker with the number of relations they carry (log scale, capped). */
 export const bundleWidth = (count: number): number => Math.min(9, 1.6 + Math.log2(count + 1) * 1.1);
 
@@ -46,7 +49,10 @@ function linkToEdge(link: AggregatedLink, portal: 'in' | 'out' | undefined, rela
 /** All edges of a view, unfiltered (layout input). */
 export function buildViewEdges(view: MapView, relationById?: Map<string, Relation>): Edge<CanvasEdgeData>[] {
   const zoned = !!view.cut;
-  const edges = view.links.map((l) => linkToEdge(l, undefined, relationById, zoned ? (l.cross ? 'detail' : 'sibling') : undefined));
+  // Focus mode: the neighbourhood is small, so every link is drawn at card level, at full strength, labelled.
+  const layerOf = (l: AggregatedLink): EdgeLayer | undefined => (view.focus ? 'focus' : zoned ? (l.cross ? 'detail' : 'sibling') : undefined);
+  const edges = view.links.map((l) => linkToEdge(l, undefined, relationById, layerOf(l)));
+  if (view.focus && edges.length > FOCUS_LABEL_LIMIT) for (const e of edges) e.data!.crowded = true;
   for (const b of view.bundles ?? []) edges.push(linkToEdge(b, undefined, relationById, 'bundle'));
   for (const p of view.portals) for (const l of p.links) edges.push(linkToEdge(l, p.direction, relationById, zoned ? 'portal' : undefined));
   return edges;

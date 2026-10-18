@@ -43,6 +43,7 @@ export const ZoneNode = React.memo(({ id, data, selected, width, height }: ZoneB
       data-zone-id={data.zoneId}
       data-hue={data.colorIndex}
       data-source={data.source}
+      data-focus-role={data.focusRole ?? ''}
       data-collapsed={data.expanded ? 'false' : 'true'}
       data-selected={selected ? 'true' : 'false'}
       data-overlay={data.overlay ? `${data.overlay.tag}${data.overlay.muted ? ':muted' : ''}` : ''}

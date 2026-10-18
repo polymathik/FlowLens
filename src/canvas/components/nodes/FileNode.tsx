@@ -35,7 +35,13 @@ export const FileNode = React.memo(({ id, data, selected }: NodeProps<Node<FileN
   const { openMenu } = useZoneActions();
   const rows = data.rich && showsSymbolRows(tier);
   return (
-    <div data-testid="file-card" data-parent={data.zoneId ?? ''} style={{ width: '100%', height: '100%' }} onContextMenu={(e) => { e.preventDefault(); openMenu(id, e.clientX, e.clientY); }}>
+    <div
+      data-testid="file-card"
+      data-parent={data.zoneId ?? ''}
+      data-focus={data.focus ? 'true' : ''}
+      className={data.focus ? 'fl-file-focus' : undefined}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+      onContextMenu={(e) => { e.preventDefault(); openMenu(id, e.clientX, e.clientY); }}>
       <NodeShell
         level="file"
         selected={selected}
@@ -53,6 +59,11 @@ export const FileNode = React.memo(({ id, data, selected }: NodeProps<Node<FileN
       >
         {rows && <SymbolRows data={data} />}
       </NodeShell>
+      {!!data.beyond && (
+        <span className="fl-beyond" data-testid="beyond-badge" title={`${data.beyond} more relation${data.beyond === 1 ? '' : 's'} lead outside this neighbourhood (beyond the depth). Increase the depth to follow them.`}>
+          +{data.beyond}
+        </span>
+      )}
     </div>
   );
 });

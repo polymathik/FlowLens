@@ -13,6 +13,7 @@ import { useCanvasStore } from '../../store/canvas-store';
 import { EDITOR_LABELS, editorUrl } from '../../utils/editor-link';
 import { describeCounts } from '../../utils/relation-labels';
 import { useProjectContext } from '../explorer/project-context';
+import { FocusOnThis } from '../../focus/FocusOnThis';
 import { EntityIcon } from '../shared/EntityIcon';
 import { MetricsBadge } from '../shared/MetricsBadge';
 import { COLORS, floatingPanel, linkButton } from '../shared/ui';
@@ -138,6 +139,7 @@ export function DetailPanel({ graph, edges }: { graph: Pick<GraphData, 'index' |
       }
     >
       <div style={{ color: COLORS.muted, marginBottom: 8, fontSize: 11, wordBreak: 'break-all' }}>{entity?.qualified_name ?? (node.path || '.')}</div>
+      <FocusOnThis nodeId={node.id} hierarchy={graph.hierarchy} />
       <Row label="Kind" value={entity?.kind ?? node.kind} />
       {node.kind !== 'symbol' && <Row label="Contains" value={`${node.stats.folders ? `${node.stats.folders} folders · ` : ''}${node.stats.files} files · ${node.stats.symbols} symbols`} />}
       {node.kind !== 'project' && node.kind !== 'folder' && node.kind !== 'package' && node.kind !== 'config' && (

@@ -21,6 +21,8 @@ export const OVERLAY_OPTIONS: Array<{ value: OverlayType | null; label: string }
 interface ToolbarProps {
   /** Zone controls (group by, expand / collapse all), rendered at the left. */
   zoneControls?: React.ReactNode;
+  /** Focus mode button (rendered before Search). */
+  focusButton?: React.ReactNode;
   showFilter: boolean;
   showRules: boolean;
   onToggleFilter: () => void;
@@ -29,7 +31,7 @@ interface ToolbarProps {
   exporting: boolean;
 }
 
-export function Toolbar({ zoneControls, showFilter, showRules, onToggleFilter, onToggleRules, onExport, exporting }: ToolbarProps) {
+export function Toolbar({ zoneControls, focusButton, showFilter, showRules, onToggleFilter, onToggleRules, onExport, exporting }: ToolbarProps) {
   const overlay = useCanvasStore((s) => s.activeOverlay);
   const setOverlay = useCanvasStore((s) => s.setOverlay);
   const tier = useCanvasStore((s) => s.currentZoomLevel);
@@ -58,6 +60,7 @@ export function Toolbar({ zoneControls, showFilter, showRules, onToggleFilter, o
         </span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        {focusButton}
         <button data-testid="search-button" style={button} onClick={() => setSearchOpen(true)} title="Search symbols (Ctrl/Cmd+K)">
           Search <span style={{ color: COLORS.faint, marginLeft: 4 }}>⌘K</span>
         </button>

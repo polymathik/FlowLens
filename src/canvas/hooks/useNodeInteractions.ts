@@ -13,8 +13,9 @@ import type { Hierarchy } from '../../contracts/hierarchy.js';
 import type { PortalNodeData, ZoneNodeData } from '../../contracts/canvas/index.js';
 import { pathTo } from '../../analysis/hierarchy/index.js';
 import type { Entity } from '../api/graph-client';
-import { useCanvasStore } from '../store/canvas-store';
+import { useCanvasStore, useCanvasStoreApi } from '../store/canvas-store';
 import { openContainerTarget } from '../utils/navigation';
+import { focusSpecFor } from '../focus/focus-actions';
 
 export function postEntityClickToHost(entity: Entity | undefined): void {
   if (!entity?.file || !window.parent || window.parent === window) return;
@@ -30,6 +31,7 @@ export function postEntityClickToHost(entity: Entity | undefined): void {
 }
 
 export function useNodeInteractions(entityById: Map<string, Entity>, hierarchy: Hierarchy) {
+  const store = useCanvasStoreApi();
   const selectNode = useCanvasStore((s) => s.selectNode);
   const selectEdge = useCanvasStore((s) => s.selectEdge);
   const setDrillPath = useCanvasStore((s) => s.setDrillPath);
@@ -67,13 +69,20 @@ export function useNodeInteractions(entityById: Map<string, Entity>, hierarchy: 
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       const target = node.type === 'zone' ? ((node.data as ZoneNodeData).hierarchyId ?? node.id) : node.id;
+      // Focus mode: a double-click moves the focus to that card instead of opening it.
+      const current = store.getState().focus;
+      if (current) {
+        const next = focusSpecFor(hierarchy, target, current);
+        if (next && node.type !== 'portal') store.getState().setFocus(next);
+        return;
+      }
       if (node.type === 'portal' || node.type === 'scope' || !hierarchy.nodes.has(target)) return;
       const path = pathTo(hierarchy, target);
-      if (path.join('|') === useCanvasStore.getState().drillPath.join('|')) return; // already open (leaf view)
+      if (path.join('|') === store.getState().drillPath.join('|')) return; // already open (leaf view)
       selectNode(null);
       setDrillPath(path);
     },
-    [selectNode, setDrillPath, hierarchy],
+    [selectNode, setDrillPath, hierarchy, store],
   );
 
   const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => selectEdge(edge.id), [selectEdge]);

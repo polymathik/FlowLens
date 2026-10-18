@@ -148,17 +148,25 @@ const BULGE_LANE = 26;
 /**
  * Edges between top-level boxes that are not neighbours in the stack get `bulgeX`: the x they swing out to, to the
  * right of every top-level box, one lane further out per skipped layer. Neighbours keep the plain curve.
+ * Focus mode draws card-to-card edges, so there EVERY edge between cards of different layers swings out (a straight
+ * line in a column of frames would run across the cards in between); the card's layer is its top-level ancestor.
  */
 export function bulgeStackEdges(edges: Edge<CanvasEdgeData>[], nodes: Node[], topIds: string[]): Edge<CanvasEdgeData>[] {
   const rank = new Map(topIds.map((id, i) => [id, i]));
   const top = nodes.filter((n) => rank.has(n.id) && !n.hidden);
   if (top.length < 3) return edges;
   const right = Math.max(...top.map((n) => n.position.x + Number(n.width ?? n.style?.width ?? 0)));
+  const parent = new Map(nodes.map((n) => [n.id, n.parentId]));
+  const layerOf = (id: string): number | undefined => {
+    for (let cur: string | undefined = id; cur; cur = parent.get(cur)) if (rank.has(cur)) return rank.get(cur);
+    return undefined;
+  };
   return edges.map((e) => {
-    const a = rank.get(e.source);
-    const b = rank.get(e.target);
-    if (a === undefined || b === undefined || Math.abs(a - b) < 2) return e;
-    const lane = Math.abs(a - b) - 1;
-    return { ...e, data: { ...e.data!, bulgeX: right + BULGE_GAP + BULGE_LANE * (lane - 1) } };
+    const focus = e.data?.layer === 'focus';
+    const a = focus ? layerOf(e.source) : rank.get(e.source);
+    const b = focus ? layerOf(e.target) : rank.get(e.target);
+    if (a === undefined || b === undefined || Math.abs(a - b) < (focus ? 1 : 2)) return e;
+    const lane = Math.max(0, Math.abs(a - b) - 1);
+    return { ...e, data: { ...e.data!, bulgeX: right + BULGE_GAP + BULGE_LANE * lane } };
   });
 }

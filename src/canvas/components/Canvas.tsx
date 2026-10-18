@@ -40,6 +40,12 @@ import { useCanvasStoreApi } from '../store/canvas-store';
 import { expansionKey } from '../utils/zone-cut';
 import { useHashRoute } from '../router/useHashRoute';
 import { useDrillUrl } from '../router/useDrillUrl';
+import { useFocusUrl } from '../router/useFocusUrl';
+import { useFocusActions } from '../focus/focus-actions';
+import { useFocusKeys } from '../focus/useFocusKeys';
+import { FocusBar } from '../focus/FocusBar';
+import { FocusButton } from '../focus/FocusButton';
+import type { FocusEmphasis } from '../focus/focus-emphasis';
 import type { CanvasEdgeData } from '../../contracts/canvas/index.js';
 import { exportCanvas, type ExportFormat } from '../utils/export-utils';
 import { nodeTypes } from './nodes';
@@ -107,11 +113,19 @@ function CanvasInner() {
     () => (model.view.zoning?.mode === 'layers' && model.view.zoning.zoneSet.zones.length > 0 ? { breaks, relationById: graph.relationById, topIds: model.view.cut?.topIds ?? [] } : undefined),
     [breaks, graph.relationById, model.view],
   );
-  const view = useCanvasView(nodes, layoutEdges as Edge<CanvasEdgeData>[], graph.index, overlayData, layerView);
+  const focusView = useMemo<FocusEmphasis | undefined>(
+    () => (model.view.focus && model.view.cut ? { info: model.view.focus, atomOfFile: model.view.cut.atomOfFile } : undefined),
+    [model.view],
+  );
+  const view = useCanvasView(nodes, layoutEdges as Edge<CanvasEdgeData>[], graph.index, overlayData, layerView, focusView);
+  const focusActions = useFocusActions(graph.hierarchy);
+  useFocusKeys(focusActions, !!menu || showRules);
+  const focusCards = model.view.cut?.items.filter((i) => i.kind === 'file' || !i.expanded).length ?? 0;
   useCanvasLayout({ model, visibleIds: view.visibleIds, commit });
   useSemanticZoom();
   useHashRoute(graph.entities, graph.hierarchy, !graph.loading && graph.entities.length > 0);
   useDrillUrl(graph.hierarchy, !graph.loading && graph.entities.length > 0);
+  useFocusUrl(graph.hierarchy, !graph.loading && graph.entities.length > 0);
   const handlers = useNodeInteractions(graph.index.entityById, graph.hierarchy);
 
   const onExport = useCallback(
@@ -145,6 +159,9 @@ function CanvasInner() {
         onExport={onExport}
         exporting={exporting}
         zoneControls={<ZoneControls view={model.view} hierarchy={graph.hierarchy} onOpenRules={() => setShowRules(true)} />}
+        focusButton={<FocusButton actions={focusActions} />}
+        focusInfo={model.view.focus}
+        focusBar={<FocusBar info={model.view.focus} cards={focusCards} onExit={focusActions.exit} />}
       />
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         <ZoneActionsContext.Provider value={zoneActions}>

@@ -17,6 +17,7 @@ import { isSummaryTier } from '../utils/lod';
 import { emphasise } from '../utils/emphasis';
 import { NO_BREAKS, bulgeStackEdges, decorateBreaks, markLayerBreaks, type LayerBreaks } from '../utils/layer-breaks';
 import type { Relation } from '../../contracts/relations.js';
+import { emphasiseFocus, type FocusEmphasis } from '../focus/focus-emphasis';
 
 export interface CanvasView {
   displayNodes: Node[];
@@ -33,9 +34,12 @@ export interface LayerView {
   topIds: string[];
 }
 
-export function useCanvasView(nodes: Node[], layoutEdges: Edge<CanvasEdgeData>[], index: GraphIndex, overlayData: OverlayExtraData, layerView?: LayerView): CanvasView {
+export function useCanvasView(nodes: Node[], layoutEdges: Edge<CanvasEdgeData>[], index: GraphIndex, overlayData: OverlayExtraData, layerView?: LayerView, focusView?: FocusEmphasis): CanvasView {
   const overlay = useCanvasStore((s) => s.activeOverlay);
-  const visibleTypes = useCanvasStore((s) => s.visibleRelationTypes);
+  const storeTypes = useCanvasStore((s) => s.visibleRelationTypes);
+  // Focus mode shows the relation types it follows, whatever the Relations panel has switched on.
+  const focusTypes = focusView?.info.options.types;
+  const visibleTypes = useMemo<ReadonlySet<string>>(() => (focusTypes ? new Set(focusTypes) : storeTypes), [focusTypes, storeTypes]);
   const selectedNode = useCanvasStore((s) => s.selectedNodeId);
   const selectedEdge = useCanvasStore((s) => s.selectedEdgeId);
   const tier = useCanvasStore((s) => s.currentZoomLevel);
@@ -60,8 +64,8 @@ export function useCanvasView(nodes: Node[], layoutEdges: Edge<CanvasEdgeData>[]
     const broken = layerView ? markLayerBreaks(marked, layerView.breaks, { relationById: layerView.relationById, visibleTypes }) : marked;
     const routed = layerView ? bulgeStackEdges(broken, filtered.nodes, layerView.topIds) : broken;
     const withSelection = selectedEdge ? routed.map((e) => (e.id === selectedEdge ? { ...e, selected: true } : e)) : routed;
-    return emphasise(withSelection, displayNodes, hovered ?? selectedNode, summary);
-  }, [filtered.edges, filtered.nodes, overlay, overlayData, index, visibleIds, selectedEdge, displayNodes, hovered, selectedNode, summary, layerView, visibleTypes]);
+    return focusView ? emphasiseFocus(withSelection, displayNodes, hovered ?? selectedNode, focusView, summary) : emphasise(withSelection, displayNodes, hovered ?? selectedNode, summary);
+  }, [filtered.edges, filtered.nodes, overlay, overlayData, index, visibleIds, selectedEdge, displayNodes, hovered, selectedNode, summary, layerView, visibleTypes, focusView]);
 
   return { displayNodes, displayEdges, visibleIds };
 }

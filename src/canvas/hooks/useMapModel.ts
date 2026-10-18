@@ -38,6 +38,7 @@ export function useMapModel(graph: Graph): MapModel {
   const expansion = useCanvasStore((s) => s.zoneExpansion);
   const overrides = useCanvasStore((s) => s.zoneOverrides);
   const layers = useCanvasStore((s) => s.architectureLayers);
+  const focus = useCanvasStore((s) => s.focus);
   const focusNodeId = useCanvasStore((s) => s.focusRequest?.nodeId ?? null);
   const { hierarchy, relations, relationById, index, annotations, version } = graph;
 
@@ -45,13 +46,14 @@ export function useMapModel(graph: Graph): MapModel {
     () => ({ mode: groupBy, overrides, expansion, revealRefs: focusNodeId ? [focusNodeId] : [], layers: layers ?? undefined }),
     [groupBy, overrides, expansion, focusNodeId, layers],
   );
-  const view = useMemo(() => computeMapView(hierarchy, relations, drillPath, { showLockfiles, zones }), [hierarchy, relations, drillPath, showLockfiles, zones]);
+  const view = useMemo(() => computeMapView(hierarchy, relations, drillPath, { showLockfiles, zones, focus: focus ?? undefined }), [hierarchy, relations, drillPath, showLockfiles, zones, focus]);
   const annMap = useMemo(() => buildAnnotationMap(annotations), [annotations]);
   const nodes = useMemo(() => buildViewNodes({ hierarchy, entityById: index.entityById, annotations: annMap }, view), [hierarchy, index, annMap, view]);
   const edges = useMemo(() => buildViewEdges(view, relationById), [view, relationById]);
 
   // A reveal (search hit, deep link) opens zones; remember them as the user's choices so they stay open.
   useEffect(() => {
+    if (view.focus) return; // Focus mode opens the frames of its cards for as long as it lasts, without changing the Map's own state
     const revealed = view.cut?.revealed ?? [];
     const missing = revealed.filter((id) => store.getState().zoneExpansion[expansionKey(view.containerId, id)] !== true);
     if (missing.length > 0) store.getState().setZoneExpansion(Object.fromEntries(missing.map((id) => [expansionKey(view.containerId, id), true])));
@@ -60,7 +62,9 @@ export function useMapModel(graph: Graph): MapModel {
   const key = useMemo(() => {
     const cut = view.cut ? view.cut.items.map((i) => `${i.id}${i.expanded ? '+' : '-'}${i.label}`).join('|') : nodes.map((n) => n.id).join('|');
     const portals = view.portals.map((p) => p.id).join(',');
-    return `${version}#${view.containerId}#${showLockfiles ? 'L' : ''}#${view.zoning?.mode ?? ''}#${cut}#${portals}#${view.scopeId ?? ''}`;
+    // Focus mode: the same cards can be linked differently (types, direction), so the links are part of the key.
+    const links = view.focus ? view.links.map((l) => `${l.source}>${l.target}:${l.count}`).join(',') : '';
+    return `${version}#${view.containerId}#${showLockfiles ? 'L' : ''}#${view.zoning?.mode ?? ''}#${cut}#${portals}#${view.scopeId ?? ''}#${links}`;
   }, [view, nodes, showLockfiles, version]);
 
   const layout = useMemo(

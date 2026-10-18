@@ -93,7 +93,7 @@ export const RelationEdge = React.memo((props: CanvasEdgeProps) => {
   const layer = props.data?.layer;
   const opacity = edgeOpacity(layer, props.data?.hot, focusActive);
   // Card-level edges across frames stay unlabelled until they are hot; bundles and siblings carry their counts.
-  const labelled = aggregated && ((props.data?.count ?? 0) > 1 || layer === 'bundle' || layer === 'focus') && (layer !== 'detail' || props.data?.hot);
+  const labelled = (layer === 'focus' && (!props.data?.crowded || props.data?.hot || (props.data?.count ?? 0) > 1)) || (layer !== 'focus' && aggregated && ((props.data?.count ?? 0) > 1 || layer === 'bundle') && (layer !== 'detail' || props.data?.hot));
   return (
     <>
       <BaseEdge
