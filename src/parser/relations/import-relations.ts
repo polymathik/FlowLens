@@ -1,229 +1,121 @@
 /**
- * Import relation extraction: ESM imports, CJS require, dynamic import,
- * re-exports. Resolves specifiers to file paths using the import resolver.
+ * Import relation extraction (TS/JS): ESM imports, re-exports, CommonJS
+ * `require`, dynamic `import()`.
+ *
+ * - The specifier is resolved with the shared module resolver (relative
+ *   paths, `.js`→`.ts` mapping, tsconfig paths, workspace packages).
+ * - A resolved specifier gives a direct file→file edge; `import type` marks
+ *   it `meta.type_only`.
+ * - A project-internal specifier that names no file becomes an explicit
+ *   unresolved import (never a fabricated id); external packages are dropped.
+ * - Every named binding also yields an optional pending import to the file
+ *   that *declares* the name, so barrels (`export *`) link the importer to
+ *   the real source module in pass 2.
  */
 import type { SgNode } from '@ast-grep/napi';
-import type { Relation } from '../../contracts/relations.js';
-import { generateEntityId, generateRelationId } from '../../utils/id.js';
-import { resolveImportPath, resolveBarrelReExports } from '../import-resolver.js';
 import { findChild } from '../extractor-helpers.js';
-import { walkNodes, getCallExpressionCallee } from './shared.js';
-import path from 'node:path';
+import { resolveModuleSpecifier } from '../resolution/ts-module-resolver.js';
+import { stringSpecifier } from '../symbols/ts-symbols.js';
+import { loc } from '../symbols/emitter.js';
+import { generateRelationId } from '../../utils/id.js';
+import type { TsRelationContext } from './ts-context.js';
+import { fileEntityIdFor } from './ts-context.js';
 
-// ─── Public API ─────────────────────────────────────────────────
-
-export function extractImportRelations(
-  root: SgNode,
-  filePath: string,
-  rootDir: string,
-  relations: Relation[],
-): void {
-  const fileEntityId = generateEntityId(
-    filePath,
-    path.basename(filePath),
-    'file',
+/** `import … from '…'` — returns nothing; children need not be walked. */
+export function handleImportStatement(node: SgNode, ctx: TsRelationContext): void {
+  const specifier = stringSpecifier(node);
+  if (specifier === null) return;
+  const bindings = ctx.symbols.imports.filter(
+    (b) => b.specifier === specifier && b.location.line === loc(node).line,
   );
+  const typeOnly = bindings.length > 0 && bindings.every((b) => b.type_only);
+  addImportEdge(specifier, node, ctx, 1.0, typeOnly);
 
-  walkNodes(root, (node) => {
-    const kind = node.kind();
-
-    if (kind === 'import_statement') {
-      handleImportStatement(node, filePath, rootDir, fileEntityId, relations);
-    } else if (kind === 'export_statement') {
-      handleReExport(node, filePath, rootDir, fileEntityId, relations);
-    } else if (kind === 'call_expression') {
-      handleDynamicImportOrRequire(node, filePath, rootDir, fileEntityId, relations);
-    }
-  });
-}
-
-// ─── Import Statement ───────────────────────────────────────────
-
-function handleImportStatement(
-  node: SgNode,
-  filePath: string,
-  rootDir: string,
-  fileEntityId: string,
-  relations: Relation[],
-): void {
-  const specifier = extractStringSpecifier(node);
-  if (!specifier) return;
-
-  const importedNames = extractImportedNames(node);
-
-  createImportRelation(
-    specifier, filePath, rootDir, fileEntityId,
-    node, 1.0, relations, importedNames,
-  );
-}
-
-function extractImportedNames(node: SgNode): string[] {
-  const names: string[] = [];
-  for (const child of node.children()) {
-    if (child.kind() === 'import_clause') {
-      for (const clauseChild of child.children()) {
-        if (clauseChild.kind() === 'named_imports') {
-          for (const spec of clauseChild.children()) {
-            if (spec.kind() === 'import_specifier') {
-              const nameNode = spec.children().find(c => c.kind() === 'identifier');
-              if (nameNode) names.push(nameNode.text());
-            }
-          }
-        } else if (clauseChild.kind() === 'identifier') {
-          names.push(clauseChild.text());
-        }
-      }
-    }
+  for (const b of bindings) {
+    if (!b.local || b.imported === '*' || b.external || !b.source_file) continue;
+    ctx.emitter.pending(ctx.fileEntityId, 'import', b.local, node, {
+      resolve_to: 'file',
+      optional: true,
+      meta: { via: b.source_file, ...(b.type_only ? { type_only: true } : {}) },
+    });
   }
-  return names;
 }
 
-// ─── Re-export ──────────────────────────────────────────────────
-
-function handleReExport(
-  node: SgNode,
-  filePath: string,
-  rootDir: string,
-  fileEntityId: string,
-  relations: Relation[],
-): void {
-  const specifier = extractStringSpecifier(node);
-  if (!specifier) return;
-
-  createImportRelation(
-    specifier, filePath, rootDir, fileEntityId,
-    node, 1.0, relations,
-  );
+/** `export … from '…'` */
+export function handleReExport(node: SgNode, ctx: TsRelationContext): void {
+  const specifier = stringSpecifier(node);
+  if (specifier === null) return;
+  const typeOnly = node.children().some((c) => c.kind() === 'type');
+  addImportEdge(specifier, node, ctx, 1.0, typeOnly);
 }
 
-// ─── Dynamic Import / Require ───────────────────────────────────
-
-function handleDynamicImportOrRequire(
-  node: SgNode,
-  filePath: string,
-  rootDir: string,
-  fileEntityId: string,
-  relations: Relation[],
-): void {
-  const functionPart = getCallExpressionCallee(node);
-  if (!functionPart) return;
-
-  const isRequire = functionPart.kind() === 'identifier' && functionPart.text() === 'require';
-  const isDynamicImport = functionPart.kind() === 'import';
-
-  if (!isRequire && !isDynamicImport) return;
-
+/** `require('…')` and `import('…')`. Returns true when the call was an import. */
+export function handleRequireOrDynamicImport(node: SgNode, ctx: TsRelationContext): boolean {
+  const callee = node.children()[0];
+  if (!callee) return false;
+  const isRequire = callee.kind() === 'identifier' && callee.text() === 'require';
+  const isDynamic = callee.kind() === 'import';
+  if (!isRequire && !isDynamic) return false;
   const args = findChild(node, 'arguments');
-  if (!args) return;
-
-  const isConditional = isDynamicImport && isInsideConditional(node);
-
+  if (!args) return true;
+  const conditional = isDynamic && isInsideConditional(node);
   for (const arg of args.children()) {
-    if (arg.kind() === 'string') {
-      const fragment = findChild(arg, 'string_fragment');
-      if (fragment) {
-        const confidence = isConditional ? 0.5 : 1.0;
-        createImportRelation(
-          fragment.text(), filePath, rootDir, fileEntityId,
-          node, confidence, relations,
-        );
-      }
-      return;
-    }
-    if (arg.kind() === 'template_string') {
-      const fragment = findChild(arg, 'string_fragment');
-      if (fragment) {
-        const confidence = isConditional ? 0.5 : 0.75;
-        createImportRelation(
-          fragment.text(), filePath, rootDir, fileEntityId,
-          node, confidence, relations,
-        );
-      }
-      return;
-    }
+    const k = arg.kind();
+    if (k !== 'string' && k !== 'template_string') continue;
+    if (k === 'template_string' && arg.children().some((c) => c.kind() === 'template_substitution')) return true;
+    const frag = findChild(arg, 'string_fragment');
+    if (!frag) return true;
+    const confidence = conditional ? 0.5 : k === 'template_string' ? 0.75 : 1.0;
+    addImportEdge(frag.text(), node, ctx, confidence, false);
+    return true;
   }
+  return true;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────
-
-function extractStringSpecifier(node: SgNode): string | null {
-  for (const child of node.children()) {
-    if (child.kind() === 'string') {
-      const fragment = findChild(child, 'string_fragment');
-      return fragment ? fragment.text() : null;
-    }
+function addImportEdge(
+  specifier: string, node: SgNode, ctx: TsRelationContext, confidence: number, typeOnly: boolean,
+): void {
+  const res = resolveModuleSpecifier(specifier, ctx.filePath, ctx.rootDir);
+  const { line, column } = loc(node);
+  if (res.file) {
+    if (res.file === ctx.filePath) return;
+    const to = fileEntityIdFor(res.file);
+    ctx.emitter.relations.push({
+      id: generateRelationId(ctx.fileEntityId, to, 'import', ctx.filePath, line),
+      from: ctx.fileEntityId,
+      to,
+      type: 'import',
+      location: { file: ctx.filePath, line, column },
+      weight: 1,
+      confidence,
+      ...(typeOnly ? { meta: { type_only: true } } : {}),
+    });
+    return;
   }
-  return null;
+  if (res.external || !ctx.rootDir) return;
+  ctx.emitter.relations.push({
+    id: generateRelationId(ctx.fileEntityId, `?${specifier}`, 'import', ctx.filePath, line),
+    from: ctx.fileEntityId,
+    to: '',
+    type: 'import',
+    location: { file: ctx.filePath, line, column },
+    weight: 1,
+    confidence,
+    resolution: 'unresolved',
+    target_name: specifier,
+    final: true,
+    ...(typeOnly ? { meta: { type_only: true } } : {}),
+  } as import('../../contracts/symbols.js').PendingRelation);
 }
 
 function isInsideConditional(node: SgNode): boolean {
-  const CONDITIONAL_KINDS = new Set([
-    'if_statement', 'ternary_expression', 'conditional_expression',
-  ]);
+  const CONDITIONAL = new Set(['if_statement', 'ternary_expression', 'conditional_expression']);
   let current = node.parent();
   while (current) {
     const k = String(current.kind());
-    if (CONDITIONAL_KINDS.has(k)) return true;
+    if (CONDITIONAL.has(k)) return true;
     if (k === 'function_declaration' || k === 'program') break;
     current = current.parent();
   }
   return false;
-}
-
-function createImportRelation(
-  specifier: string,
-  filePath: string,
-  rootDir: string,
-  fileEntityId: string,
-  node: SgNode,
-  confidence: number,
-  relations: Relation[],
-  importedNames?: string[],
-): void {
-  const resolved = resolveImportPath(specifier, filePath, rootDir);
-  if (!resolved) return;
-
-  const range = node.range();
-  const line = range.start.line + 1;
-  const column = range.start.column + 1;
-
-  if (rootDir && importedNames && importedNames.length > 0) {
-    const reExports = resolveBarrelReExports(resolved, importedNames, rootDir);
-    if (reExports.size > 0) {
-      const targetFiles = new Set(reExports.values());
-      for (const targetFile of targetFiles) {
-        const targetEntityId = generateEntityId(
-          targetFile,
-          path.basename(targetFile),
-          'file',
-        );
-        relations.push({
-          id: generateRelationId(fileEntityId, targetEntityId, 'import', filePath, line),
-          from: fileEntityId,
-          to: targetEntityId,
-          type: 'import',
-          location: { file: filePath, line, column },
-          weight: 1,
-          confidence,
-        });
-      }
-      return;
-    }
-  }
-
-  const targetEntityId = generateEntityId(
-    resolved,
-    path.basename(resolved),
-    'file',
-  );
-
-  relations.push({
-    id: generateRelationId(fileEntityId, targetEntityId, 'import', filePath, line),
-    from: fileEntityId,
-    to: targetEntityId,
-    type: 'import',
-    location: { file: filePath, line, column },
-    weight: 1,
-    confidence,
-  });
 }

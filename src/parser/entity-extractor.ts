@@ -16,7 +16,6 @@ import {
   handleTypeAliasDeclaration,
   handleEnumDeclaration,
   handleNamespace,
-  handleDecorator,
 } from './entity-handlers.js';
 
 /**
@@ -62,6 +61,7 @@ function visitNode(
       handleExportStatement(node, ctx, entities);
       break;
     case 'class_declaration':
+    case 'abstract_class_declaration':
       handleClassDeclaration(node, ctx, entities, visitNode);
       break;
     case 'interface_declaration':
@@ -83,14 +83,20 @@ function visitNode(
     case 'internal_module':
       handleNamespace(node, ctx, entities, visitChildren);
       break;
-    case 'decorator':
-      handleDecorator(node, ctx, entities);
-      break;
     default:
-      visitChildren(node, ctx, entities);
+      // Only statement containers can hold module-level declarations; never
+      // descend into expressions or function bodies (locals are not entities,
+      // and expression depth is unbounded).
+      if (STATEMENT_CONTAINERS.has(String(node.kind()))) visitChildren(node, ctx, entities);
       break;
   }
 }
+
+const STATEMENT_CONTAINERS = new Set([
+  'program', 'statement_block', 'if_statement', 'else_clause', 'try_statement',
+  'catch_clause', 'finally_clause', 'labeled_statement', 'ambient_declaration',
+  'switch_statement', 'switch_body', 'switch_case', 'switch_default',
+]);
 
 // ─── Export Statement ────────────────────────────────────────────
 

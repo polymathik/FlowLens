@@ -31,22 +31,22 @@ export function handleClassDeclaration(
   const visibility = resolveTopLevelVisibility(ctx);
   entities.push(createEntity(node, name, 'class', visibility, ctx));
 
-  // Decorators attached directly to this class_declaration
-  for (const child of node.children()) {
-    if (child.kind() === 'decorator') {
-      handleDecorator(child, ctx, entities);
+  const prevInsideClass = ctx.insideClass;
+  ctx.insideClass = true;
+  ctx.parentNames.push(name);
+  // Decorators attached to this class (`Cls.@Dec`); `@Dec export class` puts
+  // them on the enclosing export_statement.
+  const exportParent = node.parent();
+  const decoratorHosts = exportParent?.kind() === 'export_statement' ? [exportParent, node] : [node];
+  for (const host of decoratorHosts) {
+    for (const child of host.children()) {
+      if (child.kind() === 'decorator') handleDecorator(child, ctx, entities);
     }
   }
-
   const body = findChild(node, 'class_body');
-  if (body) {
-    const prevInsideClass = ctx.insideClass;
-    ctx.insideClass = true;
-    ctx.parentNames.push(name);
-    visitClassBody(body, ctx, entities, visitNode);
-    ctx.parentNames.pop();
-    ctx.insideClass = prevInsideClass;
-  }
+  if (body) visitClassBody(body, ctx, entities, visitNode);
+  ctx.parentNames.pop();
+  ctx.insideClass = prevInsideClass;
 }
 
 function visitClassBody(
@@ -55,16 +55,31 @@ function visitClassBody(
   entities: Entity[],
   _visitNode: VisitFn,
 ): void {
+  const pendingDecorators: SgNode[] = [];
   for (const child of body.children()) {
     const ck = child.kind();
-    if (ck === 'method_definition') {
-      handleMethodDefinition(child, ctx, entities);
-    } else if (ck === 'public_field_definition') {
-      handleFieldDefinition(child, ctx, entities);
-    } else if (ck === 'decorator') {
-      handleDecorator(child, ctx, entities);
+    if (ck === 'decorator') {
+      pendingDecorators.push(child);
+      continue;
     }
+    if (ck === 'method_definition' || ck === 'public_field_definition') {
+      // Method decorators precede the method as siblings: `Cls.method.@Dec`
+      const memberName = memberNameOf(child);
+      ctx.parentNames.push(memberName);
+      for (const dec of pendingDecorators) handleDecorator(dec, ctx, entities);
+      for (const dec of child.children()) if (dec.kind() === 'decorator') handleDecorator(dec, ctx, entities);
+      ctx.parentNames.pop();
+      if (ck === 'method_definition') handleMethodDefinition(child, ctx, entities);
+      else handleFieldDefinition(child, ctx, entities);
+    }
+    pendingDecorators.length = 0;
   }
+}
+
+function memberNameOf(node: SgNode): string {
+  return findChildText(node, 'property_identifier')
+    ?? findChildText(node, 'private_property_identifier')
+    ?? '<anonymous>';
 }
 
 // ─── Interface ───────────────────────────────────────────────────
@@ -91,7 +106,9 @@ export function handleFunctionDeclaration(
     ? resolveClassMemberVisibility(node)
     : resolveTopLevelVisibility(ctx);
   entities.push(createEntity(node, name, 'function', visibility, ctx));
+  ctx.parentNames.push(name);
   extractParameters(node, ctx, entities);
+  ctx.parentNames.pop();
 }
 
 // ─── Method ──────────────────────────────────────────────────────
@@ -101,7 +118,7 @@ export function handleMethodDefinition(
   ctx: VisitorContext,
   entities: Entity[],
 ): void {
-  const name = findChildText(node, 'property_identifier') ?? '<anonymous>';
+  const name = memberNameOf(node);
   const visibility = resolveClassMemberVisibility(node);
   entities.push(createEntity(node, name, 'method', visibility, ctx));
 
@@ -149,10 +166,12 @@ function handleVariableDeclarator(
     ? resolveClassMemberVisibility(declaration)
     : resolveTopLevelVisibility(ctx);
 
-  const arrowFn = findChild(declarator, 'arrow_function');
+  const arrowFn = findChild(declarator, 'arrow_function') ?? findChild(declarator, 'function_expression');
   if (arrowFn) {
     entities.push(createEntity(declaration, name, 'function', visibility, ctx));
+    ctx.parentNames.push(name);
     extractParameters(arrowFn, ctx, entities);
+    ctx.parentNames.pop();
   } else {
     entities.push(createEntity(declaration, name, 'variable', visibility, ctx));
   }
@@ -225,7 +244,10 @@ export function handleDecorator(
   entities: Entity[],
 ): void {
   const name = extractDecoratorName(node);
-  entities.push(createEntity(node, name, 'decorator', 'public', ctx));
+  // Scoped under the decorated declaration (caller pushes its name): `Cls.method.@Dec`
+  const entity = createEntity(node, `@${name}`, 'decorator', 'public', ctx);
+  entity.name = name;
+  entities.push(entity);
 }
 
 function extractDecoratorName(node: SgNode): string {

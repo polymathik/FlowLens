@@ -1,4 +1,5 @@
 import type { SgNode } from '@ast-grep/napi';
+import { walkNodes } from '../parser/ast-walk.js';
 
 /**
  * Result of Halstead metrics computation.
@@ -109,34 +110,24 @@ export function computeHalstead(node: SgNode): HalsteadResult {
 }
 
 /**
- * Recursively walk every node in the subtree.
- * For leaf nodes (no children), classify and call `onToken`.
+ * Walk every node in the subtree (iteratively); classify leaf tokens.
  */
 function walkNode(
-  node: SgNode,
+  root: SgNode,
   operators: Set<string>,
   operands: Set<string>,
   onToken: (isOperator: boolean) => void,
 ): void {
-  const kind = String(node.kind());
-  const children = node.children();
-
-  if (children.length === 0) {
-    // Leaf node — classify it
+  walkNodes(root, (node) => {
+    if (!node.isLeaf()) return true;
+    const kind = String(node.kind());
     if (OPERATOR_KINDS.has(kind)) {
-      const text = node.text();
-      operators.add(text);
+      operators.add(node.text());
       onToken(true);
     } else if (OPERAND_KINDS.has(kind)) {
-      const text = node.text();
-      operands.add(text);
+      operands.add(node.text());
       onToken(false);
     }
-    return;
-  }
-
-  // Internal node — recurse into children
-  for (const child of children) {
-    walkNode(child, operators, operands, onToken);
-  }
+    return false;
+  });
 }

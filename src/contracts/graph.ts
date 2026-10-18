@@ -35,6 +35,12 @@ export interface GraphStore {
   getAllNodes(): Promise<Entity[]>;
   getAllEdges(): Promise<Relation[]>;
 
+  /**
+   * Phase 8 (optional): replace all nodes and edges owned by `filePath`
+   * (delete edges + nodes of the file, then put) in one call.
+   */
+  replaceFile?(filePath: string, entities: Entity[], relations: Relation[]): Promise<void>;
+
   /** Phase 8 (optional): unresolved / ambiguous relations, excluded from every other read. */
   getUnresolvedRelations?(): Promise<Relation[]>;
 
