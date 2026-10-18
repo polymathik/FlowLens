@@ -12,8 +12,10 @@ export const dotExporter: GraphExporter = {
     for (const entity of entities) {
       const qs = entity.metrics?.quality_score;
       const labelParts = [entity.name, `(${entity.kind}${qs !== undefined ? `, QS:${qs}` : ''})`];
-      const label = labelParts.join('\\n');
-      lines.push(`  ${quote(entity.id)} [label=${quote(label)}];`);
+      // Escape each part first, THEN join with DOT's `\n` line-break escape —
+      // escaping after joining turned the break into a literal "\n".
+      const label = labelParts.map(escapeDot).join('\\n');
+      lines.push(`  ${quote(entity.id)} [label="${label}"];`);
     }
 
     for (const relation of relations) {
@@ -27,7 +29,12 @@ export const dotExporter: GraphExporter = {
   },
 };
 
-/** Quote + escape for DOT. Backslashes and double quotes need escaping. */
+/** Escape for a DOT quoted string: backslashes, double quotes, newlines. */
+export function escapeDot(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n');
+}
+
+/** Quote + escape for DOT. */
 function quote(s: string): string {
-  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return `"${escapeDot(s)}"`;
 }

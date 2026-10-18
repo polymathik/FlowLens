@@ -33,3 +33,22 @@ export interface GraphExporter {
   /** Render the filtered graph in the exporter's format. */
   export(input: ExportInput): string;
 }
+
+/**
+ * Size limits of the default Mermaid renderer (mermaid.js `maxTextSize`
+ * = 50 000 characters, `maxEdges` = 500). Diagrams above these render as
+ * "Maximum text size in diagram exceeded" in GitHub/Mermaid Live.
+ */
+export const MERMAID_LIMITS = {
+  maxTextSize: 50_000,
+  maxEdges: 500,
+} as const;
+
+/** Rendered output plus non-fatal advisories (e.g. Mermaid size guard). */
+export interface ExportResult {
+  output: string;
+  /** Human-readable warnings; the CLI prints them to stderr. */
+  warnings: string[];
+  entity_count: number;
+  relation_count: number;
+}

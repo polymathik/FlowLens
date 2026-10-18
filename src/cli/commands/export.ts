@@ -7,7 +7,8 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { LevelGraphStore } from '../../graph/levelgraph-store.js';
-import { exportGraph } from '../../export/index.js';
+import { renderExport } from '../../export/index.js';
+import { writeFully } from '../../export/stream-writer.js';
 import { printError } from '../output.js';
 import type { ExportFormat, ExportOptions } from '../../contracts/export.js';
 import type { RelationType } from '../../contracts/relations.js';
@@ -54,14 +55,16 @@ export const exportCommand = new Command('export')
         output: opts.output,
       };
 
-      const rendered = exportGraph(entities, relations, exportOpts);
+      const result = renderExport(entities, relations, exportOpts);
+      for (const warning of result.warnings) process.stderr.write(`warning: ${warning}\n`);
 
       if (opts.output) {
-        await writeFile(opts.output, rendered, 'utf-8');
+        await writeFile(opts.output, result.output, 'utf-8');
       } else {
-        process.stdout.write(rendered);
+        // Wait for the pipe to drain; never process.exit() with data pending.
+        await writeFully(process.stdout, result.output);
       }
-      process.exit(0);
+      process.exitCode = 0;
     } catch (err) {
       printError(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(2);
