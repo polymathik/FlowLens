@@ -17,6 +17,7 @@ import { createDeepProject } from '../helpers/deep-fixture.js';
 import { createCommunitiesProject } from '../helpers/communities-fixture.js';
 import { createLayeredProject } from '../helpers/layered-fixture.js';
 import { createHalcyonCopy } from '../helpers/halcyon-copy.js';
+import { createFlowProject } from '../helpers/flow-project.js';
 import { startDaemon } from '../../../src/service/daemon.js';
 import { DaemonClient } from '../../../src/service/client.js';
 import { RemoteGraphStore } from '../../../src/service/remote-graph-store.js';
@@ -37,6 +38,7 @@ const b = await createNotesProject(join(workDir, 'b'));
 const deep = await createDeepProject(join(workDir, 'deep'));
 const comm = await createCommunitiesProject(join(workDir, 'comm'));
 const layered = await createLayeredProject(join(workDir, 'layered'));
+const flow = await createFlowProject(join(workDir, 'flow'));
 const halcyon = await createHalcyonCopy(join(workDir, 'halcyon')); // null when no Halcyon snapshot exists (scenarios skip)
 const goneRoot = join(workDir, 'gone-app');
 await mkdir(join(goneRoot, '.flowlens'), { recursive: true });
@@ -61,7 +63,7 @@ console.log(`READY ${JSON.stringify({
   token: daemon.info.token,
   hasGit: a.hasGit,
   mode: dev ? 'dev' : 'bundle',
-  projects: { deep: { root: deep.rootDir }, comm: { root: comm.rootDir }, layered: { root: layered.rootDir }, halcyon: halcyon ? { root: halcyon.rootDir } : null, a: { id: pa.id, root: a.rootDir }, b: { id: pb.id, root: b.rootDir }, missing: { id: pc.id, root: goneRoot } },
+  projects: { deep: { root: deep.rootDir }, comm: { root: comm.rootDir }, layered: { root: layered.rootDir }, flow: { root: flow.rootDir }, halcyon: halcyon ? { root: halcyon.rootDir } : null, a: { id: pa.id, root: a.rootDir }, b: { id: pb.id, root: b.rootDir }, missing: { id: pc.id, root: goneRoot } },
 })}`);
 
 const shutdown = async () => {
