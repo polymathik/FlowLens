@@ -46,7 +46,8 @@ export async function resolveEntity(graph: GraphStore, identifier: string): Prom
   return resolveWithIndex(new NameIndex(await graph.getAllNodes()), identifier);
 }
 
-function resolveWithIndex(index: NameIndex, identifier: string): ResolveOutcome {
+/** Resolve against a prebuilt name index (shared by MCP tools, the flow service and the CLI). */
+export function resolveWithIndex(index: NameIndex, identifier: string): ResolveOutcome {
   const match = index.match(identifier);
   if (match && match.candidates.length === 1) {
     return { entity: match.candidates[0], tier: match.tier };
