@@ -25,6 +25,7 @@ export interface Harness {
 
 export async function startHarness(o: StartDaemonOptions = {}): Promise<Harness> {
   const home = await tempDir('flowlens-home-');
+  const previousHome = process.env.FLOWLENS_HOME;
   process.env.FLOWLENS_HOME = home;
   const daemon = await startDaemon({ log: () => {}, ...o });
   const opened: RemoteGraphStore[] = [];
@@ -41,8 +42,14 @@ export async function startHarness(o: StartDaemonOptions = {}): Promise<Harness>
     async stop() {
       for (const s of opened) await s.close().catch(() => undefined);
       await daemon.shutdown();
-      delete process.env.FLOWLENS_HOME;
+      restoreEnv('FLOWLENS_HOME', previousHome);
       await removeDir(home);
     },
   };
+}
+
+/** Put an env var back to its previous value (unset when it had none). */
+export function restoreEnv(name: string, previous: string | undefined): void {
+  if (previous === undefined) delete process.env[name];
+  else process.env[name] = previous;
 }

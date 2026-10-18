@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { FileProjectRegistry } from '../../../src/projects/registry.js';
 import { readProjectIdentity } from '../../../src/utils/project-identity.js';
 import { REPO, tempDir, removeDir } from '../../helpers/service-env.js';
+import { restoreEnv } from '../../helpers/daemon-harness.js';
 
 function makeProject(base: string, name: string): string {
   const root = join(base, name);
@@ -17,6 +18,7 @@ describe('FileProjectRegistry', () => {
   let home: string;
   let base: string;
   let reg: FileProjectRegistry;
+  const outerHome = process.env.FLOWLENS_HOME;
 
   beforeEach(async () => {
     home = await tempDir('flowlens-home-');
@@ -26,7 +28,7 @@ describe('FileProjectRegistry', () => {
   });
 
   afterEach(async () => {
-    delete process.env.FLOWLENS_HOME;
+    restoreEnv('FLOWLENS_HOME', outerHome);
     await removeDir(home);
     await removeDir(base);
   });

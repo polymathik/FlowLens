@@ -11,7 +11,7 @@ import { GRAPH_READ_METHODS, GRAPH_RPC_PROTOCOL, GRAPH_WRITE_METHODS } from '../
 import { findDaemon } from '../../../src/service/autostart.js';
 import { writeDaemonInfo } from '../../../src/service/daemon-info.js';
 import { FLOWLENS_VERSION } from '../../../src/service/runtime.js';
-import { startHarness, type Harness } from '../../helpers/daemon-harness.js';
+import { restoreEnv, startHarness, type Harness } from '../../helpers/daemon-harness.js';
 import { removeDir, tempDir } from '../../helpers/service-env.js';
 
 /** Minimal fake daemon in a child process: answers ping with `pong`, exits on /api/shutdown. */
@@ -36,6 +36,7 @@ describe('daemon protocol handshake', () => {
   let home: string | null = null;
   let child: ChildProcess | null = null;
   let harness: Harness | null = null;
+  const outerHome = process.env.FLOWLENS_HOME;
 
   afterEach(async () => {
     if (child && child.exitCode === null) child.kill('SIGKILL');
@@ -44,7 +45,7 @@ describe('daemon protocol handshake', () => {
     harness = null;
     if (home) await removeDir(home);
     home = null;
-    delete process.env.FLOWLENS_HOME;
+    restoreEnv('FLOWLENS_HOME', outerHome);
   });
 
   it('fingerprints every graph RPC method', () => {
