@@ -77,6 +77,7 @@ export interface DaemonHandle {
 const ENV_OPTIONS: Record<keyof ServiceOptions, string> = {
   idleCloseMs: 'FLOWLENS_DAEMON_IDLE_CLOSE_MS',
   releaseDelayMs: 'FLOWLENS_DAEMON_RELEASE_DELAY_MS',
+  explorerReleaseDelayMs: 'FLOWLENS_DAEMON_EXPLORER_RELEASE_DELAY_MS',
   maxOpenProjects: 'FLOWLENS_DAEMON_MAX_OPEN',
   leaseTtlMs: 'FLOWLENS_DAEMON_LEASE_TTL_MS',
   rpcEventDebounceMs: 'FLOWLENS_DAEMON_EVENT_DEBOUNCE_MS',

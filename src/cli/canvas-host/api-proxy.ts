@@ -8,12 +8,17 @@
  * daemon and maps the dev origin onto the daemon origin (any other Origin
  * is passed through unchanged and refused by the daemon).
  *
+ * The proxy first checks that the INCOMING Host is loopback (Phase 12
+ * review L4): otherwise rewriting Host would let a DNS-rebinding page
+ * (`evil.example` resolving to 127.0.0.1) pass the daemon's Host guard.
+ *
  * Streams request and response bodies (no buffering), so SSE works: when
  * the browser disconnects, the upstream request is destroyed.
  */
 import http from 'node:http';
 import net from 'node:net';
 import type { RequestHandler } from 'express';
+import { isLoopbackHost } from '../../service/auth.js';
 
 const LOOPBACK = '127.0.0.1';
 
@@ -54,6 +59,10 @@ function forwardableHeaders(headers: http.IncomingHttpHeaders): http.OutgoingHtt
 export function createApiProxy(targetPort: number, o: { fromOrigin?: string } = {}): RequestHandler {
   const target = `${LOOPBACK}:${targetPort}`;
   return (req, res) => {
+    if (!isLoopbackHost(req.headers)) {
+      res.status(403).json({ ok: false, error: { code: 'forbidden_host', message: `Host "${req.headers.host}" not allowed` } });
+      return;
+    }
     const headers = { ...forwardableHeaders(req.headers), host: target };
     if (o.fromOrigin && headers.origin === o.fromOrigin) headers.origin = `http://${target}`;
     const upstream = http.request(

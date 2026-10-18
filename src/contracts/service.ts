@@ -267,6 +267,13 @@ export interface ServiceOptions {
   idleCloseMs: number;
   /** Close an unleased, unwatched DB this long after its last use (default 0). */
   releaseDelayMs: number;
+  /**
+   * Same, after a use by the explorer UI (default 5 s; Phase 12 review L5):
+   * a browsing session makes many short requests, which must not reopen
+   * LevelDB every time; CLI uses keep `releaseDelayMs` so `--no-daemon`
+   * commands are not locked out.
+   */
+  explorerReleaseDelayMs: number;
   /** Max simultaneously open project DBs; least-recently-used is closed (default 16). */
   maxOpenProjects: number;
   /** Lease time-to-live without renewal (default 60 s). */
@@ -280,6 +287,7 @@ export interface ServiceOptions {
 export const DEFAULT_SERVICE_OPTIONS: ServiceOptions = {
   idleCloseMs: 10 * 60_000,
   releaseDelayMs: 0,
+  explorerReleaseDelayMs: 5_000,
   maxOpenProjects: 16,
   leaseTtlMs: 60_000,
   rpcEventDebounceMs: 500,

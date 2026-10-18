@@ -70,6 +70,16 @@ describe('dev proxy to the daemon', () => {
     expect(b.origin).toBe('http://evil.example');
   });
 
+  it('refuses a non-loopback Host instead of rewriting it (review L4, DNS rebinding)', async () => {
+    const status = await new Promise<number>((done, fail) => {
+      http.get({ host: '127.0.0.1', port: portOf(front), path: '/api/echo', headers: { Host: `evil.example:${portOf(front)}` } }, (res) => {
+        res.resume();
+        done(res.statusCode ?? 0);
+      }).on('error', fail);
+    });
+    expect(status).toBe(403);
+  });
+
   it('streams SSE through the proxy', async () => {
     const ctrl = new AbortController();
     const res = await fetch(`${frontOrigin}/api/events`, { signal: ctrl.signal });

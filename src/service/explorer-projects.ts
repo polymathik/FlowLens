@@ -37,7 +37,7 @@ export async function projectHealth(
 ): Promise<{ report: HealthReport; cached: boolean; revision: number }> {
   const revision = deps.pool.revision(p.id);
   const result = await state.health.get(p.id, healthFingerprint(p.root, revision), async () => {
-    const input = await deps.pool.use(p, false, (graphStore) => loadHealthInput(p.root, { graphStore }));
+    const input = await deps.pool.use(p, false, (graphStore) => loadHealthInput(p.root, { graphStore }), deps.options.explorerReleaseDelayMs);
     return buildHealthReport(input, { canvas_base_url: `http://127.0.0.1:${deps.port}` });
   });
   return { ...result, revision };
@@ -47,7 +47,7 @@ function canvasRouter(deps: ServiceDeps, state: ExplorerProjectState, p: Project
   const hit = state.routers.get(p.id);
   if (hit && hit.root === p.root) return hit.router;
   const { router } = createGraphApp({
-    graph: { withGraph: (fn) => deps.pool.use(p, false, fn) },
+    graph: { withGraph: (fn) => deps.pool.use(p, false, fn, deps.options.explorerReleaseDelayMs) },
     rootDir: p.root,
     flowlensDir: projectFlowlensDir(p.root),
     events: { subscribe: (_req, res) => deps.hub.subscribe(p.id, res) },

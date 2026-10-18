@@ -38,7 +38,7 @@ describe('graph service daemon', () => {
   beforeEach(async () => { h = await startHarness({ options: { leaseTtlMs: 600 } }); });
   afterEach(async () => { await h.stop(); });
 
-  it('writes daemon.json with mode 0600 and rejects bad tokens and foreign Host headers', async () => {
+  it('writes its daemon info file with mode 0600 and rejects bad tokens and foreign Host headers', async () => {
     const { statSync } = await import('node:fs');
     expect(statSync(daemonInfoPath()).mode & 0o777).toBe(0o600);
     const { port, token } = h.daemon.info;
@@ -46,7 +46,11 @@ describe('graph service daemon', () => {
     expect(await rawGet(port, '/api/ping', { Authorization: 'Bearer nope' })).toBe(401);
     expect(await rawGet(port, '/api/ping', { Authorization: `Bearer ${token}` })).toBe(200);
     expect(await rawGet(port, '/api/ping', { Authorization: `Bearer ${token}`, Host: 'evil.example:80' })).toBe(403);
-    expect(await rawGet(port, `/api/version?access_token=${token}`, {})).toBe(200);
+    // Review L2: a query-string token is accepted on the SSE route only (404 = authenticated, unknown project).
+    expect(await rawGet(port, `/api/version?access_token=${token}`, {})).toBe(401);
+    expect(await rawGet(port, `/api/projects?access_token=${token}`, {})).toBe(401);
+    expect(await rawGet(port, `/api/projects/nope/events?access_token=${token}`, {})).toBe(404);
+    expect(await rawGet(port, `/api/projects/nope/events?access_token=bad`, {})).toBe(401);
   });
 
   it('serves two projects at once with isolated graphs and project details', async () => {

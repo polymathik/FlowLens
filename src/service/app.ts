@@ -47,7 +47,7 @@ export type MountRoutes = (app: Express, deps: ServiceDeps) => void;
 
 export function requireAuth(deps: Pick<ServiceDeps, 'token' | 'onActivity' | 'sessions' | 'port'>) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    let denied = authenticate(deps.token, req.headers, req.originalUrl);
+    let denied = authenticate(deps.token, req.headers, req.originalUrl, req.method);
     if (denied?.code === 'unauthorized') {
       const path = req.originalUrl.split('?')[0];
       denied = authenticateBrowser(deps.sessions, deps.port, req.method, path, req.headers);

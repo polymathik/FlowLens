@@ -38,6 +38,19 @@ describe('GraphPool', () => {
     expect(f.closed).toEqual(['/r/a/.flowlens/graph']);
   });
 
+  it('explorer uses hold an unleased graph open for explorerReleaseDelayMs, then close it (review L5)', async () => {
+    expect(DEFAULT_SERVICE_OPTIONS.explorerReleaseDelayMs).toBe(5_000);
+    const f = factory();
+    const pool = new GraphPool(opts({ explorerReleaseDelayMs: 60 }), f.make);
+    for (let i = 0; i < 5; i++) await pool.use(P('a'), false, (s) => s.getAllNodes(), 60);
+    await pool.use(P('a'), false, (s) => s.getAllNodes()); // a CLI read in between keeps the hold
+    await sleep(10);
+    expect(f.opened).toHaveLength(1);
+    expect(f.closed).toEqual([]);
+    await sleep(90);
+    expect(f.closed).toEqual(['/r/a/.flowlens/graph']);
+  });
+
   it('keeps a leased graph open, closes it on release, and idle-closes even when leased', async () => {
     const f = factory();
     const pool = new GraphPool(opts({ idleCloseMs: 30 }), f.make);

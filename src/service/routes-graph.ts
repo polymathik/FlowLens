@@ -105,7 +105,7 @@ export function createRpcFastPath(deps: ServiceDeps) {
     if (!m) return false;
     void (async () => {
       try {
-        const denied = authenticate(deps.token, req.headers, req.url ?? '');
+        const denied = authenticate(deps.token, req.headers, req.url ?? '', req.method);
         if (denied) throw denied;
         deps.onActivity?.();
         const id = decodeURIComponent(m[1]);
