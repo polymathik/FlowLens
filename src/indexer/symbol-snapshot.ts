@@ -44,10 +44,17 @@ export function recordFromParsed(file: ParsedFileOutput): FileSymbolRecord {
   };
   const entities: SymbolEntity[] = file.entities
     .filter((e) => e.kind !== 'parameter')
-    .map((e) => ({ id: e.id, name: e.name, qualified_name: e.qualified_name, kind: e.kind, file: e.file, language: e.language }));
+    .map((e): SymbolEntity => {
+      const sym: SymbolEntity = { id: e.id, name: e.name, qualified_name: e.qualified_name, kind: e.kind, file: e.file, language: e.language };
+      if (e.annotations?.type_ref) sym.type_ref = e.annotations.type_ref;
+      return sym;
+    });
   const extendsRefs: FileSymbolRecord['extends'] = [];
   for (const r of file.relations) if (r.type === 'extend') extendsRefs.push({ from: r.from, to: r.to });
   for (const r of file.pending) if (r.type === 'extend') extendsRefs.push({ from: r.from, target_name: r.target_name });
+  // A class with a base class that left no relation (external or unresolvable base): record that it has one.
+  const known = new Set(extendsRefs.map((x) => x.from));
+  for (const e of file.entities) if (e.kind === 'class' && e.annotations?.extends && !known.has(e.id)) extendsRefs.push({ from: e.id });
   const rec: FileSymbolRecord = { symbols, entities, extends: extendsRefs };
   if (file.duplicate_declarations > 0) rec.duplicates = file.duplicate_declarations;
   if (file.syntax_errors > 0) rec.syntax_errors = file.syntax_errors;

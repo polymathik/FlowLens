@@ -41,7 +41,9 @@ export async function computeGraphQuality(store: GraphStore, extras: QualityExtr
   const byType: Partial<Record<RelationType, number>> = {};
   const byLanguage: Record<string, number> = {};
   let ambiguous = 0;
+  let memberLeaves = 0;
   for (const r of unresolved) {
+    if (r.type === 'call' && r.meta?.receiver !== undefined) { memberLeaves++; continue; }
     byType[r.type] = (byType[r.type] ?? 0) + 1;
     const lang = languageOfFile.get(r.location.file) ?? 'unknown';
     byLanguage[lang] = (byLanguage[lang] ?? 0) + 1;
@@ -54,7 +56,8 @@ export async function computeGraphQuality(store: GraphStore, extras: QualityExtr
     edge_count: edges.length,
     dangling_edges: dangling,
     dangling_ratio: edges.length === 0 ? 0 : dangling / edges.length,
-    unresolved_count: unresolved.length - ambiguous,
+    unresolved_count: unresolved.length - ambiguous - memberLeaves,
+    member_unresolved_count: memberLeaves,
     ambiguous_count: ambiguous,
     unresolved_by_type: byType,
     unresolved_by_language: byLanguage,
@@ -102,6 +105,7 @@ export function formatQualitySummary(q: GraphQuality): string[] {
     `  dangling edges:     ${q.dangling_edges} (${pct(q.dangling_ratio)})`,
     `  unresolved refs:    ${q.unresolved_count}${q.ambiguous_count ? ` (+${q.ambiguous_count} ambiguous)` : ''}`,
   ];
+  if (q.member_unresolved_count) lines.push(`  unresolved members:  ${q.member_unresolved_count} (recv.method() calls not found on a project receiver)`);
   const top = Object.entries(q.unresolved_by_type).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).slice(0, 4);
   if (top.length > 0) lines.push(`    by type: ${top.map(([t, n]) => `${t} ${n}`).join(', ')}`);
   if (q.id_collisions > 0) lines.push(`  id collisions:      ${q.id_collisions}`);

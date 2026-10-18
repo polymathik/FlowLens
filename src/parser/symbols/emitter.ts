@@ -22,6 +22,12 @@ export interface LinkOptions {
   confidence?: number;
   /** Override the default target kinds for this relation type. */
   kinds?: EntityKind[];
+  /**
+   * The head names a same-file entity whose member may be inherited: when the
+   * member is not declared in this file, defer to pass 2 (parent classes)
+   * instead of dropping the reference.
+   */
+  inherited?: boolean;
 }
 
 export interface EmitterOptions {
@@ -154,6 +160,10 @@ export class RelationEmitter {
       if (target) {
         this.direct(from, target, type, node, opts);
         return 'direct';
+      }
+      if (opts.inherited && parts.length > 1) {
+        this.pending(from, type, targetName, node, opts);
+        return 'pending';
       }
       return 'dropped';
     }

@@ -8,6 +8,9 @@ import type { Entity } from '../../contracts/entities.js';
 import type { FileSymbols } from '../../contracts/symbols.js';
 import { RelationEmitter } from '../symbols/emitter.js';
 import { generateEntityId } from '../../utils/id.js';
+import { FileTypeIndex } from './type-members.js';
+import type { TypeScope } from './type-scope.js';
+import { buildModuleScope } from './scope-build.js';
 import path from 'node:path';
 
 export interface ClassScope {
@@ -25,6 +28,8 @@ export interface ScopeFrame {
   cls: ClassScope | null;
   /** Inside a `throw` statement (new X → throw, not create). */
   inThrow: boolean;
+  /** Declared types of the locals visible here (member-call resolution). */
+  scope: TypeScope;
 }
 
 export interface TsRelationContext {
@@ -40,6 +45,12 @@ export interface TsRelationContext {
    * enclosing function: the single-file component, else the file entity.
    */
   rootOwner: Entity;
+  /** Declared property types of this file's classes / interfaces (lazy). */
+  types: FileTypeIndex;
+  /** Module scope pre-filled with the top-level `const/let/var` declarations. */
+  moduleScope: TypeScope;
+  /** Start offsets of top-level declarators already registered in the module scope. */
+  moduleDeclared: Set<number>;
   /** True when `rootOwner` is the file entity (plain module), false for a component. */
   ownerIsFile: boolean;
 }
@@ -51,8 +62,9 @@ export const FUNCTION_KINDS = new Set([
 export const ANON_FUNCTION_KINDS = new Set(['arrow_function', 'function_expression', 'function', 'generator_function']);
 
 export function createTsContext(
-  filePath: string, rootDir: string, entities: Entity[], symbols: FileSymbols, rootEntity?: Entity,
+  root: SgNode, filePath: string, rootDir: string, entities: Entity[], symbols: FileSymbols, rootEntity?: Entity,
 ): TsRelationContext {
+  const { scope: moduleScope, declared: moduleDeclared } = buildModuleScope(root);
   const decoratorsAt = new Map<string, Entity>();
   for (const e of entities) {
     if (e.kind === 'decorator') decoratorsAt.set(`${e.location.line_start}:${e.location.column_start}`, e);
@@ -65,6 +77,9 @@ export function createTsContext(
     fileEntityId: fileEntityIdFor(filePath),
     decoratorsAt,
     rootOwner: rootEntity ?? fileEntityOf(filePath, entities),
+    types: new FileTypeIndex(root),
+    moduleScope,
+    moduleDeclared,
     ownerIsFile: !rootEntity,
   };
 }
@@ -91,8 +106,8 @@ export function fileEntityIdFor(filePath: string): string {
 }
 
 /** @param entity - owner of top-level code (a single-file component owns its `<script>` body). */
-export function rootFrame(entity?: Entity): ScopeFrame {
-  return { path: [], entity, cls: null, inThrow: false };
+export function rootFrame(entity: Entity | undefined, scope: TypeScope): ScopeFrame {
+  return { path: [], entity, cls: null, inThrow: false, scope };
 }
 
 /** Name of a class / function / namespace declaration node. */

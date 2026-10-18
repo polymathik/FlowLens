@@ -23,6 +23,7 @@ import { handleFunctionTypes } from './type-relations.js';
 import { containRelations, handleNew, handleIdentifierUse } from './data-relations.js';
 import { handleDecorator } from './decorate-relations.js';
 import { aggregateRelations } from '../../graph/aggregate.js';
+import { boundNames, buildFunctionScope, declareDeclarator } from './scope-build.js';
 
 /**
  * Extract all relations from a parsed TS/JS AST.
@@ -39,10 +40,10 @@ export function extractRelations(
   rootEntity?: Entity,
 ): Relation[] {
   const sym = symbols ?? extractTsSymbols(root, filePath, rootDir, entities[0]?.language ?? 'typescript');
-  const ctx = createTsContext(filePath, rootDir, entities, sym, rootEntity);
+  const ctx = createTsContext(root, filePath, rootDir, entities, sym, rootEntity);
   const methodsByClass = groupMethods(entities, filePath);
 
-  walkWithContext<ScopeFrame>(root, rootFrame(ctx.rootOwner), (node, frame) => visit(node, frame, ctx, methodsByClass));
+  walkWithContext<ScopeFrame>(root, rootFrame(ctx.rootOwner, ctx.moduleScope), (node, frame) => visit(node, frame, ctx, methodsByClass));
 
   return aggregateRelations([...containRelations(entities, filePath), ...ctx.emitter.relations]);
 }
@@ -63,6 +64,13 @@ function visit(
       return frame;
     case 'new_expression':
       handleNew(node, frame, ctx);
+      return frame;
+    case 'variable_declarator':
+      if (!ctx.moduleDeclared.has(node.range().start.index)) declareDeclarator(node, frame.scope);
+      return frame;
+    case 'for_in_statement':
+    case 'catch_clause':
+      declareLoopOrCatchNames(node, frame);
       return frame;
     case 'throw_statement':
       return { ...frame, inThrow: true };
@@ -85,14 +93,27 @@ function visit(
   if (CLASS_KINDS.has(kind)) return enterClass(node, frame, ctx, methodsByClass);
   if (FUNCTION_KINDS.has(kind)) {
     const name = declName(node);
-    return name ? enterFunction(node, [...frame.path, name], 'function', frame, ctx) : frame;
+    if (!name) return enterAnonymous(node, frame, ctx);
+    if (frame.scope.parent) frame.scope.declare(name, null); // a nested function shadows outer names
+    return enterFunction(node, [...frame.path, name], 'function', frame, ctx);
   }
   if (ANON_FUNCTION_KINDS.has(kind)) {
     const name = assignedName(node);
-    if (!name) return { ...frame, inThrow: false };
+    if (!name) return enterAnonymous(node, frame, ctx);
     return enterFunction(node, [...frame.path, name], 'function', frame, ctx);
   }
   return frame;
+}
+
+/** A callback / default-exported function: keeps the enclosing owner, gets its own parameter scope. */
+function enterAnonymous(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): ScopeFrame {
+  return { ...frame, inThrow: false, scope: buildFunctionScope(node, frame.scope, ctx.types) };
+}
+
+/** `for (const k of xs)` / `catch (err)`: locals of unknown type that shadow outer names. */
+function declareLoopOrCatchNames(node: SgNode, frame: ScopeFrame): void {
+  const target = node.children().find((c) => ['identifier', 'object_pattern', 'array_pattern'].includes(String(c.kind())));
+  if (target) for (const name of boundNames(target)) frame.scope.declare(name, null);
 }
 
 function enterFunction(
@@ -100,7 +121,10 @@ function enterFunction(
 ): ScopeFrame {
   const entity = ctx.emitter.entityAt(path, [kind]);
   if (entity) handleFunctionTypes(node, entity, ctx);
-  return { path, entity: entity ?? frame.entity, cls: frame.cls, inThrow: false };
+  return {
+    path, entity: entity ?? frame.entity, cls: frame.cls, inThrow: false,
+    scope: buildFunctionScope(node, frame.scope, ctx.types),
+  };
 }
 
 function enterClass(
@@ -112,7 +136,7 @@ function enterClass(
   const entity = ctx.emitter.entityAt(path, ['class']);
   if (!entity) return { ...frame, path };
   const cls = handleClassHeritage(node, entity, ctx, methodsByClass.get(entity.qualified_name) ?? []);
-  return { path, entity, cls, inThrow: false };
+  return { path, entity, cls, inThrow: false, scope: frame.scope };
 }
 
 function groupMethods(entities: Entity[], filePath: string): Map<string, Entity[]> {

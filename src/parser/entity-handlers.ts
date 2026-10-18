@@ -17,6 +17,7 @@ import {
   resolveClassMemberVisibility,
 } from './extractor-helpers.js';
 import { handleDecorator, extractParameters } from './entity-members.js';
+import { declaratorTypeName } from './relations/type-names.js';
 
 export { handleDecorator } from './entity-members.js';
 
@@ -32,7 +33,12 @@ export function handleClassDeclaration(
     ?? findChildText(node, 'identifier')
     ?? '<anonymous>';
   const visibility = resolveTopLevelVisibility(ctx);
-  entities.push(createEntity(node, name, 'class', visibility, ctx));
+  const classEntity = createEntity(node, name, 'class', visibility, ctx);
+  // Remember that a base class exists even when it is external (`extends EventEmitter`): pass 2 must not
+  // report a member missing from such a class as unresolved (it may be inherited from outside the project).
+  const base = baseClassText(node);
+  if (base) classEntity.annotations = { extends: base };
+  entities.push(classEntity);
 
   const prevInsideClass = ctx.insideClass;
   ctx.insideClass = true;
@@ -50,6 +56,19 @@ export function handleClassDeclaration(
   if (body) visitClassBody(body, ctx, entities, visitNode);
   ctx.parentNames.pop();
   ctx.insideClass = prevInsideClass;
+}
+
+/** Source text of the `extends` target (`Base`, `ns.Base`, `Mixin(Base)`), if any. */
+function baseClassText(node: SgNode): string | null {
+  const heritage = findChild(node, 'class_heritage');
+  if (!heritage) return null;
+  const clause = findChild(heritage, 'extends_clause') ?? heritage;
+  const kids = clause.children();
+  const at = kids.findIndex((c) => c.kind() === 'extends');
+  const base = at >= 0 ? kids[at + 1] : undefined;
+  if (!base || base.kind() === 'type_arguments') return null;
+  const text = base.text().replace(/\s+/g, ' ');
+  return text.length > 80 ? `${text.slice(0, 77)}...` : text;
 }
 
 function visitClassBody(
@@ -176,7 +195,12 @@ function handleVariableDeclarator(
     extractParameters(arrowFn, ctx, entities);
     ctx.parentNames.pop();
   } else {
-    entities.push(createEntity(declaration, name, 'variable', visibility, ctx));
+    const entity = createEntity(declaration, name, 'variable', visibility, ctx);
+    // Declared class of an instance (`const store = new Store()`, `: Store`): lets pass 2 resolve
+    // `store.get()` in files that import `store` (see ProjectSymbolTable.typedMember).
+    const typeRef = ctx.parentNames.length === 0 ? declaratorTypeName(declarator) : null;
+    if (typeRef) entity.annotations = { type_ref: typeRef };
+    entities.push(entity);
   }
 }
 

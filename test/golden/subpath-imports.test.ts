@@ -38,7 +38,8 @@ describe('package.json imports (#lib/*) end to end', () => {
 
   it('records a declared #import with no file as unresolved; $app/$env stay external', async () => {
     fx = await indexFixture(FIXTURE);
-    const unresolved = fx.unresolved.map((u) => `${u.type} ${u.target_name}`);
+    // `api.workspace()` (object-literal member) is a separate kind of leaf, counted apart
+    const unresolved = fx.unresolved.filter((u) => u.meta?.receiver === undefined).map((u) => `${u.type} ${u.target_name}`);
     // the import itself and the call through the unresolvable binding — nothing else
     expect(unresolved.sort()).toEqual(['call ghost', 'import #lib/ghost.js']);
     expect(fx.result.quality?.unresolved_count).toBe(2);
@@ -49,7 +50,7 @@ describe('package.json imports (#lib/*) end to end', () => {
     fx = await indexFixture(FIXTURE);
     writeFileSync(join(fx.root, WEB, 'lib/ghost.ts'), 'export function ghost(): void {}\n');
     await fx.reindex();
-    expect(fx.unresolved).toEqual([]);
+    expect(fx.unresolved.filter((u) => u.meta?.receiver === undefined)).toEqual([]);
     expect(edgeStrings(fx, ['import', 'call'])).toContain(`import ${WEB}/routes/+page.svelte -> ${WEB}/lib/ghost.ts`);
   });
 
