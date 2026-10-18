@@ -80,7 +80,7 @@ try {
   const { filename, files, size, unpackedSize } = packJson[0];
   const bad = files.map((f) => f.path).filter((p) => /^(src|test|benchmarks|vscode-extension)\//.test(p) || p.endsWith('.map'));
   if (bad.length) throw new Error(`tarball contains unexpected files: ${bad.slice(0, 5).join(', ')}`);
-  for (const must of ['README.md', 'LICENSE', 'dist/cli/index.js', 'dist/canvas/app/index.html']) {
+  for (const must of ['README.md', 'LICENSE', 'NOTICE', 'dist/cli/index.js', 'dist/canvas/app/index.html']) {
     if (!files.some((f) => f.path === must)) throw new Error(`tarball is missing ${must}`);
   }
   console.log(`packed ${filename}: ${files.length} files, ${size} B (unpacked ${unpackedSize} B)`);

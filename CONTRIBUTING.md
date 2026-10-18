@@ -31,7 +31,7 @@ Thanks for helping! A few rules keep parallel work safe.
 
 ```bash
 npm run lint && npm test && npm run build
-npm pack --dry-run      # only dist/, README, LICENSE, package.json
+npm pack --dry-run      # only dist/, README, LICENSE, NOTICE, package.json
 ```
 
 CI runs the same on Linux, macOS and Windows (Node 20 and 22) and installs
@@ -41,3 +41,9 @@ the packed tarball into a clean project as a smoke test.
 
 Document decisions (what and why) alongside the change. Diagrams use
 Mermaid.
+
+## License of contributions
+
+FlowLens is licensed under the [Apache License 2.0](LICENSE). By submitting
+a contribution you agree that it is licensed under Apache-2.0 as well
+(Section 5 of the license), with no additional terms.

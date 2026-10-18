@@ -51,4 +51,4 @@ and open the command palette → **FlowLens: Open Dependency Canvas**.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `flowlens.canvasUrl` | `http://localhost:5173` | Where the canvas dev server is running. Users with a custom deployment can point this at their own URL. |
+| `flowlens.canvasUrl` | `http://127.0.0.1:4280` | Where the FlowLens explorer runs (the daemon; `flowlens daemon status` shows the port if 4280 was busy). |

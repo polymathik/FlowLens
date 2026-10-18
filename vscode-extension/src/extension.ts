@@ -15,7 +15,7 @@
 import * as vscode from 'vscode';
 
 const CANVAS_URL_KEY = 'flowlens.canvasUrl';
-const DEFAULT_CANVAS_URL = 'http://localhost:5173';
+const DEFAULT_CANVAS_URL = 'http://127.0.0.1:4280';
 
 interface CanvasEntityClickMessage {
   type: 'flowlens:entity-click';
