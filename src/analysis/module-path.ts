@@ -5,13 +5,30 @@
  * `file` is the directory path). Root-level files belong to module '.'.
  */
 
-import { posix } from 'node:path';
 import type { Entity } from '../contracts/entities.js';
 
-/** Directory module of a repo-relative file path ('.' for root files). */
+/**
+ * Directory of a repo-relative path ('.' for root files). Same results as
+ * `path.posix.dirname` on repo-relative paths, without importing `node:path`
+ * so this module can also be bundled into the canvas (Map v2 shares it).
+ */
+export function dirnameOf(file: string): string {
+  const p = file.replace(/\\/g, '/').replace(/\/+$/, '');
+  const i = p.lastIndexOf('/');
+  if (i < 0) return '.';
+  if (i === 0) return '/';
+  return p.slice(0, i).replace(/\/+$/, '') || '/';
+}
+
+/**
+ * Directory module of a repo-relative file path ('.' for root files).
+ *
+ * This is the single definition of "module" for Health AND the Map: the
+ * Map's folder node holding a file has exactly this path (the Map only
+ * collapses single-child chains of folders for display).
+ */
 export function moduleOfFile(file: string): string {
-  const dir = posix.dirname(file.replace(/\\/g, '/'));
-  return dir === '' ? '.' : dir;
+  return dirnameOf(file);
 }
 
 /** Module of an entity: a module entity is its own module; others use their file's directory. */
