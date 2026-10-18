@@ -54,10 +54,10 @@ export function complexHits(ctx: HealthContext, file: string): Hit[] {
   return hits.sort((a, b) => b.c.value - a.c.value || a.entity.id.localeCompare(b.entity.id));
 }
 
-function why(c: Complexity): string {
+function why(c: Complexity, subject = 'It has'): string {
   const metric = c.metric === 'cognitive' ? 'nested decisions and branches' : 'separate paths through it';
   return (
-    `It has a lot of ${metric} (score ${c.value}; above ${c.warn} is hard to follow). ` +
+    `${subject} a lot of ${metric} (score ${c.value}; above ${c.warn} is hard to follow). ` +
     'Code like this is where bugs hide, and where AI edits most often change behaviour by accident.'
   );
 }
@@ -129,7 +129,7 @@ function groupFinding(ctx: HealthContext, file: string, hits: Hit[]): RawFinding
     target: `group:${file}`,
     severity,
     title: `${plural(hits.length, 'function')} in ${shortPath(file)} are hard to follow`,
-    why: why(worst.c),
+    why: why(worst.c, 'The worst one has'),
     evidence: hits.map((h) => ({
       file,
       line: h.entity.location.line_start,

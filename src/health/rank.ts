@@ -68,7 +68,7 @@ export function nextSteps(findings: HealthFinding[]): HealthNextStep[] {
     .slice(0, 3)
     .map((f) => ({
       finding_id: f.id,
-      action: `${VERBS[f.kind]}: ${f.title}. Copy fix prompt #${f.rank} into your AI assistant.`,
+      action: `${VERBS[f.kind]}: ${f.title.replace(/^(Tangle|Type loop): /, '')}. Copy fix prompt #${f.rank} into your AI assistant.`,
     }));
   if (steps.length > 0) return steps;
   return [
