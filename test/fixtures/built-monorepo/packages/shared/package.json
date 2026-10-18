@@ -1,0 +1,7 @@
+{
+  "name": "@scope/shared",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./compiled/index.js",
+  "types": "./compiled/index.d.ts"
+}

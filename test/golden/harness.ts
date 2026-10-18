@@ -26,11 +26,18 @@ export interface IndexedFixture {
   cleanup(): Promise<void>;
 }
 
-/** Copy a fixture (or any directory) to a temp dir and index it. */
-export async function indexFixture(nameOrPath: string): Promise<IndexedFixture> {
+/**
+ * Copy a fixture (or any directory) to a temp dir and index it.
+ * `prepare(root)` runs on the copy before the first index (e.g. to create build output).
+ */
+export async function indexFixture(
+  nameOrPath: string,
+  prepare?: (root: string) => void,
+): Promise<IndexedFixture> {
   const src = nameOrPath.startsWith('/') ? nameOrPath : join(FIXTURES, nameOrPath);
   const root = mkdtempSync(join(tmpdir(), 'fl-golden-'));
   cpSync(src, root, { recursive: true });
+  prepare?.(root);
   const flowlensDir = join(root, '.flowlens');
   const store = new LevelGraphStore();
   await store.open(join(flowlensDir, 'graph'));
