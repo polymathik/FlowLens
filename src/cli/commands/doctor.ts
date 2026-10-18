@@ -11,7 +11,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { resolve } from 'node:path';
 import { runDoctor } from '../../doctor/doctor.js';
-import type { DiagnosticCheck } from '../../contracts/doctor.js';
+import type { DiagnosticCheck, OverallStatus } from '../../contracts/doctor.js';
 
 export const doctorCommand = new Command('doctor')
   .description('Run diagnostic health checks on the current FlowLens setup')
@@ -41,7 +41,7 @@ function printReport(checks: DiagnosticCheck[]): void {
 }
 
 function printFooter(report: {
-  overall: DiagnosticCheck['status'];
+  overall: OverallStatus;
   checks: DiagnosticCheck[];
 }): void {
   const warns = report.checks.filter((c) => c.status === 'warning').length;
@@ -60,5 +60,6 @@ function printFooter(report: {
 function pickGlyph(status: DiagnosticCheck['status']): string {
   if (status === 'ok') return chalk.green('✓');
   if (status === 'warning') return chalk.yellow('⚠');
+  if (status === 'skipped') return chalk.gray('–');
   return chalk.red('✗');
 }

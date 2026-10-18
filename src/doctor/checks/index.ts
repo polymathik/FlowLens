@@ -8,7 +8,8 @@ import { graphPopulatedCheck } from './graph-populated.js';
 import { configValidCheck } from './config-valid.js';
 import { architectureValidCheck } from './architecture-valid.js';
 import { fileIndexCurrentCheck } from './file-index-current.js';
-import { mcpReachableCheck, aiConfiguredCheck } from './mcp-ai.js';
+import { mcpReachableCheck } from './mcp-check.js';
+import { aiConfiguredCheck } from './ai-check.js';
 import {
   nodeVersionCheck,
   gitAvailableCheck,
