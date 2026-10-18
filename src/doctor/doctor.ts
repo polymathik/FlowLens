@@ -15,7 +15,7 @@ import type {
   DoctorContext,
   DoctorReport,
   DiagnosticCheck,
-  DiagnosticStatus,
+  OverallStatus,
   DiagnosticRunner,
 } from '../contracts/doctor.js';
 import { ALL_CHECKS } from './checks/index.js';
@@ -68,7 +68,7 @@ async function safeRun(
   }
 }
 
-function rollUp(results: DiagnosticCheck[]): DiagnosticStatus {
+function rollUp(results: DiagnosticCheck[]): OverallStatus {
   if (results.some((r) => r.status === 'error')) return 'error';
   if (results.some((r) => r.status === 'warning')) return 'warning';
   return 'ok';

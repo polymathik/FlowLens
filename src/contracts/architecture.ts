@@ -11,7 +11,7 @@ export interface ArchitectureLayer {
 
 export interface ArchitectureConfig {
   version: 2;
-  inferred_by: 'heuristic' | 'ai:anthropic' | 'ai:ollama' | 'manual';
+  inferred_by: 'heuristic' | 'ai:anthropic' | 'ai:openai' | 'ai:ollama' | 'manual';
   inferred_at: string;
   layers: ArchitectureLayer[];
 }

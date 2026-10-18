@@ -6,13 +6,18 @@
  *   - ok:      the thing works as expected
  *   - warning: recoverable / advisory (e.g. file index stale)
  *   - error:   fatal for core operation (e.g. .flowlens/ missing)
+ *   - skipped: an optional feature that is turned off (e.g. AI disabled).
+ *              Shown to the user but never affects `overall`.
  *
  * A `DoctorReport` aggregates check results. `overall` rolls up via the
  * worst status present: any `error` → overall error; else any `warning` →
  * overall warning; else `ok`.
  */
 
-export type DiagnosticStatus = 'ok' | 'warning' | 'error';
+export type DiagnosticStatus = 'ok' | 'warning' | 'error' | 'skipped';
+
+/** Roll-up status of a report — `skipped` checks never contribute. */
+export type OverallStatus = Exclude<DiagnosticStatus, 'skipped'>;
 
 export interface DiagnosticCheck {
   /** Short identifier, e.g. `flowlens-dir-exists`. Stable across versions. */
@@ -28,7 +33,7 @@ export interface DiagnosticCheck {
 
 export interface DoctorReport {
   checks: DiagnosticCheck[];
-  overall: DiagnosticStatus;
+  overall: OverallStatus;
   timestamp: string;
 }
 

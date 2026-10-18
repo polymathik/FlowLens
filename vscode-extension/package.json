@@ -3,6 +3,13 @@
   "displayName": "FlowLens",
   "description": "Visual dependency graph and code intelligence, inside VS Code.",
   "version": "0.1.0-alpha",
+  "publisher": "flowlens-dev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sarupurisailalith/FlowLens.git",
+    "directory": "vscode-extension"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },

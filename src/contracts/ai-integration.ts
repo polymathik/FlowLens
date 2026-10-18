@@ -14,6 +14,21 @@
 
 export type AIProvider = 'anthropic' | 'openai' | 'ollama';
 
+/** Every supported provider, in display order (single source for validation/help). */
+export const AI_PROVIDERS: readonly AIProvider[] = ['anthropic', 'openai', 'ollama'];
+
+/**
+ * Raised for invalid user configuration (e.g. `--provider bogus`). CLI
+ * commands map it to exit code 2 ("configuration error") instead of
+ * silently falling back to heuristics.
+ */
+export class AIConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AIConfigError';
+  }
+}
+
 /** Topology-only representation of the graph for AI consumption. */
 export interface AIInferenceRequest {
   topology: {

@@ -1,19 +1,52 @@
 {
   "name": "flowlens",
   "version": "0.1.0",
-  "description": "Local-first code intelligence platform — Figma for Developers",
+  "description": "Local-first codebase map and health check for AI-built projects, with an MCP server for coding agents",
+  "keywords": [
+    "code-intelligence",
+    "dependency-graph",
+    "architecture",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "static-analysis",
+    "codebase-visualization",
+    "local-first",
+    "tree-sitter"
+  ],
+  "homepage": "https://github.com/sarupurisailalith/FlowLens#readme",
+  "bugs": {
+    "url": "https://github.com/sarupurisailalith/FlowLens/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sarupurisailalith/FlowLens.git"
+  },
+  "license": "MIT",
+  "author": "Sailalith Sarupuri",
   "type": "module",
   "main": "dist/cli/index.js",
   "bin": {
     "flowlens": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build:server && npm run build:canvas",
+    "build:server": "tsc",
+    "build:canvas": "vite build --config src/canvas/vite.config.ts",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit",
-    "bench": "tsx benchmarks/run-all.ts"
+    "lint": "tsc --noEmit && tsc -p src/canvas/tsconfig.json --noEmit",
+    "bench": "tsx benchmarks/run-all.ts",
+    "prepublishOnly": "npm run lint && npm test && npm run clean && npm run build",
+    "test:canvas:e2e": "node test/canvas/e2e/run.mjs",
+    "smoke:pack": "node .github/scripts/pack-smoke.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -36,23 +69,17 @@
     "@ast-grep/lang-yaml": "^0.0.6",
     "@ast-grep/napi": "^0.42.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@xyflow/react": "^12.10.2",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "classic-level": "^3.0.0",
     "commander": "^14.0.3",
     "cors": "^2.8.6",
-    "d3-force": "^3.0.0",
-    "elkjs": "^0.11.1",
     "express": "^5.2.1",
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
     "levelgraph": "^4.0.0",
     "minimatch": "^10.2.4",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "zod": "^4.3.6",
-    "zustand": "^5.0.12"
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": ">=0.27.0",
@@ -74,10 +101,18 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "@xyflow/react": "^12.10.2",
+    "d3-force": "^3.0.0",
+    "elkjs": "^0.11.1",
+    "html-to-image": "1.11.11",
     "memory-level": "^3.1.0",
+    "playwright": "1.56.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vite": "^6.4.1",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "zustand": "^5.0.12"
   }
 }
