@@ -46,7 +46,7 @@ describe('explorer hash routes', () => {
 
   it('reads deep links built by buildCanvasUrl with a project id', () => {
     const url = buildCanvasUrl({ kind: 'file', identifier: 'src/x.ts', overlay: 'complexity', projectId: 'p9', baseUrl: 'http://h' });
-    expect(url).toBe('http://h/#/p/p9/file/src%2Fx.ts?overlay=complexity');
+    expect(url).toBe('http://h/#/p/p9/map/file/src%2Fx.ts?overlay=complexity');
     expect(parseExplorerHash(url.slice(url.indexOf('#')))).toMatchObject({ projectId: 'p9', view: 'map', target: { kind: 'file', identifier: 'src/x.ts' } });
   });
 

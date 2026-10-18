@@ -1,62 +1,88 @@
 # FlowLens
 
-**A local-first map and health check for your codebase — built for projects
+**A local-first map and health check for your codebase, built for projects
 written with AI.**
 
 You prototyped something fast with Claude Code, Cursor, Lovable or Bolt. It
 works, but you no longer know how the pieces fit together, which files
 everything depends on, or where the tangles are. FlowLens indexes your repo,
-draws it as an interactive map, flags circular dependencies and
-architecture-rule violations, and gives your coding agent the same
-structural knowledge through an MCP server — so it stops guessing.
+gives it a plain-English health grade with ready-to-paste fix prompts, draws
+it as an interactive map, and gives your coding agent the same structural
+knowledge through an MCP server and Claude Code hooks, so it stops guessing.
 
-- **Visual canvas** — system → module → file → symbol, with metrics overlays.
-- **Health checks** — cycles, layer violations, complexity hot spots
-  (`flowlens check`, CI-friendly exit codes).
-- **MCP server** — 12 tools (`get_context`, `get_dependents`, `traverse`,
-  `detect_cycles`, `check_architecture`, …) for Claude Code and other agents.
-- **Exports** — JSON, Graphviz DOT, Mermaid.
+- **Health check-up**: a grade, a score breakdown and the top risks
+  (tangles, hard-to-follow code, fragile hubs, oversized files, rule breaks),
+  each with a fix prompt for your AI assistant (`flowlens report`, or the
+  Health screen in the explorer).
+- **Explorer**: one browser app for all your projects. Home shows every
+  project's health; each project has a Health screen and an interactive Map
+  (system → module → file → symbol, with overlays).
+- **For coding agents**: an MCP server with 12 tools, health and context
+  resources, and optional Claude Code hooks that add context to prompts and
+  check every edit.
+- **CI-friendly checks**: `flowlens check` exits non-zero on dependency
+  cycles or architecture-rule violations. Exports to JSON, Graphviz DOT and
+  Mermaid.
 
-> **Status:** pre-release (0.1). FlowLens is **not yet published to npm** —
-> the `flowlens` name on npm is not ours. Install from source or a tarball
-> (below).
+> **Status:** pre-release (0.1). FlowLens is **not published to npm yet**.
+> It will be published as `flowlens`. Until then, install it from a tarball
+> built from source (below).
 
-## 60-second quickstart
+## Quickstart
 
 Requires Node.js 20 or newer.
 
 ```bash
 # 1. Build a tarball from source (once)
 git clone https://github.com/sarupurisailalith/FlowLens.git
-cd FlowLens && npm ci && npm pack          # → flowlens-0.1.0.tgz
+cd FlowLens && npm ci && npm run build && npm pack    # → flowlens-0.1.0.tgz
 
 # 2. Use it in any project
-cd ~/code/my-app
-npm i -D ~/path/to/FlowLens/flowlens-0.1.0.tgz   # or: npm i -g <tgz>
-npx flowlens init        # index + infer architecture layers → .flowlens/
-npx flowlens check       # cycles + architecture violations
-npx flowlens canvas      # opens http://127.0.0.1:5173/
+cd your-project
+npm i -D /path/to/FlowLens/flowlens-0.1.0.tgz         # or: npm i -g <tgz>
+npx flowlens init      # index the code, infer architecture layers → .flowlens/
+npx flowlens canvas    # open the explorer in your browser
+npx flowlens report    # the same health check-up as Markdown in the terminal
 ```
 
-`flowlens canvas` serves the pre-built UI and the graph API from **one local
-port**; no dev server or build step is needed in your project.
+`flowlens canvas` signs your browser in to the local FlowLens daemon and
+opens the explorer at **http://127.0.0.1:4280** (or another free port, see
+[The daemon](#the-daemon)). Nothing is built or served from your project.
 
-## Commands
+## The explorer
 
-| Command | What it does |
+| Screen | What you see |
 |---|---|
-| `flowlens init [--ai --provider anthropic\|openai\|ollama]` | Create `.flowlens/`, index the repo, infer architecture layers (heuristic by default; optional AI uses graph topology only) |
-| `flowlens index` | Incremental re-index after changes |
-| `flowlens check [--cycles] [--architecture] [--format json]` | Validate architecture rules and detect cycles (non-zero exit for CI) |
-| `flowlens canvas [--port 5173] [--no-open]` | Open the visual canvas (UI + API on one port, bound to 127.0.0.1) |
-| `flowlens serve` | Start the MCP server on stdio for coding agents |
-| `flowlens watch` | Re-index incrementally on file changes |
-| `flowlens export --format json\|dot\|mermaid [--scope src/x/]` | Export the graph (Mermaid warns and suggests `--scope` for large graphs) |
-| `flowlens doctor [--format json]` | Diagnose setup: graph, config, MCP server (started in-process), AI, environment |
+| **Home** | A card per registered project with its grade and top risk, worst first. Missing or moved projects explain themselves and can be removed. |
+| **Health** (per project) | Grade and score breakdown, then findings ranked by urgency. Each finding says why it matters in plain English, lists the exact files and lines, has **Copy fix prompt**, and **Show on map**. |
+| **Map** (per project) | The dependency map: double-click to drill from system to module to file to symbol. Overlays: code quality, recent changes, hotspots, dependency cycles, rule breaks, interface diff. Search (⌘K), rules editor, PNG/SVG export, light and dark themes. |
 
-## Connect Claude Code (MCP)
+Links from MCP tools and `flowlens report` ("Show on map") open the right
+project and view, e.g. `http://127.0.0.1:4280/#/p/<project-id>/map/file/src%2Fapp.ts?overlay=cycles`.
+The explorer only works in a browser signed in through `flowlens canvas`; if
+you open a link without a session, the page tells you to run
+`flowlens canvas` (sign-in links work once, for 60 seconds, and sessions end
+when the daemon restarts).
 
-From your project root:
+Add `--watch` to keep the project re-indexing while the command runs; open
+tabs update live.
+
+## Health report
+
+```bash
+npx flowlens report                         # Markdown, top 10 findings
+npx flowlens report --format html --out health.html
+npx flowlens report --format json           # the HealthReport contract
+```
+
+Findings are written for people who did not hand-write their code. Loops
+made only of `import type` lines or type annotations are listed as
+information (they disappear at runtime), and lockfiles, generated or
+minified files and data files (JSON, YAML) are never flagged for size.
+
+## Connect Claude Code
+
+**MCP server.** From your project root:
 
 ```bash
 claude mcp add --transport stdio --scope project flowlens -- npx flowlens serve
@@ -76,49 +102,144 @@ or commit an `.mcp.json`:
 }
 ```
 
-Install FlowLens in the project first (quickstart step 2) — until it is on
-npm, a bare `npx flowlens` in a project without it would fetch an unrelated
-package. Run `flowlens init` first so the graph exists. `flowlens doctor` verifies the
-MCP server starts and lists its tools. (MCP config format per the
-[Claude Code MCP docs](https://code.claude.com/docs/en/mcp).)
+Install FlowLens in the project first (quickstart step 2): until it is on
+npm, `npx flowlens` in a project without it cannot find it. `flowlens serve`
+indexes the project on first use if needed. Tools: `get_context`,
+`get_dependents`, `get_module_interface`, `annotate`, `traverse`,
+`detect_cycles`, `get_metrics`, `diff_interface`, `check_architecture`,
+`get_summary`, `get_hotspots`, `get_layer_map`. Resources:
+`flowlens://health`, `flowlens://architecture`, `flowlens://hotspots`,
+`flowlens://changed-context`; prompts `flowlens-plan-task` and
+`flowlens-review-change`. `flowlens doctor` checks that the server starts.
+(Config format per the [Claude Code MCP docs](https://code.claude.com/docs/en/mcp).)
 
-## Multiple projects (coming in this release)
+**Hooks (optional).**
 
-FlowLens is moving to one explorer for all your repos: every `flowlens init`
-registers the project in `~/.flowlens/projects.json`, a small local graph
-service owns each project's database (so `serve`, `check`, hooks and the
-canvas no longer fight over locks), and `flowlens canvas` opens a **Home**
-tab with the health of every registered project plus one tab per project.
-Missing or moved projects show a relink/remove prompt.
+```bash
+npx flowlens agent install claude-code     # writes .claude/settings.json
+npx flowlens agent uninstall claude-code   # removes only FlowLens's entries
+```
+
+This adds three project hooks: `SessionStart` and `UserPromptSubmit` inject
+a compact map of the code relevant to the prompt; `PostToolUse` re-indexes
+edited files and reports new cycles or rule breaks (`--strict`: new ones
+block). The existing settings file is backed up first
+(`.claude/settings.json.flowlens-backup-*`).
+
+> **Do not commit the installed hooks as-is.** The hook commands contain an
+> absolute path to this machine's FlowLens install, so they will not work on
+> other machines. Keep `.claude/settings.json` out of git, or pass a portable
+> command with `--command "npx flowlens"` once FlowLens is a dependency of the
+> project.
+
+## The daemon
+
+One small local service (the FlowLens daemon) owns every project's graph
+database, so `serve`, `watch`, `check`, `index`, hooks and the explorer can
+all run at the same time without lock errors. Any command that needs it
+starts it automatically; it exits after an hour without use.
+
+- Listens on `127.0.0.1` only, port **4280** by default (set
+  `FLOWLENS_DAEMON_PORT` to choose another; if the port is busy it picks a
+  free one). Every request needs a random token or a browser session.
+- `flowlens daemon status` shows whether it runs and which project graphs
+  are open; `flowlens daemon stop` stops it; `flowlens daemon start` starts
+  it in the background.
+- `--no-daemon` (or `FLOWLENS_NO_DAEMON=1`) makes a command open the
+  database directly, for CI or scripts. Only one such process can use a
+  project at a time.
+- `FLOWLENS_HOME` (default `~/.flowlens`) holds the project registry and the
+  daemon's files.
+
+## Commands
+
+Every command accepts `-h, --help`. Most accept `--no-daemon`.
+
+| Command | What it does | Options |
+|---|---|---|
+| `flowlens init` | Create `.flowlens/`, index the repo, infer architecture layers, register the project | `--force` (start over), `--ai`, `--provider anthropic\|openai\|ollama`, `--model <m>`, `--no-daemon` |
+| `flowlens index` | Incremental re-index after changes | `--no-daemon` |
+| `flowlens report` | Plain-English health check-up with fix prompts | `--format md\|html\|json`, `--out <file>`, `--top <n>` (10), `--churn-days <n>` (90), `--no-git`, `--no-daemon` |
+| `flowlens canvas` | Open the explorer (all registered projects) in the browser | `--no-open` (print the sign-in link), `--watch`, `--debounce <ms>` (300), `--dev` and `--port <port>` (contributors only: Vite UI on `--port`, default 5173) |
+| `flowlens check` | Cycle detection and architecture validation; exit 0 clean, 1 issues, 2 error | `--format text\|json`, `--cycles`, `--architecture`, `--severity low\|medium\|high`, `--scope <path>`, `--include-type-only`, `--no-daemon` |
+| `flowlens serve` | MCP server on stdio for coding agents | `--watch`, `--transport stdio`, `--no-daemon` |
+| `flowlens watch` | Re-index on file changes | `--debounce <ms>` (300), `--no-daemon` |
+| `flowlens export` | Export the graph | `--format json\|dot\|mermaid`, `--scope <path>`, `--relations <types>`, `--no-metrics`, `--output <file>`, `--no-daemon` |
+| `flowlens snapshot` | Store a graph snapshot for the current git HEAD (used by interface diffs) | `--force`, `--list`, `--keep <n>` (20), `--no-daemon` |
+| `flowlens doctor` | Diagnose setup: graph, config, MCP server, AI, environment | `--format text\|json` |
+| `flowlens daemon start\|stop\|status` | Manage the local graph service | `start --foreground`, `status --json` |
+| `flowlens projects list\|remove\|rename` | Manage registered projects (`remove` keeps `.flowlens/`) | `list --json`; `remove <project>`; `rename <project> <name>` |
+| `flowlens agent context` | Compact code context for coding agents (used by hooks) | `--prompt`, `--changed <files>`, `--git`, `--event`, `--max-items`, `--budget`, `--format markdown\|json`, `--root`, `--hook`, `--no-daemon` |
+| `flowlens agent guard` | Graph risk for changed files (used by hooks) | `--changed <files>`, `--git`, `--reindex`, `--strict`, `--min-risk none\|low\|medium\|high`, `--max-items`, `--budget`, `--format`, `--root`, `--hook`, `--no-daemon` |
+| `flowlens agent baseline` | Show or reset the strict-mode baseline of pre-existing issues | `--reset`, `--format`, `--root`, `--no-daemon` |
+| `flowlens agent install\|uninstall claude-code` | Add or remove Claude Code hooks in `.claude/settings.json` | install: `--command <cmd>`, `--force`, `--format`, `--root` |
+
+## Language support
+
+What the golden tests verify (TypeScript/JavaScript, Python, Java and Go
+are fully linked across files; other languages are indexed at file level
+with same-file links only):
+
+| Language | Entities | Cross-file relations | Same-file only | Complexity |
+|---|---|---|---|---|
+| TypeScript / TSX | file, class, interface, function, method, field, variable, parameter, type, enum, namespace, decorator | import (relative, `.js`→`.ts`, tsconfig paths, workspaces, barrels, `import type`), extend, implement, override, call, create, throw, return | contain, decorate, mixin | yes |
+| JavaScript (ESM + CommonJS) | as TS minus types | import (ESM, `require`), extend, override, call, create | contain, use | yes |
+| Python | file, class, function, method, field, variable, decorator | import (absolute, relative, `__init__` re-exports), extend, override, call, create | contain, decorate | yes |
+| Java | file, class, interface, enum, method, field, annotation | import, extend, implement, override, call, create, throw, return, parameter | contain, decorate, use | yes |
+| Go | file, struct, interface, function, method, field, variable | import (go.mod paths), call, create | contain | yes |
+| Kotlin, C#, PHP, Rust, C, C++, Swift, Scala, Ruby, Bash | entities | none (imports recorded as unresolved) | names in the same file | cyclomatic where measured |
+| JSON, YAML, CSS, HTML | file | none | none | none |
 
 ## Privacy: local-first
 
-- Indexing, analysis, the canvas and the MCP server run entirely on your
-  machine. **No network calls** during indexing or analysis; no telemetry.
-- The canvas binds to `127.0.0.1` by default.
+- Indexing, analysis, the explorer, the daemon and the MCP server run
+  entirely on your machine. **No network calls** during indexing or
+  analysis, and no telemetry.
+- The daemon binds `127.0.0.1` only and requires a token (CLI) or a
+  sign-in cookie (browser).
 - The only optional network use is `flowlens init --ai`, which sends
-  **graph topology only** (file paths, cluster sizes, edge counts — never
+  **graph topology only** (file paths, cluster sizes, edge counts, never
   source code) to the provider you choose; Ollama keeps even that local.
-- Everything FlowLens writes lives in `.flowlens/` (add it to `.gitignore`).
+- What FlowLens writes:
+  - `.flowlens/` in each project: the graph, manifest, snapshots,
+    architecture rules, caches. Add it to `.gitignore`.
+  - `~/.flowlens/` (or `$FLOWLENS_HOME`): `projects.json` (the registry of
+    project paths), `daemon.json` (port, pid and token, mode 0600) and
+    `daemon.log`.
+  - Only if you install hooks: `.claude/settings.json` in the project, plus
+    a `.claude/settings.json.flowlens-backup-*` copy of the previous file.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| "No FlowLens map found for this folder" | Run `npx flowlens init` in the project root first. |
+| The explorer says you need to sign in | Run `npx flowlens canvas` again; links work once, for 60 seconds, and sessions end when the daemon restarts. |
+| The explorer is not on port 4280 | Port 4280 was busy, so the daemon picked a free port. `flowlens daemon status` shows it; `flowlens canvas` always prints the right link. |
+| "busy" / graph locked | A `--no-daemon` process holds the project's database. Stop it, or run without `--no-daemon`. |
+| Results look stale after big changes | `npx flowlens index` (or keep `flowlens canvas --watch` / `serve --watch` running). |
+| The daemon misbehaves after an upgrade | `npx flowlens daemon stop`; the next command starts the new version. |
+| Anything else | `npx flowlens doctor` checks the graph, config, MCP server and environment. |
 
 ## Development
 
 ```bash
 npm ci
-npm run lint        # tsc --noEmit for the CLI and the canvas
-npm test            # vitest
-npm run build       # tsc → dist/, vite build → dist/canvas/app
+npm run lint            # tsc --noEmit for the CLI and the canvas
+npm test                # vitest
+npm run build           # tsc → dist/, vite build → dist/canvas/app
+npm run test:canvas:e2e # Playwright scenarios against the built explorer
+npm run smoke:pack      # npm pack + clean install + CLI/explorer smoke
 node dist/cli/index.js --help
 ```
 
-- Canvas with hot reload (source checkout only):
-  `node dist/cli/index.js canvas --dev` (Vite middleware on the same port).
-- Languages: TypeScript/JavaScript are first-class; Python, Go, Rust, Java,
-  C/C++ and others are parsed via `@ast-grep` grammars with lighter
-  relation coverage.
-- Architecture and contracts: `src/contracts/` is the source of truth for
-  every component boundary. See [CONTRIBUTING.md](CONTRIBUTING.md).
+- Explorer with hot reload (source checkout only):
+  `node dist/cli/index.js canvas --dev` (Vite on `--port`, default 5173,
+  proxying the API to the daemon).
+- `src/contracts/` is the source of truth for every component boundary.
+  See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 Sailalith Sarupuri
+[Apache License 2.0](LICENSE). Copyright 2026 Sailalith Sarupuri; see
+[NOTICE](NOTICE).

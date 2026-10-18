@@ -22,7 +22,7 @@
     "type": "git",
     "url": "git+https://github.com/sarupurisailalith/FlowLens.git"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "Sailalith Sarupuri",
   "type": "module",
   "main": "dist/cli/index.js",
@@ -31,6 +31,8 @@
   },
   "files": [
     "dist",
+    "LICENSE",
+    "NOTICE",
     "!dist/**/*.map",
     "!dist/**/*.tsbuildinfo"
   ],
@@ -73,7 +75,6 @@
     "chokidar": "^5.0.0",
     "classic-level": "^3.0.0",
     "commander": "^14.0.3",
-    "cors": "^2.8.6",
     "express": "^5.2.1",
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
@@ -94,7 +95,6 @@
     }
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
     "@types/d3-force": "^3.0.10",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",

@@ -10,6 +10,7 @@
  * options are invalid. Output is written with a flush callback and the
  * process exits naturally, so piped stdout is never truncated.
  */
+import { readDaemonInfo } from '../../service/daemon-info.js';
 import { Command } from 'commander';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -53,7 +54,7 @@ export async function runReport(rootDir: string, opts: ReportOptions): Promise<R
   }
   try {
     const input = await loadHealthInput(rootDir, { churnDays, noGit: opts.git === false, daemon: opts.daemon });
-    const report = await buildHealthReport(input, { top });
+    const report = await buildHealthReport(input, { top, canvas_base_url: runningExplorerUrl() });
     const output = renderHealth(report, format);
     if (opts.out) {
       await writeFile(resolve(rootDir, opts.out), output, 'utf8');
@@ -98,3 +99,10 @@ export const reportCommand = new Command('report')
     if (result.message) await write(process.stderr, `${result.message}\n`);
     process.exitCode = result.exitCode;
   });
+
+/** "Show on map" links point at the running daemon's explorer when there is one. */
+function runningExplorerUrl(): string | undefined {
+  if (process.env.FLOWLENS_CANVAS_URL) return undefined;
+  const port = readDaemonInfo()?.port;
+  return port ? `http://127.0.0.1:${port}` : undefined;
+}

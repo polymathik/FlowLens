@@ -7,7 +7,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ServerDependencies } from '../server.js';
+import type { ServerDependencies } from '../../contracts/mcp/server.js';
 import type { Relation, RelationType } from '../../contracts/relations.js';
 import {
   LIMITS, EntityToolSchemas,
@@ -87,7 +87,7 @@ export async function handleGetDependents(args: GetDependentsInput, deps: Server
   };
 
   return toMCPContent(buildResponse(data, view.lastIndexed, {
-    page, detail, canvas_url: entityCanvasUrl(entity),
+    page, detail, canvas_url: entityCanvasUrl(entity, undefined, deps),
   }));
 }
 

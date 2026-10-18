@@ -13,6 +13,7 @@ import type { Relation, RelationType } from '../contracts/relations.js';
 import type { ArchitectureConfig } from '../contracts/architecture.js';
 import type {
   DetectedCycle,
+  CycleEdge,
   CycleGranularity,
   CycleSeverity,
 } from '../contracts/analysis/cycles.js';
@@ -35,6 +36,13 @@ export interface CycleDetectorOptions {
   architecture?: ArchitectureConfig | null;
   /** Precomputed entity id -> layer assignment for `architecture`. */
   layerMap?: Map<string, string | null>;
+  /**
+   * Phase 12: also count type-level edges (type-only imports, annotations,
+   * references to interfaces/type aliases). Default false — runtime cycles
+   * only. When true, loops that exist only through such edges are marked
+   * `type_only`.
+   */
+  include_type_only?: boolean;
 }
 
 export const SEVERITY_ORDER: Record<CycleSeverity, number> = {
@@ -58,9 +66,13 @@ export function detectCyclesInData(
   options: CycleDetectorOptions,
 ): DetectedCycle[] {
   const { granularity, relation_types, severity_threshold, scope } = options;
-  const collapsed = collapseGraph(allEntities, allEdges, granularity, relation_types);
+  const includeTypeOnly = options.include_type_only === true;
+  const collapsed = collapseGraph(allEntities, allEdges, granularity, relation_types, { includeTypeOnly });
   const sccs = findStronglyConnectedComponents(collapsed.adjacency);
   if (sccs.length === 0) return [];
+  const runtimeKeys = includeTypeOnly
+    ? runtimeSccKeys(allEntities, allEdges, granularity, relation_types)
+    : null;
 
   const ctx = buildContext(allEntities, collapsed, options, sccs);
   const cycles: DetectedCycle[] = [];
@@ -69,7 +81,9 @@ export function detectCyclesInData(
     const members = new Set(scc);
     const memberPaths = scc.map((n) => ctx.pathOf(n));
     if (!memberPaths.some((p) => isInScope(p, scope))) continue;
-    cycles.push(buildCycle(scc, members, granularity, collapsed, ctx));
+    const cycle = buildCycle(scc, members, granularity, collapsed, ctx);
+    if (runtimeKeys && !runtimeKeys.has(sccKey(scc))) cycle.type_only = true;
+    cycles.push(cycle);
   }
 
   const filtered = severity_threshold
@@ -80,6 +94,21 @@ export function detectCyclesInData(
     SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity]
     || a.length - b.length
     || a.id.localeCompare(b.id));
+}
+
+function sccKey(scc: string[]): string {
+  return [...scc].sort().join('\u0000');
+}
+
+/** Member-set keys of the runtime-only SCCs, to tell which loops need type edges. */
+function runtimeSccKeys(
+  entities: Entity[],
+  edges: Relation[],
+  granularity: CycleGranularity,
+  relationTypes?: RelationType[],
+): Set<string> {
+  const runtime = collapseGraph(entities, edges, granularity, relationTypes);
+  return new Set(findStronglyConnectedComponents(runtime.adjacency).map(sccKey));
 }
 
 interface DetectionContext {
@@ -182,10 +211,16 @@ function buildCycle(
   const onPath = new Set(path);
   const entities = [...path.slice(0, -1), ...sorted.filter((m) => !onPath.has(m))];
 
-  const edges = [];
+  const edges: CycleEdge[] = [];
   for (let i = 0; i < path.length - 1; i++) {
-    const types = collapsed.relationTypes.get(`${path[i]}->${path[i + 1]}`);
-    edges.push({ from: path[i], to: path[i + 1], relation_types: [...(types ?? [])].sort() });
+    const key = `${path[i]}->${path[i + 1]}`;
+    const types = collapsed.relationTypes.get(key);
+    edges.push({
+      from: path[i],
+      to: path[i + 1],
+      relation_types: [...(types ?? [])].sort(),
+      ...(collapsed.typeOnlyHops.has(key) ? { type_only: true } : {}),
+    });
   }
 
   const layers = new Set<string>();

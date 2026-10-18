@@ -5,7 +5,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ServerDependencies } from '../server.js';
+import type { ServerDependencies } from '../../contracts/mcp/server.js';
 import type { CycleGranularity, DetectedCycle } from '../../contracts/analysis/cycles.js';
 import {
   ANALYSIS_LIMITS, AnalysisToolSchemas,
@@ -33,6 +33,7 @@ export async function handleDetectCycles(args: DetectCyclesInput, deps: ServerDe
       relation_types: args.relation_types,
       scope: normalizeScope(args.scope),
       severity_threshold: args.severity_threshold,
+      include_type_only: args.include_type_only,
     }, arch));
   }
   all.sort((a, b) => SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity] || a.length - b.length);
@@ -70,7 +71,7 @@ export function registerDetectCycles(server: McpServer, deps: ServerDependencies
     'detect_cycles',
     {
       description:
-        'Detects dependency cycles at file, module (directory) or function granularity, with ordered cycle paths and layer-aware severity.',
+        'Detects runtime dependency cycles at file, module (directory) or function granularity, with ordered cycle paths and layer-aware severity. Type-only edges (import type, type annotations) are ignored unless include_type_only is true.',
       inputSchema: AnalysisToolSchemas.DetectCyclesInputShape,
       annotations: { readOnlyHint: true },
     },

@@ -106,4 +106,19 @@ describe('GraphPool', () => {
     expect(pool.busy()).toBe(false);
     expect(demands).toEqual([true, false]);
   });
+
+  it('state exposes revision and open_since (Phase 12)', async () => {
+    const f = factory();
+    const pool = new GraphPool(opts(), f.make);
+    pool.acquireLease(P('a'), {});
+    expect(pool.state('a')).toMatchObject({ open: false, revision: 0, open_since: null });
+    await pool.use(P('a'), false, (s) => s.getAllNodes());
+    const first = pool.state('a');
+    expect(first.open).toBe(true);
+    expect(typeof first.open_since).toBe('string');
+    await pool.use(P('a'), true, (s) => s.putNode({ id: 'x' } as never));
+    expect(pool.state('a')).toMatchObject({ revision: 1, open_since: first.open_since });
+    await pool.close('a');
+    expect(pool.state('a').open_since).toBeNull();
+  });
 });

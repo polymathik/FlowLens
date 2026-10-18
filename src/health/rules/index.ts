@@ -11,9 +11,11 @@ import { fragileHubRule } from './fragile-hub.js';
 import { orphanRule, unresolvedImportsRule } from './graph-gaps.js';
 import { hotspotRule } from './hotspot.js';
 import { sizeRule } from './size.js';
+import { typeCycleRule } from './type-cycles.js';
 
 export const HEALTH_RULES: HealthRule[] = [
   cycleRule,
+  typeCycleRule,
   boundaryRule,
   complexFunctionRule,
   hotspotRule,

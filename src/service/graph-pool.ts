@@ -46,6 +46,8 @@ interface Entry {
   writeChain: Promise<unknown>;
   leases: Map<string, Lease>;
   lastUsed: number;
+  /** Epoch ms the current store was opened (0 while closed). */
+  openedAt: number;
   releaseTimer: NodeJS.Timeout | null;
 }
 
@@ -147,6 +149,7 @@ export class GraphPool {
       if (e.opening) await e.opening.catch(() => undefined);
       const store = e.store;
       e.store = null;
+      e.openedAt = 0;
       if (store) await store.close().catch(() => undefined);
     })().finally(() => {
       e.closing = null;
@@ -183,6 +186,8 @@ export class GraphPool {
       leases: e?.leases.size ?? 0,
       watching: this.isWatched(projectId),
       last_used: e && e.lastUsed > 0 ? new Date(e.lastUsed).toISOString() : null,
+      revision: this.revision(projectId),
+      open_since: e?.store && e.openedAt > 0 ? new Date(e.openedAt).toISOString() : null,
     };
   }
 
@@ -209,7 +214,7 @@ export class GraphPool {
     if (!e) {
       e = {
         project, store: null, opening: null, closing: null, inflight: 0,
-        writeChain: Promise.resolve(), leases: new Map(), lastUsed: 0, releaseTimer: null,
+        writeChain: Promise.resolve(), leases: new Map(), lastUsed: 0, openedAt: 0, releaseTimer: null,
       };
       this.entries.set(project.id, e);
     } else if (e.project.root !== project.root && !e.store) {
@@ -224,6 +229,7 @@ export class GraphPool {
       e.opening = this.openStore(projectGraphPath(e.project.root))
         .then((s) => {
           e.store = s;
+          e.openedAt = Date.now();
           return s;
         })
         .catch((err: unknown) => {

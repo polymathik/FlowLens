@@ -10,6 +10,12 @@ export type CycleEdge = {
   from: string;
   to: string;
   relation_types: RelationType[];
+  /**
+   * Phase 12: every relation on this hop is type-level (type-only import,
+   * type annotation, or a reference to an interface/type alias). Only set when
+   * cycles were detected with `include_type_only`.
+   */
+  type_only?: boolean;
 };
 
 export type DetectedCycle = {
@@ -36,4 +42,11 @@ export type DetectedCycle = {
   severity_reasons?: string[];
   /** Phase 10: architecture layers touched by the cycle members. */
   layers?: string[];
+  /**
+   * Phase 12: true when this loop exists only because type-level edges were
+   * counted (no runtime cycle has exactly these members). Only set when cycles
+   * were detected with `include_type_only`; runtime-only detection (the
+   * default) never reports such loops.
+   */
+  type_only?: boolean;
 };

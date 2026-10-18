@@ -50,6 +50,7 @@ function linkRelated(findings: HealthFinding[]): void {
 
 const VERBS: Record<HealthFinding['kind'], string> = {
   cycle: 'Untangle',
+  type_cycle: 'Optionally untangle types',
   god_file: 'Split up',
   fragile_hub: 'Make safer to change',
   complex_function: 'Simplify',
@@ -67,7 +68,7 @@ export function nextSteps(findings: HealthFinding[]): HealthNextStep[] {
     .slice(0, 3)
     .map((f) => ({
       finding_id: f.id,
-      action: `${VERBS[f.kind]}: ${f.title}. Copy fix prompt #${f.rank} into your AI assistant.`,
+      action: `${VERBS[f.kind]}: ${f.title.replace(/^(Tangle|Type loop): /, '')}. Copy fix prompt #${f.rank} into your AI assistant.`,
     }));
   if (steps.length > 0) return steps;
   return [

@@ -5,7 +5,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ServerDependencies } from '../server.js';
+import type { ServerDependencies } from '../../contracts/mcp/server.js';
 import type { InterfaceDiffEntry } from '../../contracts/analysis/diff.js';
 import {
   ANALYSIS_LIMITS, AnalysisToolSchemas,

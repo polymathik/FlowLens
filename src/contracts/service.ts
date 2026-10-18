@@ -117,6 +117,17 @@ export interface ProjectGraphState {
   watching: boolean;
   /** ISO time of the last graph request, or null if never used this session. */
   last_used: string | null;
+  /**
+   * Phase 12: per-project graph revision in this daemon — bumps after every
+   * write through the daemon (and on evict). Resets when the daemon restarts.
+   */
+  revision?: number;
+  /**
+   * Phase 12: ISO time the DB was opened by this daemon (null while closed).
+   * While it is open nobody else can write (LevelDB lock), so
+   * `(daemon pid, open_since, revision)` identifies the graph content.
+   */
+  open_since?: string | null;
 }
 
 export interface ProjectDetail extends ProjectWithStatus {

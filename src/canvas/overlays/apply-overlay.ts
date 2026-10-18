@@ -13,18 +13,22 @@ import { churnColor, hotspotSize, qualityColor, withAlpha } from '../utils/color
 import { PROBLEM_COLOR, arrowMarker } from '../utils/relation-colors';
 import { isCycleEdge, resolveCycles, resolveDiff, resolveViolations } from './problem-sets';
 
+/** Theme tokens (tokens.css) so overlays follow light/dark mode. */
 export const DIFF_COLORS: Record<string, string> = {
-  added: '#16a34a',
-  removed: '#dc2626',
-  modified: '#ca8a04',
-  visibility: '#d97706',
-  parameter_added: '#dc2626',
-  parameter_removed: '#dc2626',
-  type_changed: '#dc2626',
-  return_changed: '#dc2626',
+  added: 'var(--fl-diff-added)',
+  removed: 'var(--fl-diff-removed)',
+  modified: 'var(--fl-diff-modified)',
+  visibility: 'var(--fl-diff-visibility)',
+  parameter_added: 'var(--fl-diff-removed)',
+  parameter_removed: 'var(--fl-diff-removed)',
+  type_changed: 'var(--fl-diff-removed)',
+  return_changed: 'var(--fl-diff-removed)',
 };
 
-const MUTED: NodeOverlayStyle = { tag: 'none', fill: '#f8fafc', stroke: '#e2e8f0', muted: true };
+/** Node problem highlight (edges keep the literal PROBLEM_COLOR for SVG markers). */
+const PROBLEM_NODE = 'var(--fl-overlay-problem)';
+
+const MUTED: NodeOverlayStyle = { tag: 'none', fill: 'var(--fl-overlay-muted-fill)', stroke: 'var(--fl-overlay-muted-stroke)', muted: true };
 
 type Data = Record<string, unknown>;
 const num = (n: Node, key: string) => (n.data as Data)[key] as number | undefined;
@@ -95,10 +99,10 @@ export function applyOverlay(
         if (!count) return { ...MUTED, tag: 'cycles' };
         return {
           tag: 'cycles',
-          stroke: PROBLEM_COLOR,
+          stroke: PROBLEM_NODE,
           strokeStyle: 'dashed',
           strokeWidth: 2.5,
-          fill: withAlpha(PROBLEM_COLOR, 0.08),
+          fill: withAlpha(PROBLEM_NODE, 0.08),
           badge: count > 1 ? `${count} cycles` : 'in a cycle',
         };
       });
@@ -111,9 +115,9 @@ export function applyOverlay(
         if (!count) return { ...MUTED, tag: 'violations' };
         return {
           tag: 'violations',
-          stroke: PROBLEM_COLOR,
+          stroke: PROBLEM_NODE,
           strokeWidth: 2.5,
-          fill: withAlpha(PROBLEM_COLOR, 0.08),
+          fill: withAlpha(PROBLEM_NODE, 0.08),
           badge: count > 1 ? `${count} rule breaks` : '1 rule break',
         };
       });
@@ -124,7 +128,7 @@ export function applyOverlay(
       return decorate(nodes, (n) => {
         const change = changes.get(n.id);
         if (!change) return { ...MUTED, tag: 'diff' };
-        const c = DIFF_COLORS[change] ?? '#94a3b8';
+        const c = DIFF_COLORS[change] ?? 'var(--fl-faint)';
         return { tag: 'diff', stroke: c, strokeWidth: 2.5, fill: withAlpha(c, 0.12), badge: change.replace(/_/g, ' ') };
       });
     }

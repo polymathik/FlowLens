@@ -42,6 +42,26 @@
   --fl-node-file-stroke: #bfdbfe;
   --fl-node-file-text: #1e3a8a;
 
+  /* Overlay heat scales + minimap (Phase 12: themed, read by apply-overlay / color-scales). */
+  --fl-heat-good: #16a34a;
+  --fl-heat-fair: #ca8a04;
+  --fl-heat-poor: #ea580c;
+  --fl-heat-bad: #dc2626;
+  --fl-heat-churn-low: #3b82f6;
+  --fl-heat-churn-high: #dc2626;
+  --fl-overlay-problem: #dc2626;
+  --fl-overlay-muted-fill: #f8fafc;
+  --fl-overlay-muted-stroke: #e2e8f0;
+  --fl-diff-added: #16a34a;
+  --fl-diff-removed: #dc2626;
+  --fl-diff-modified: #ca8a04;
+  --fl-diff-visibility: #d97706;
+  --fl-minimap-system: #818cf8;
+  --fl-minimap-module: #5eead4;
+  --fl-minimap-file: #93c5fd;
+  --fl-minimap-entity: #cbd5e1;
+  --fl-minimap-mask: rgba(240, 242, 245, 0.6);
+
   --fl-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --fl-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
@@ -82,6 +102,24 @@
     --fl-node-file-fill: #18202b;
     --fl-node-file-stroke: #3b5b8c;
     --fl-node-file-text: #dbeafe;
+    --fl-heat-good: #4ade80;
+    --fl-heat-fair: #facc15;
+    --fl-heat-poor: #fb923c;
+    --fl-heat-bad: #f87171;
+    --fl-heat-churn-low: #60a5fa;
+    --fl-heat-churn-high: #f87171;
+    --fl-overlay-problem: #f87171;
+    --fl-overlay-muted-fill: #141a22;
+    --fl-overlay-muted-stroke: #252e3b;
+    --fl-diff-added: #4ade80;
+    --fl-diff-removed: #f87171;
+    --fl-diff-modified: #facc15;
+    --fl-diff-visibility: #fbbf24;
+    --fl-minimap-system: #6366f1;
+    --fl-minimap-module: #2dd4bf;
+    --fl-minimap-file: #3b5b8c;
+    --fl-minimap-entity: #475569;
+    --fl-minimap-mask: rgba(8, 11, 16, 0.6);
   }
 }
 
@@ -120,4 +158,22 @@
   --fl-node-file-fill: #18202b;
   --fl-node-file-stroke: #3b5b8c;
   --fl-node-file-text: #dbeafe;
+  --fl-heat-good: #4ade80;
+  --fl-heat-fair: #facc15;
+  --fl-heat-poor: #fb923c;
+  --fl-heat-bad: #f87171;
+  --fl-heat-churn-low: #60a5fa;
+  --fl-heat-churn-high: #f87171;
+  --fl-overlay-problem: #f87171;
+  --fl-overlay-muted-fill: #141a22;
+  --fl-overlay-muted-stroke: #252e3b;
+  --fl-diff-added: #4ade80;
+  --fl-diff-removed: #f87171;
+  --fl-diff-modified: #facc15;
+  --fl-diff-visibility: #fbbf24;
+  --fl-minimap-system: #6366f1;
+  --fl-minimap-module: #2dd4bf;
+  --fl-minimap-file: #3b5b8c;
+  --fl-minimap-entity: #475569;
+  --fl-minimap-mask: rgba(8, 11, 16, 0.6);
 }

@@ -8,7 +8,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ServerDependencies } from '../server.js';
+import type { ServerDependencies } from '../../contracts/mcp/server.js';
 import type { Entity, EntityMetrics } from '../../contracts/entities.js';
 import {
   ANALYSIS_LIMITS, AnalysisToolSchemas,
@@ -63,7 +63,7 @@ export async function handleGetMetrics(args: GetMetricsInput, deps: ServerDepend
     return toMCPContent(buildResponse(data, view.lastIndexed, {
       page: { total: 1, returned: 1, limit },
       detail,
-      canvas_url: entityCanvasUrl(entity, 'complexity'),
+      canvas_url: entityCanvasUrl(entity, 'complexity', deps),
     }));
   }
 

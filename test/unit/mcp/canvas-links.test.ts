@@ -3,6 +3,7 @@ import { buildCanvasUrl } from '../../../src/contracts/canvas-links.js';
 
 describe('buildCanvasUrl', () => {
   const savedEnv = process.env.FLOWLENS_CANVAS_URL;
+  const savedPort = process.env.FLOWLENS_DAEMON_PORT;
 
   afterEach(() => {
     if (savedEnv === undefined) {
@@ -10,12 +11,39 @@ describe('buildCanvasUrl', () => {
     } else {
       process.env.FLOWLENS_CANVAS_URL = savedEnv;
     }
+    if (savedPort === undefined) delete process.env.FLOWLENS_DAEMON_PORT;
+    else process.env.FLOWLENS_DAEMON_PORT = savedPort;
   });
 
-  it('builds a default entity URL on localhost:5173', () => {
+  it('defaults to the explorer the daemon serves on 127.0.0.1:4280', () => {
     delete process.env.FLOWLENS_CANVAS_URL;
+    delete process.env.FLOWLENS_DAEMON_PORT;
     const url = buildCanvasUrl({ kind: 'entity', identifier: 'UserService' });
-    expect(url).toBe('http://localhost:5173/#/entity/UserService');
+    expect(url).toBe('http://127.0.0.1:4280/#/entity/UserService');
+  });
+
+  it('honours FLOWLENS_DAEMON_PORT, and the running daemon port over it', () => {
+    delete process.env.FLOWLENS_CANVAS_URL;
+    process.env.FLOWLENS_DAEMON_PORT = '5000';
+    expect(buildCanvasUrl({ kind: 'file', identifier: 'a.ts' })).toBe('http://127.0.0.1:5000/#/file/a.ts');
+    expect(buildCanvasUrl({ kind: 'file', identifier: 'a.ts', daemonPort: 6123 })).toBe('http://127.0.0.1:6123/#/file/a.ts');
+  });
+
+  it('includes the project id in the explorer map route', () => {
+    delete process.env.FLOWLENS_CANVAS_URL;
+    delete process.env.FLOWLENS_DAEMON_PORT;
+    const url = buildCanvasUrl({ kind: 'file', identifier: 'src/a.ts', projectId: 'p1', overlay: 'cycles' });
+    expect(url).toBe('http://127.0.0.1:4280/#/p/p1/map/file/src%2Fa.ts?overlay=cycles');
+  });
+
+  it('project links parse back with the explorer router', async () => {
+    delete process.env.FLOWLENS_CANVAS_URL;
+    const { parseExplorerHash } = await import('../../../src/canvas/router/explorer-route.js');
+    const url = buildCanvasUrl({ kind: 'entity', identifier: 'src/a.ts/Foo.bar', projectId: 'abc', overlay: 'complexity' });
+    expect(parseExplorerHash(url.slice(url.indexOf('#')))).toEqual({
+      tab: 'project', projectId: 'abc', view: 'map',
+      target: { kind: 'entity', identifier: 'src/a.ts/Foo.bar' }, overlay: 'complexity',
+    });
   });
 
   it('percent-encodes identifiers with slashes', () => {
@@ -35,7 +63,7 @@ describe('buildCanvasUrl', () => {
       identifier: 'Foo',
       overlay: 'complexity',
     });
-    expect(url).toBe('http://localhost:5173/#/entity/Foo?overlay=complexity');
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#\/entity\/Foo\?overlay=complexity$/);
   });
 
   it('respects FLOWLENS_CANVAS_URL env var', () => {

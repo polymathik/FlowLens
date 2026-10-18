@@ -38,5 +38,6 @@ html, body, #root {
 .react-flow {
   --xy-background-color: var(--fl-canvas);
   --xy-minimap-background-color: var(--fl-surface);
+  --xy-minimap-mask-background-color: var(--fl-minimap-mask);
   --xy-controls-button-background-color: var(--fl-surface);
 }

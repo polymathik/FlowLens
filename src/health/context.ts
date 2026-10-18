@@ -8,6 +8,7 @@ import type { Relation } from '../contracts/relations.js';
 import type { HealthInput } from '../contracts/health.js';
 import { HEALTH_THRESHOLDS, SCORING, type HealthThresholds } from './config.js';
 import { MemoryGraphStore } from './memory-store.js';
+import { typeLevelPredicate } from '../analysis/type-level.js';
 
 const FUNCTION_KINDS = new Set(['function', 'method']);
 
@@ -39,6 +40,10 @@ export interface HealthContext {
   fileDependents: Map<string, Set<string>>;
   /** `${from}->${to}` → first place the dependency appears. */
   depSites: Map<string, DepSite>;
+  /** Like `fileDeps`, without type-level edges (what tangles are built from). */
+  runtimeDeps: Map<string, Set<string>>;
+  /** Like `depSites`, first runtime (non-type-level) occurrence only. */
+  runtimeSites: Map<string, DepSite>;
   hasGit: boolean;
   /** Relations whose target entity is not in the graph. */
   danglingRelations: Relation[];
@@ -69,7 +74,10 @@ export function buildHealthContext(
   const fileDeps = new Map<string, Set<string>>(files.map((f) => [f, new Set()]));
   const fileDependents = new Map<string, Set<string>>(files.map((f) => [f, new Set()]));
   const depSites = new Map<string, DepSite>();
+  const runtimeDeps = new Map<string, Set<string>>(files.map((f) => [f, new Set()]));
+  const runtimeSites = new Map<string, DepSite>();
   const danglingRelations: Relation[] = [];
+  const isTypeLevel = typeLevelPredicate(input.entities);
 
   for (const r of [...input.relations].sort((a, b) => a.id.localeCompare(b.id))) {
     const target = entityById.get(r.to);
@@ -84,8 +92,10 @@ export function buildHealthContext(
     fileDependents.get(target.file)!.add(source.file);
     const key = `${source.file}->${target.file}`;
     const site = { line: r.location.line, type: r.type };
-    const prev = depSites.get(key);
-    if (!prev || site.line < prev.line) depSites.set(key, site);
+    keepFirst(depSites, key, site);
+    if (isTypeLevel(r)) continue;
+    runtimeDeps.get(source.file)!.add(target.file);
+    keepFirst(runtimeSites, key, site);
   }
 
   const blastMemo = new Map<string, number>();
@@ -126,6 +136,8 @@ export function buildHealthContext(
     fileDeps,
     fileDependents,
     depSites,
+    runtimeDeps,
+    runtimeSites,
     hasGit: churn !== null,
     danglingRelations,
     lineCount,
@@ -153,6 +165,11 @@ export function complexityOf(entity: Entity, t: HealthThresholds = HEALTH_THRESH
     return { value: m.cyclomatic_complexity, metric: 'cyclomatic', warn: c.cyclomatic_warn, high: c.cyclomatic_high, critical: c.cyclomatic_critical };
   }
   return null;
+}
+
+function keepFirst(sites: Map<string, DepSite>, key: string, site: DepSite): void {
+  const prev = sites.get(key);
+  if (!prev || site.line < prev.line) sites.set(key, site);
 }
 
 function byLocation(a: Entity, b: Entity): number {

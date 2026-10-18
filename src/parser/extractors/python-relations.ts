@@ -19,7 +19,7 @@ import { RelationEmitter, loc } from '../symbols/emitter.js';
 import { emitImportEdges } from '../symbols/import-edges.js';
 import { containRelations } from '../relations/data-relations.js';
 import { aggregateRelations } from '../../graph/aggregate.js';
-import { decoratorName } from './python-extractor.js';
+import { decoratorName } from './python-ast.js';
 
 const CALL_KINDS: EntityKind[] = ['function', 'method', 'class', 'variable'];
 

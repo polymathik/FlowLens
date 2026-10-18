@@ -1,17 +1,20 @@
 /**
  * Canvas deep-link URL contract.
  *
- * MCP tool responses embed a `canvas_url` pointing to the relevant view in
- * the visual canvas, so that an LLM assistant can hand a clickable link
- * back to the developer after a query. URLs use hash-based routing so the
- * canvas Vite dev server doesn't need path rewriting:
+ * MCP tool responses and health findings embed a `canvas_url` pointing to
+ * the relevant view in the explorer the FlowLens daemon serves, so an AI
+ * assistant can hand a clickable link back to the developer. URLs use hash
+ * routing (see `src/canvas/router/explorer-route.ts`):
  *
- *   http://localhost:5173/#/entity/UserService?overlay=complexity
+ *   http://127.0.0.1:4280/#/p/<projectId>/map/entity/UserService?overlay=complexity
  *
- * The base URL is controlled by the `FLOWLENS_CANVAS_URL` env var (so
- * tests and non-default deployments can override). If unset, defaults to
- * `http://localhost:5173` (the canvas default port).
+ * Base URL resolution (Phase 12): explicit `baseUrl` → `FLOWLENS_CANVAS_URL`
+ * env var → `http://127.0.0.1:<daemonPort>` where the port is the running
+ * daemon's (when the caller knows it), else `$FLOWLENS_DAEMON_PORT`, else
+ * 4280. The explorer needs a browser session: a link opened without one
+ * shows a "run `flowlens canvas`" page.
  */
+import { DAEMON_PORT_ENV, DEFAULT_EXPLORER_PORT } from './canvas/explorer.js';
 
 export type CanvasLinkKind = 'entity' | 'module' | 'file';
 
@@ -36,27 +39,39 @@ export interface CanvasLinkOptions {
    * without it the explorer maps the link to the active (or only) project.
    */
   projectId?: string;
+  /** Port of the running daemon, when the caller knows it (Phase 12). */
+  daemonPort?: number;
 }
 
-const DEFAULT_BASE_URL = 'http://localhost:5173';
+/** Explorer host; the daemon only listens on loopback. */
+export const CANVAS_LINK_HOST = '127.0.0.1';
 
-function resolveBaseUrl(override?: string): string {
+function envPort(): number | undefined {
+  const raw = typeof process !== 'undefined' ? process.env?.[DAEMON_PORT_ENV] : undefined;
+  const n = Number(raw);
+  return raw && Number.isInteger(n) && n > 0 && n <= 65535 ? n : undefined;
+}
+
+/** Base URL of the explorer (no trailing slash), per the resolution order above. */
+export function resolveCanvasBaseUrl(override?: string, daemonPort?: number): string {
   if (override) return override;
   if (typeof process !== 'undefined' && process.env?.FLOWLENS_CANVAS_URL) {
     return process.env.FLOWLENS_CANVAS_URL;
   }
-  return DEFAULT_BASE_URL;
+  return `http://${CANVAS_LINK_HOST}:${daemonPort ?? envPort() ?? DEFAULT_EXPLORER_PORT}`;
 }
 
 /**
- * Build a canvas deep-link URL for a given target. The identifier is
+ * Build a canvas deep-link URL for a given target. With `projectId` the link
+ * is `#/p/<id>/map/<kind>/<identifier>`; without it, the legacy
+ * `#/<kind>/<identifier>` that the explorer maps to the active project. The identifier is
  * percent-encoded so path-like qualified names (e.g. `src/foo/bar.ts::Foo`)
  * survive the URL fragment. Overlays become `?overlay=<name>` on the hash.
  */
 export function buildCanvasUrl(opts: CanvasLinkOptions): string {
-  const base = resolveBaseUrl(opts.baseUrl).replace(/\/+$/, '');
+  const base = resolveCanvasBaseUrl(opts.baseUrl, opts.daemonPort).replace(/\/+$/, '');
   const encoded = encodeURIComponent(opts.identifier);
   const overlaySuffix = opts.overlay ? `?overlay=${opts.overlay}` : '';
-  const project = opts.projectId ? `p/${encodeURIComponent(opts.projectId)}/` : '';
+  const project = opts.projectId ? `p/${encodeURIComponent(opts.projectId)}/map/` : '';
   return `${base}/#/${project}${opts.kind}/${encoded}${overlaySuffix}`;
 }

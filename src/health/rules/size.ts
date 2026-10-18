@@ -6,11 +6,14 @@
  * WMC bar) or lots of functions (≥ 25). A file that is only long is a
  * `large_file`. Dedupe: a god file never also gets a large-file finding,
  * and a god file's points are always ≥ the large-file points it replaces.
+ * Lockfiles, generated/minified output and data files (JSON, YAML, …) are
+ * never judged by size (see file-kinds.ts).
  */
 import type { HealthSeverity } from '../../contracts/health.js';
 import type { HealthContext } from '../context.js';
 import { buildFinding, buildFixPrompt, makeFocus, type HealthRule, type RawFinding } from '../finding.js';
 import { plural, shortPath } from '../glossary.js';
+import { isSizeJudged } from '../file-kinds.js';
 
 export interface FileSize {
   lines: number;
@@ -34,6 +37,7 @@ export const sizeRule: HealthRule = {
   run(ctx) {
     const out: RawFinding[] = [];
     for (const file of ctx.files) {
+      if (!isSizeJudged(file, languageOf(ctx, file))) continue;
       const s = measureFile(ctx, file);
       if (isGodFile(ctx, s)) out.push(godFinding(ctx, file, s));
       else if (s.lines > ctx.thresholds.size.large_file_lines) out.push(largeFinding(ctx, file, s));
@@ -41,6 +45,11 @@ export const sizeRule: HealthRule = {
     return out;
   },
 };
+
+function languageOf(ctx: HealthContext, file: string): string | undefined {
+  const ents = ctx.entitiesByFile.get(file) ?? [];
+  return (ents.find((e) => e.kind === 'file') ?? ents[0])?.language;
+}
 
 function godFinding(ctx: HealthContext, file: string, s: FileSize): RawFinding {
   const severity: HealthSeverity = s.lines > 1000 || s.totalComplexity > 150 ? 'critical' : 'high';

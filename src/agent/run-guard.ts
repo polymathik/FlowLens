@@ -28,6 +28,7 @@ import { loadBaseline } from './baseline.js';
 import { ensureGuardBaseline } from './baseline-capture.js';
 import { getGitHead, resolveChangedFiles, type ResolvedChangedFiles } from './changed-files.js';
 import { computeGraphDigest, computeGraphIssues, type AgentGraphDigest, type IssueScope } from './digest.js';
+import { serviceRevision } from './service-revision.js';
 import { captureStamp, readDigest, readFreshDigest, writeDigest, type GraphStamp } from './digest-cache.js';
 import { accountFiles } from './digest-revalidate.js';
 import { buildChangedFileFilter } from './file-filter.js';
@@ -79,7 +80,9 @@ export async function runAgentGuard(options: RunGuardOptions): Promise<AgentComm
   // When re-indexing, the changed files are re-read from the live graph and
   // patched in, so the digest may already be stale for exactly those files
   // (e.g. the daemon's watcher applied the edit first).
-  const digest = await readFreshDigest(flowlensDir, reindex ? changed.files : []);
+  const digest = await readFreshDigest(
+    flowlensDir, reindex ? changed.files : [], await serviceRevision(flowlensDir, { daemon: options.daemon }),
+  );
   if (digest && !reindex) {
     const baseline = await loadBaseline(flowlensDir, head);
     return render(options, await analyse(graphFromDigest(digest), flowlensDir, options, changed, baseline));
@@ -97,7 +100,8 @@ export async function runAgentGuard(options: RunGuardOptions): Promise<AgentComm
     const reindexSummary = reindex
       ? await reindexAgentChangedFiles(rootDir, handle.graph, changed.files)
       : undefined;
-    stamp = captureStamp(flowlensDir); // after our writes, before our reads
+    // after our writes, before our reads
+    stamp = captureStamp(flowlensDir, await serviceRevision(flowlensDir, { daemon: options.daemon }));
     let view: GraphStore = handle.graph;
     let scope: IssueScope = {};
     if (digest) {

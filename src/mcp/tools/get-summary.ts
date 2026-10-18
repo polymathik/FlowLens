@@ -5,7 +5,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ServerDependencies } from '../server.js';
+import type { ServerDependencies } from '../../contracts/mcp/server.js';
 import { AnalysisToolSchemas, type GetSummaryInput, type GetSummaryOutput } from '../../contracts/mcp/tools.js';
 import { countEntitiesByLayer } from '../../analysis/layer-stats.js';
 import { moduleOfEntity } from '../../analysis/module-path.js';

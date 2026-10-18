@@ -11,6 +11,8 @@ export type CheckCycleReport = {
   path: string[];
   members: number;
   severity_reasons: string[];
+  /** Phase 12: loop exists only through type-level edges (only with `--include-type-only`). */
+  type_only?: boolean;
 };
 
 export type CheckViolationReport = {
@@ -30,6 +32,8 @@ export type CheckReport = {
   timestamp: string;
   scope?: string;
   severity_threshold: CycleSeverity;
+  /** Phase 12: type-level edges were counted (`--include-type-only`). */
+  include_type_only?: boolean;
   architecture: 'checked' | 'skipped' | 'missing' | 'invalid';
   cycles: CheckCycleReport[];
   architecture_violations: CheckViolationReport[];

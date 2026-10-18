@@ -19,12 +19,12 @@ export const LEVEL_PALETTE: Record<CanvasNodeType, { fill: string; stroke: strin
   entity: { fill: 'var(--fl-node-file-fill)', stroke: 'var(--fl-border)', text: 'var(--fl-text)', muted: 'var(--fl-muted)' },
 };
 
-/** Minimap colours must be literal (SVG fill attributes cannot read CSS variables). */
+/** Minimap node colours: theme tokens (React Flow sets them as inline `style.fill`, which reads CSS variables). */
 export const MINIMAP_STROKE: Record<CanvasNodeType, string> = {
-  system: '#818cf8',
-  module: '#5eead4',
-  file: '#93c5fd',
-  entity: '#cbd5e1',
+  system: 'var(--fl-minimap-system)',
+  module: 'var(--fl-minimap-module)',
+  file: 'var(--fl-minimap-file)',
+  entity: 'var(--fl-minimap-entity)',
 };
 
 const hidden: React.CSSProperties = { opacity: 0, pointerEvents: 'none' };
@@ -115,7 +115,7 @@ export function NodeShell({ level, selected, overlay, accent, title, subtitle, i
             fontWeight: 600,
             padding: '1px 5px',
             borderRadius: 8,
-            background: overlay.stroke ?? '#64748b',
+            background: overlay.stroke ?? 'var(--fl-muted)',
             color: '#fff',
           }}
         >

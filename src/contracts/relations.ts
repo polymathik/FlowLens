@@ -32,6 +32,16 @@ export interface RelationMeta {
   via?: string;
 }
 
+/**
+ * Relation types that only express type annotations (Phase 12). In TS/JS they
+ * are erased at compile time; in other languages they never trigger module
+ * loading on their own. Together with `meta.type_only` imports and edges whose
+ * target is a pure type (`interface` / `type`), they form the *type-level*
+ * edges that runtime cycle detection ignores by default
+ * (see `isTypeLevelRelation` in `src/analysis/type-level.ts`).
+ */
+export const TYPE_ANNOTATION_RELATION_TYPES: readonly RelationType[] = ['parameter', 'return', 'implement'];
+
 export type Relation = {
   id: string;
   from: string;

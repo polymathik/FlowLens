@@ -22,6 +22,7 @@ export const checkCommand = new Command('check')
   .option('--architecture', 'Run architecture validation (only, unless --cycles is also given)')
   .option('--severity <level>', 'Minimum cycle severity: low, medium, high', 'low')
   .option('--scope <path>', 'Limit check to a subtree')
+  .option('--include-type-only', 'Also count type-only imports/annotations as dependencies (default: runtime cycles only)')
   .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
   .action(async (opts) => {
     const rootDir = resolve('.');
@@ -50,6 +51,7 @@ export const checkCommand = new Command('check')
         runArchitecture: both || Boolean(opts.architecture),
         severity: opts.severity as CycleSeverity,
         scope: opts.scope,
+        includeTypeOnly: Boolean(opts.includeTypeOnly),
       });
 
       await graphStore.close();
@@ -74,7 +76,7 @@ function printText(report: CheckReport, problems: string[], cycles: boolean, arc
     } else {
       console.log(`\n${report.cycles.length} circular dependencies found:`);
       for (const c of report.cycles) {
-        console.log(`  [${c.severity}] ${c.path.join(' → ')}`);
+        console.log(`  [${c.severity}]${c.type_only ? ' (type-only)' : ''} ${c.path.join(' → ')}`);
         if (c.severity_reasons.length > 0) console.log(`      ${c.severity_reasons.join('; ')}`);
       }
     }
