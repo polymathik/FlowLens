@@ -7,7 +7,8 @@ import { useEffect, useState } from 'react';
 import type { ArchitectureConfig } from '../../../../contracts/architecture.js';
 import type { ArchitectureViolation } from '../../../../contracts/analysis/architecture.js';
 import type { ConfigIssue } from '../../../../contracts/canvas/index.js';
-import { ApiError, previewArchitecture } from '../../../api/graph-client';
+import { ApiError } from '../../../api/graph-client';
+import { useGraphClient } from '../../explorer/project-context';
 import { useCanvasStore } from '../../../store/canvas-store';
 
 export const PREVIEW_DEBOUNCE_MS = 350;
@@ -20,6 +21,7 @@ export interface RulesPreview {
 
 export function useRulesPreview(draft: ArchitectureConfig | null, dirty: boolean): RulesPreview {
   const setPreviewViolations = useCanvasStore((s) => s.setPreviewViolations);
+  const { previewArchitecture } = useGraphClient();
   const [state, setState] = useState<RulesPreview>({ violations: [], issues: [], loading: false });
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function useRulesPreview(draft: ArchitectureConfig | null, dirty: boolean
       clearTimeout(timer);
       controller.abort();
     };
-  }, [draft, dirty, setPreviewViolations]);
+  }, [draft, dirty, setPreviewViolations, previewArchitecture]);
 
   // Leaving the editor drops the unsaved preview from the overlay.
   useEffect(() => () => setPreviewViolations(null), [setPreviewViolations]);

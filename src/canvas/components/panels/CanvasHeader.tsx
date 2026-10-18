@@ -22,7 +22,7 @@ export function CanvasHeader({ graphVersion, ...toolbar }: ToolbarProps & { grap
           gap: 16,
           flexWrap: 'wrap',
           padding: '5px 14px',
-          background: '#fbfcfe',
+          background: COLORS.subtle,
           borderBottom: `1px solid ${COLORS.border}`,
           fontSize: 12,
         }}

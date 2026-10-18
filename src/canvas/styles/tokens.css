@@ -1,0 +1,123 @@
+/*
+ * Design tokens for the explorer and the map (light first, dark below).
+ * One calm, cool palette shared with the existing canvas: slate neutrals,
+ * indigo for "you can act on this", and a five-step grade scale whose hues
+ * read the same in both themes (green → olive → amber → orange → red).
+ */
+:root {
+  color-scheme: light;
+  --fl-canvas: #f4f6f9;
+  --fl-surface: #ffffff;
+  --fl-subtle: #f7f9fb;
+  --fl-text: #0f172a;
+  --fl-muted: #556072;
+  --fl-faint: #8a94a6;
+  --fl-border: #e2e7ee;
+  --fl-border-strong: #c9d2de;
+  --fl-accent: #4f46e5;
+  --fl-accent-soft: #eef0ff;
+  --fl-accent-text: #ffffff;
+  --fl-danger: #c62828;
+  --fl-ok: #15803d;
+  --fl-warn: #b45309;
+  --fl-warn-soft: #fff7e8;
+  --fl-focus: #6366f1;
+  --fl-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.05);
+
+  --fl-grade-a: #15803d;
+  --fl-grade-b: #4d7c0f;
+  --fl-grade-c: #b45309;
+  --fl-grade-d: #c2410c;
+  --fl-grade-f: #b91c1c;
+
+  --fl-node-system-fill: #eef2ff;
+  --fl-node-system-stroke: #818cf8;
+  --fl-node-system-text: #312e81;
+  --fl-node-system-muted: #6366f1;
+  --fl-node-module-fill: #f0fdfa;
+  --fl-node-module-stroke: #5eead4;
+  --fl-node-module-text: #134e4a;
+  --fl-node-module-muted: #0f766e;
+  --fl-node-file-fill: #ffffff;
+  --fl-node-file-stroke: #bfdbfe;
+  --fl-node-file-text: #1e3a8a;
+
+  --fl-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --fl-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --fl-canvas: #0f141b;
+    --fl-surface: #161c25;
+    --fl-subtle: #1a212b;
+    --fl-text: #e6e9ef;
+    --fl-muted: #a0aaba;
+    --fl-faint: #788396;
+    --fl-border: #283140;
+    --fl-border-strong: #384354;
+    --fl-accent: #8f8cff;
+    --fl-accent-soft: #252750;
+    --fl-accent-text: #0f141b;
+    --fl-danger: #f87171;
+    --fl-ok: #4ade80;
+    --fl-warn: #fbbf24;
+    --fl-warn-soft: #2b2312;
+    --fl-focus: #a5b4fc;
+    --fl-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --fl-grade-a: #4ade80;
+    --fl-grade-b: #a3e635;
+    --fl-grade-c: #fbbf24;
+    --fl-grade-d: #fb923c;
+    --fl-grade-f: #f87171;
+    --fl-node-system-fill: #1e2142;
+    --fl-node-system-stroke: #6366f1;
+    --fl-node-system-text: #c7d2fe;
+    --fl-node-system-muted: #a5b4fc;
+    --fl-node-module-fill: #11302e;
+    --fl-node-module-stroke: #2dd4bf;
+    --fl-node-module-text: #ccfbf1;
+    --fl-node-module-muted: #5eead4;
+    --fl-node-file-fill: #18202b;
+    --fl-node-file-stroke: #3b5b8c;
+    --fl-node-file-text: #dbeafe;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --fl-canvas: #0f141b;
+  --fl-surface: #161c25;
+  --fl-subtle: #1a212b;
+  --fl-text: #e6e9ef;
+  --fl-muted: #a0aaba;
+  --fl-faint: #788396;
+  --fl-border: #283140;
+  --fl-border-strong: #384354;
+  --fl-accent: #8f8cff;
+  --fl-accent-soft: #252750;
+  --fl-accent-text: #0f141b;
+  --fl-danger: #f87171;
+  --fl-ok: #4ade80;
+  --fl-warn: #fbbf24;
+  --fl-warn-soft: #2b2312;
+  --fl-focus: #a5b4fc;
+  --fl-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --fl-grade-a: #4ade80;
+  --fl-grade-b: #a3e635;
+  --fl-grade-c: #fbbf24;
+  --fl-grade-d: #fb923c;
+  --fl-grade-f: #f87171;
+  --fl-node-system-fill: #1e2142;
+  --fl-node-system-stroke: #6366f1;
+  --fl-node-system-text: #c7d2fe;
+  --fl-node-system-muted: #a5b4fc;
+  --fl-node-module-fill: #11302e;
+  --fl-node-module-stroke: #2dd4bf;
+  --fl-node-module-text: #ccfbf1;
+  --fl-node-module-muted: #5eead4;
+  --fl-node-file-fill: #18202b;
+  --fl-node-file-stroke: #3b5b8c;
+  --fl-node-file-text: #dbeafe;
+}

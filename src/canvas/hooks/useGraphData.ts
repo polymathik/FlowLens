@@ -1,18 +1,13 @@
 /**
- * Fetches entities, relations and annotations from the graph API and
- * builds the full (all-levels) node list plus a GraphIndex. Re-fetches when
- * watch mode pushes a `graph-updated` event.
+ * Fetches entities, relations and annotations from the project's graph API
+ * and builds the full (all-levels) node list plus a GraphIndex. Re-fetches
+ * when the project's revision changes (the explorer shell bumps it on every
+ * `graph-changed` SSE event); the previous graph stays on screen meanwhile.
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { Node } from '@xyflow/react';
-import {
-  fetchAnnotations,
-  fetchEntities,
-  fetchRelations,
-  openEventStream,
-  type Entity,
-  type Relation,
-} from '../api/graph-client';
+import type { Entity, Relation } from '../api/graph-client';
+import { useProjectContext } from '../components/explorer/project-context';
 import { transformEntitiesToNodes } from '../utils/node-transformer';
 import { buildGraphIndex, type GraphIndex } from '../utils/graph-index';
 
@@ -28,6 +23,7 @@ export interface GraphData {
 }
 
 export function useGraphData(): GraphData {
+  const { client, revision } = useProjectContext();
   const [state, setState] = useState<{
     entities: Entity[];
     relations: Relation[];
@@ -42,9 +38,9 @@ export function useGraphData(): GraphData {
     async function load() {
       try {
         const [entities, relations, annotations] = await Promise.all([
-          fetchEntities(),
-          fetchRelations(),
-          fetchAnnotations().catch(() => [] as unknown[]),
+          client.fetchEntities(),
+          client.fetchRelations(),
+          client.fetchAnnotations().catch(() => [] as unknown[]),
         ]);
         if (cancelled) return;
         setState((s) => ({ entities, relations, annotations, version: s.version + 1 }));
@@ -56,18 +52,10 @@ export function useGraphData(): GraphData {
       }
     }
     load();
-
-    // Watch mode pushes graph-updated; without watch the browser just retries quietly.
-    const events = openEventStream();
-    events.addEventListener('graph-updated', () => {
-      if (!cancelled) load();
-    });
-    events.onerror = () => {};
     return () => {
       cancelled = true;
-      events.close();
     };
-  }, []);
+  }, [client, revision]);
 
   const nodes = useMemo(
     () => transformEntitiesToNodes(state.entities, state.annotations),

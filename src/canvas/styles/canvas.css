@@ -8,9 +8,9 @@ html, body, #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  color: #0f172a;
-  background: #f8fafc;
+  font-family: var(--fl-font);
+  color: var(--fl-text);
+  background: var(--fl-canvas);
 }
 
 .react-flow__node {
@@ -19,7 +19,7 @@ html, body, #root {
 
 /* Custom nodes draw their own body; drop React Flow's default chrome. */
 .react-flow__node.selectable:focus-visible {
-  outline: 2px solid #6366f1;
+  outline: 2px solid var(--fl-focus);
   outline-offset: 2px;
   border-radius: 10px;
 }
@@ -32,4 +32,11 @@ html, body, #root {
   to {
     stroke-dashoffset: -10;
   }
+}
+
+/* React Flow surfaces follow the FlowLens theme tokens. */
+.react-flow {
+  --xy-background-color: var(--fl-canvas);
+  --xy-minimap-background-color: var(--fl-surface);
+  --xy-controls-button-background-color: var(--fl-surface);
 }

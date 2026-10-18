@@ -50,7 +50,6 @@ export function Toolbar({ showFilter, showRules, onToggleFilter, onToggleRules, 
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-        <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.text }}>FlowLens</span>
         <span data-testid="detail-tier" style={{ color: COLORS.faint }}>
           {DETAIL_LABELS[tier]}
         </span>

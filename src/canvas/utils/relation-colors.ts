@@ -24,13 +24,7 @@ export const RELATION_COLORS: Record<RelationType, string> = {
 /** Ordered list of every relation type (filter panel order). */
 export const ALL_RELATION_TYPES = Object.keys(RELATION_COLORS) as RelationType[];
 
-/** Relation types shown by default (the structurally meaningful ones). */
-export const DEFAULT_VISIBLE_RELATION_TYPES: RelationType[] = [
-  'import',
-  'call',
-  'extend',
-  'implement',
-];
+export { DEFAULT_VISIBLE_RELATION_TYPES } from './relation-defaults';
 
 export const DEFAULT_RELATION_COLOR = '#94a3b8';
 

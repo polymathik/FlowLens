@@ -7,7 +7,8 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ArchitectureConfig } from '../../../../contracts/architecture.js';
-import { ApiError, fetchArchitecture, saveArchitecture } from '../../../api/graph-client';
+import { ApiError } from '../../../api/graph-client';
+import { useGraphClient } from '../../explorer/project-context';
 import {
   addLayer,
   normalizeConfig,
@@ -25,6 +26,7 @@ import { COLORS, button, buttonActive, floatingPanel, linkButton } from '../../s
 
 export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
   const setOverlay = useCanvasStore((s) => s.setOverlay);
+  const { fetchArchitecture, saveArchitecture } = useGraphClient();
   const [draft, setDraft] = useState<ArchitectureConfig | null>(null);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export function ArchitectureEditor({ onClose }: { onClose: () => void }) {
       (cfg) => setDraft(normalizeConfig(cfg)),
       (err) => setLoadError(String(err?.message ?? err)),
     );
-  }, []);
+  }, [fetchArchitecture]);
 
   const edit = (fn: (c: ArchitectureConfig) => ArchitectureConfig) => {
     setDraft((d) => (d ? fn(d) : d));

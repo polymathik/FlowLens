@@ -106,7 +106,7 @@ export function SearchPanel({ entities }: { entities: Entity[] }) {
                 alignItems: 'center',
                 padding: '8px 16px',
                 cursor: 'pointer',
-                background: i === active ? '#eef2ff' : 'transparent',
+                background: i === active ? COLORS.accentSoft : 'transparent',
               }}
             >
               <EntityIcon kind={entity.kind} />

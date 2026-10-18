@@ -5,7 +5,6 @@
  */
 import type { Edge, Node } from '@xyflow/react';
 import { computeForceLayout, type LayoutBox, type Positions } from './force-layout';
-import { computeElkPositions } from './elk-layout';
 
 export type LayoutMode = 'force' | 'layered';
 
@@ -31,5 +30,7 @@ export async function computeLayout(
   const boxes = boxesFor(nodes);
   const links = edges.map((e) => ({ source: e.source, target: e.target }));
   if (mode === 'force') return computeForceLayout(boxes, links);
+  // ELK (~1.4 MB) loads only when a file/symbol view is first laid out.
+  const { computeElkPositions } = await import('./elk-layout');
   return computeElkPositions(boxes, links);
 }
