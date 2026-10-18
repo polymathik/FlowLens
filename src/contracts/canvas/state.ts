@@ -15,6 +15,7 @@ import type { ArchitectureViolation } from '../analysis/architecture.js';
 import type { ZoneOverrides, ZoningMode } from '../zones.js';
 import type { ArchitectureLayer } from '../architecture.js';
 import type { FocusSpec } from './focus.js';
+import type { FlowPickerState, FlowSpec } from './flow-view.js';
 
 /** Four discrete zoom tiers mapped from React Flow viewport zoom (names are historical; they are detail tiers). */
 export type ZoomLevel = 'system' | 'module' | 'file' | 'entity';
@@ -126,6 +127,10 @@ export interface CanvasState {
   rulesRevision: number;
   /** Focus mode (M4): the neighbourhood being shown instead of the open container; null = normal Map. */
   focus: FocusSpec | null;
+  /** Flow mode (M6b): the trace being shown over the map; null = no flow. Excludes `focus`. */
+  flow: FlowSpec | null;
+  /** The entry-point picker (open or not, optionally limited to a path). */
+  flowPicker: FlowPickerState | null;
 
   // Drill-down
   /**
@@ -170,6 +175,10 @@ export interface CanvasState {
   bumpRulesRevision: () => void;
   /** Enter / change / leave Focus mode (null leaves). Does not touch the drill path, so leaving returns to the same view. */
   setFocus: (focus: FocusSpec | null) => void;
+  /** Enter / change / leave Flow mode (null leaves). Like focus, it never touches the drill path. */
+  setFlow: (flow: FlowSpec | null) => void;
+  /** Open (with an optional path limit) or close the entry-point picker. */
+  setFlowPicker: (picker: FlowPickerState | null) => void;
 }
 
 /**

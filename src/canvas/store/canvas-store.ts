@@ -75,6 +75,8 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       architectureLayers: null,
       rulesRevision: 0,
       focus: null,
+      flow: null,
+      flowPicker: null,
 
       setZoomLevel: (level) => set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
       selectNode: (id) => set(id === null ? { selectedNodeId: null, selectedEdgeId: null, highlightedIds: [] } : { selectedNodeId: id, selectedEdgeId: null }),
@@ -107,6 +109,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
         set((s) => ({
           drillPath: [...target.drillPath],
           focus: null, // a jump (search, portal, deep link) leaves Focus mode; a focus link sets it again right after
+          flow: null, // ... and Flow mode
           selectedNodeId: target.nodeId,
           selectedEdgeId: null,
           focusRequest: target.nodeId ? { nodeId: target.nodeId, seq: ++focusSeq } : null,
@@ -136,7 +139,11 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       setArchitectureLayers: (layers) => set({ architectureLayers: layers }),
       bumpRulesRevision: () => set((s) => ({ rulesRevision: s.rulesRevision + 1 })),
       // Entering clears the selection (its card may not be in the neighbourhood); leaving keeps whatever is selected.
-      setFocus: (focus) => set(focus ? { focus, selectedNodeId: null, selectedEdgeId: null, hoveredNodeId: null, focusRequest: null } : { focus: null }),
+      setFocus: (focus) => set(focus ? { focus, flow: null, selectedNodeId: null, selectedEdgeId: null, hoveredNodeId: null, focusRequest: null } : { focus: null }),
+      // Flow mode (M6b) excludes Focus. Changing a setting of the same root keeps the selection; a new root clears it.
+      setFlow: (flow) =>
+        set((s) => (flow ? { flow, focus: null, flowPicker: null, ...(s.flow?.id === flow.id ? {} : { selectedNodeId: null, selectedEdgeId: null, hoveredNodeId: null, focusRequest: null }) } : { flow: null })),
+      setFlowPicker: (flowPicker) => set({ flowPicker }),
     };
   });
 }

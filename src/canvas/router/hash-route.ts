@@ -7,6 +7,7 @@
  *   #/p/<projectId>/entity/<id>…   (project prefix)
  *   #/p/<projectId>/map/path/<repo path>   (Map v2: the open container; see contracts/canvas/router.ts)
  *   #/p/<projectId>/map/focus/<id>?depth=2&dir=both&types=import,call   (Map v2 M4: Focus mode)
+ *   #/p/<projectId>/map/flow/<id>?depth=4&span=112-123&dir=in           (Map v2 M6b: Flow mode)
  *
  * Identifiers are percent-encoded by `buildCanvasUrl`, but raw slashes are
  * tolerated so hand-typed links work too.
@@ -14,6 +15,7 @@
 import type { CanvasRoute, CanvasRouteFocus, CanvasRouteTargetKind, FocusDirection } from '../../contracts/canvas/index.js';
 import type { CanvasOverlay } from '../../contracts/canvas-links.js';
 import type { RelationType } from '../../contracts/relations.js';
+import { parseFlowQuery, flowQueryParts } from '../flow/flow-route';
 
 const KINDS: ReadonlySet<string> = new Set<CanvasRouteTargetKind>(['entity', 'module', 'file', 'path']);
 const OVERLAYS: ReadonlySet<string> = new Set<CanvasOverlay>([
@@ -67,6 +69,9 @@ export function parseCanvasHash(hash: string): CanvasRoute {
   if (segments.length >= 2 && segments[0] === 'focus') {
     const id = safeDecode(segments.slice(1).join('/'));
     if (id) route.focus = parseFocus(id, query);
+  } else if (segments.length >= 2 && segments[0] === 'flow') {
+    const id = safeDecode(segments.slice(1).join('/'));
+    if (id) route.flow = parseFlowQuery(id, query);
   } else if (segments.length >= 2 && KINDS.has(segments[0])) {
     const identifier = safeDecode(segments.slice(1).join('/'));
     if (identifier) {
@@ -98,6 +103,10 @@ export function buildCanvasHash(route: CanvasRoute): string {
     if (route.focus.dir) query.push(`dir=${route.focus.dir}`);
     if (route.focus.types?.length) query.push(`types=${route.focus.types.join(',')}`);
     if (route.focus.lateral) query.push('lateral=1');
+  }
+  if (route.flow) {
+    parts.push('flow', encodeURIComponent(route.flow.id));
+    query.push(...flowQueryParts(route.flow));
   }
   if (route.overlay) query.push(`overlay=${route.overlay}`);
   return `#/${parts.join('/')}${query.length ? `?${query.join('&')}` : ''}`;

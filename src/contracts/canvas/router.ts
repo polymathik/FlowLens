@@ -27,10 +27,18 @@
  * `<id>` is a hierarchy node id, entity id, file path or zone id, percent-encoded.
  * `depth` 1..3 (default 2), `dir` in | out | both (default both), `types` a comma list (default: structural types), `lateral=1` also draws links between neighbours.
  * It is a separate segment, not a target kind: a focus link never changes the drill path.
+ *
+ * Map v2 (lane M6b) adds Flow mode — what happens when something runs:
+ *
+ *   #/p/<projectId>/map/flow/<entityId>?depth=4[&span=112-123][&dir=in][&follow=call,create,use][&max=60][&tests=1]
+ *
+ * `<entityId>` is an entity id / entry label / qualified name / file path (see `flow-view.ts`), `span` the line range
+ * of an inline handler inside it, `dir` out (default) | in. Like focus, a separate segment that never changes the drill path.
  */
 import type { CanvasLinkKind, CanvasOverlay } from '../canvas-links.js';
 import type { RelationType } from '../relations.js';
 import type { FocusDirection } from './focus.js';
+import type { CanvasRouteFlow } from './flow-view.js';
 
 export type CanvasRouteTargetKind = CanvasLinkKind | 'path';
 
@@ -57,4 +65,6 @@ export interface CanvasRoute {
   overlay?: CanvasOverlay;
   /** Map v2 M4: Focus mode link (`…/map/focus/<id>`). */
   focus?: CanvasRouteFocus;
+  /** Map v2 M6b: Flow mode link (`…/map/flow/<id>`). */
+  flow?: CanvasRouteFlow;
 }

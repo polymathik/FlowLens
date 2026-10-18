@@ -26,6 +26,7 @@
     "src/canvas/*.ts",
     "src/canvas/*.tsx",
     "src/canvas/components",
+    "src/canvas/flow",
     "src/canvas/focus",
     "src/canvas/hooks",
     "src/canvas/layout",
