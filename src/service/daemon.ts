@@ -21,6 +21,9 @@ import { ProjectCache } from './project-cache.js';
 import { createRpcFastPath } from './routes-graph.js';
 import { FLOWLENS_VERSION } from './runtime.js';
 import { WatcherManager, type Logger, type WatcherFactory } from './watchers.js';
+import { DAEMON_PORT_ENV, DEFAULT_EXPLORER_PORT } from '../contracts/canvas/explorer.js';
+import { mountExplorer } from './explorer.js';
+import { SessionStore } from './sessions.js';
 
 export interface StartDaemonOptions {
   options?: Partial<ServiceOptions>;
@@ -32,8 +35,32 @@ export interface StartDaemonOptions {
   log?: Logger;
   /** Called after a shutdown completes (the CLI exits the process here). */
   onExit?: () => void;
-  /** Hook for the explorer (wave 2): mount extra routes before listening. */
-  mount?: MountRoutes;
+  /** Extra routes mounted before listening; default: the explorer (`mountExplorer`). `null` = none. */
+  mount?: MountRoutes | null;
+  /**
+   * Port to try first (falls back to an ephemeral port when busy).
+   * Default: `$FLOWLENS_DAEMON_PORT`, else 4280; `0` = ephemeral.
+   */
+  port?: number;
+}
+
+/** Preferred listen port: option, env, then the explorer default. */
+export function preferredDaemonPort(explicit?: number): number {
+  if (explicit !== undefined) return explicit;
+  const env = Number(process.env[DAEMON_PORT_ENV]);
+  if (process.env[DAEMON_PORT_ENV] !== undefined && Number.isInteger(env) && env >= 0 && env <= 65535) return env;
+  return DEFAULT_EXPLORER_PORT;
+}
+
+function listenOn(server: Server, port: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onError = (err: Error) => reject(err);
+    server.once('error', onError);
+    server.listen(port, DAEMON_HOST, () => {
+      server.off('error', onError);
+      resolve();
+    });
+  });
 }
 
 export interface DaemonHandle {
@@ -108,17 +135,21 @@ export async function startDaemon(o: StartDaemonOptions = {}): Promise<DaemonHan
     token, registry, projects: new ProjectCache(registry), pool, watchers, hub, options,
     version: FLOWLENS_VERSION, startedAt, onShutdown: () => void shutdown(), log,
     onActivity: () => { lastActivity = Date.now(); },
+    sessions: new SessionStore(),
   };
-  const app = createServiceApp(deps, o.mount);
+  const app = createServiceApp(deps, o.mount === undefined ? mountExplorer : o.mount ?? undefined);
 
   const fastRpc = createRpcFastPath(deps);
   server = createServer((req, res) => {
     if (!fastRpc(req, res)) app(req, res);
   });
-  await new Promise<void>((resolve, reject) => {
-    server?.once('error', reject);
-    server?.listen(0, DAEMON_HOST, () => resolve());
-  });
+  const wanted = preferredDaemonPort(o.port);
+  try {
+    await listenOn(server, wanted);
+  } catch (err) {
+    if (wanted === 0 || (err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
+    await listenOn(server, 0);
+  }
   server.keepAliveTimeout = 65_000;
   const port = (server.address() as AddressInfo).port;
   deps.port = port;

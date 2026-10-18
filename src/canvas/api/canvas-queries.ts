@@ -5,26 +5,17 @@
  */
 import { join } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import type { GraphStore } from '../../contracts/graph.js';
 import type { GraphManifest } from '../../contracts/manifest.js';
 import type { ArchitectureConfig } from '../../contracts/architecture.js';
 import type { CanvasHotspot, CanvasHotspotsResponse, CanvasSummary } from '../../contracts/canvas/index.js';
 import { detectCycles } from '../../analysis/cycle-detector.js';
 import { validateArchitecture } from '../../analysis/architecture-validator.js';
-import { parseArchitectureConfig } from './architecture-schema.js';
+import { loadArchConfigOrNull } from '../../analysis/arch-config.js';
 
 /** Saved rules, or null when there is no (valid) architecture.json. */
-export async function loadSavedArchitecture(flowlensDir: string): Promise<ArchitectureConfig | null> {
-  const archPath = join(flowlensDir, 'architecture.json');
-  if (!existsSync(archPath)) return null;
-  try {
-    const parsed = parseArchitectureConfig(JSON.parse(await readFile(archPath, 'utf-8')));
-    return parsed.ok ? parsed.config : null;
-  } catch {
-    return null;
-  }
-}
+export const loadSavedArchitecture = (flowlensDir: string): Promise<ArchitectureConfig | null> =>
+  loadArchConfigOrNull(flowlensDir);
 
 /** Last completed index time: manifest `finished_at`, else graph dir mtime. */
 export async function lastIndexed(flowlensDir: string): Promise<string | null> {

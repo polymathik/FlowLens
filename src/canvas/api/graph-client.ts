@@ -1,12 +1,15 @@
 /**
- * Graph API client — the only module in the canvas that talks HTTP.
- * Base URL is relative (`/flowlens-api`), proxied by the Vite dev server or
- * served same-origin in production.
+ * Graph API client for ONE project — the only canvas module that talks to
+ * the graph routes. In the explorer the base is
+ * `/api/projects/<id>/canvas` (served by the daemon); the standalone
+ * server uses `/flowlens-api`. Components get the client of their project
+ * tab from `GraphClientContext` (see `useGraphClient`).
  *
  * Types come from `src/contracts/` (single source of truth).
  */
 export type { Entity, EntityKind, EntityMetrics, Location } from '../../contracts/entities.js';
 export type { Relation, RelationType } from '../../contracts/relations.js';
+export { ApiError } from './http.js';
 
 import type { Entity } from '../../contracts/entities.js';
 import type { Relation } from '../../contracts/relations.js';
@@ -19,79 +22,35 @@ import type {
   ArchitectureSaveResponse,
   CanvasHotspotsResponse,
   CanvasSummary,
-  ConfigIssue,
 } from '../../contracts/canvas/index.js';
+import { postJson, requestJson } from './http.js';
 
-export const API_BASE = '/flowlens-api';
+export const LEGACY_API_BASE = '/flowlens-api';
 
-/** HTTP error carrying the status and any validation issues from the server. */
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly issues: ConfigIssue[] = [],
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
+export function projectApiBase(projectId: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/canvas`;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init);
-  if (!res.ok) {
-    let issues: ConfigIssue[] = [];
-    let message = `API ${path} returned ${res.status}: ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { error?: string; issues?: ConfigIssue[] };
-      if (Array.isArray(body.issues)) issues = body.issues;
-      if (body.error) message = body.error;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new ApiError(message, res.status, issues);
-  }
-  return res.json() as Promise<T>;
+export function createGraphClient(base: string) {
+  const get = <T>(path: string) => requestJson<T>(`${base}${path}`);
+  return {
+    base,
+    fetchEntities: () => get<Entity[]>('/entities'),
+    fetchRelations: () => get<Relation[]>('/relations'),
+    fetchSummary: () => get<CanvasSummary>('/summary'),
+    fetchCycles: () => get<DetectedCycle[]>('/cycles'),
+    fetchViolations: () => get<ArchitectureViolation[]>('/violations'),
+    fetchAnnotations: async (): Promise<unknown[]> => (await get<{ annotations?: unknown[] }>('/annotations')).annotations ?? [],
+    fetchHotspots: (limit = 50) => get<CanvasHotspotsResponse>(`/hotspots?limit=${encodeURIComponent(String(limit))}`),
+    fetchDiff: (sha: string) => get<InterfaceDiff>(`/diff?sha=${encodeURIComponent(sha)}`),
+    /** Saved rules; `layers` is always present (empty when no file exists). */
+    fetchArchitecture: () => get<Partial<ArchitectureConfig> & { layers: ArchitectureConfig['layers'] }>('/architecture'),
+    /** Validate and save. Rejects with ApiError(400, issues) when invalid. */
+    saveArchitecture: (config: unknown) => postJson<ArchitectureSaveResponse>(`${base}/architecture`, config),
+    /** Validate a draft and compute its violations without saving. */
+    previewArchitecture: (config: unknown, signal?: AbortSignal) =>
+      postJson<ArchitecturePreviewResponse>(`${base}/architecture/preview`, config, signal),
+  };
 }
 
-function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  return request<T>(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  });
-}
-
-export const fetchEntities = () => request<Entity[]>('/entities');
-export const fetchRelations = () => request<Relation[]>('/relations');
-export const fetchSummary = () => request<CanvasSummary>('/summary');
-export const fetchCycles = () => request<DetectedCycle[]>('/cycles');
-export const fetchViolations = () => request<ArchitectureViolation[]>('/violations');
-
-export async function fetchAnnotations(): Promise<unknown[]> {
-  const data = await request<{ annotations?: unknown[] }>('/annotations');
-  return data.annotations ?? [];
-}
-
-export const fetchHotspots = (limit = 50) =>
-  request<CanvasHotspotsResponse>(`/hotspots?limit=${encodeURIComponent(String(limit))}`);
-
-export const fetchDiff = (sha: string) =>
-  request<InterfaceDiff>(`/diff?sha=${encodeURIComponent(sha)}`);
-
-/** Saved rules; `layers` is always present (empty when no file exists). */
-export const fetchArchitecture = () =>
-  request<Partial<ArchitectureConfig> & { layers: ArchitectureConfig['layers'] }>('/architecture');
-
-/** Validate and save. Rejects with ApiError(400, issues) when invalid. */
-export const saveArchitecture = (config: unknown) =>
-  postJSON<ArchitectureSaveResponse>('/architecture', config);
-
-/** Validate a draft and compute its violations without saving. */
-export const previewArchitecture = (config: unknown, signal?: AbortSignal) =>
-  postJSON<ArchitecturePreviewResponse>('/architecture/preview', config, signal);
-
-/** Server-sent events stream (watch mode pushes `graph-updated`). */
-export function openEventStream(): EventSource {
-  return new EventSource(`${API_BASE}/events`);
-}
+export type GraphClient = ReturnType<typeof createGraphClient>;

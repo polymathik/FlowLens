@@ -51,6 +51,8 @@ interface Entry {
 
 export class GraphPool {
   private entries = new Map<string, Entry>();
+  /** Graph revision per project: bumps after every write and on evict (explorer caches key on it). */
+  private revisions = new Map<string, number>();
   private watchDemandListener: (d: WatchDemand) => void = () => {};
 
   constructor(
@@ -74,7 +76,11 @@ export class GraphPool {
       if (!write) return await fn(store);
       const run = e.writeChain.then(() => fn(store));
       e.writeChain = run.catch(() => undefined);
-      return await run;
+      try {
+        return await run;
+      } finally {
+        this.bumpRevision(project.id);
+      }
     } finally {
       e.inflight--;
       e.lastUsed = Date.now();
@@ -114,8 +120,18 @@ export class GraphPool {
     return true;
   }
 
+  /** Current graph revision of a project (0 until the first write this session). */
+  revision(projectId: string): number {
+    return this.revisions.get(projectId) ?? 0;
+  }
+
+  bumpRevision(projectId: string): void {
+    this.revisions.set(projectId, this.revision(projectId) + 1);
+  }
+
   /** Close the project's DB (waits for in-flight work). Leases are kept unless `dropLeases`. */
   async close(projectId: string, dropLeases = false): Promise<void> {
+    if (dropLeases) this.bumpRevision(projectId);
     const e = this.entries.get(projectId);
     if (!e) return;
     if (dropLeases && e.leases.size > 0) {
