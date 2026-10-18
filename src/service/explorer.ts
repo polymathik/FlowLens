@@ -13,7 +13,7 @@
  * ```
  */
 import type { Express } from 'express';
-import type { MountRoutes, ServiceDeps } from './app.js';
+import type { MountRoutes, ServiceDeps } from '../contracts/service-deps.js';
 import { mountExplorerAuth } from './explorer-auth.js';
 import { createExplorerProjectState, mountExplorerProjects } from './explorer-projects.js';
 import { mountExplorerStatic } from './explorer-static.js';

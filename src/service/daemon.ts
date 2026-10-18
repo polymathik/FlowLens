@@ -16,7 +16,8 @@ import {
 } from '../contracts/service.js';
 import { LevelGraphStore } from '../graph/levelgraph-store.js';
 import { FileProjectRegistry } from '../projects/registry.js';
-import { createServiceApp, type MountRoutes, type ServiceDeps } from './app.js';
+import type { MountRoutes, ServiceDeps } from '../contracts/service-deps.js';
+import { createServiceApp } from './app.js';
 import { OWN_PROTOCOL_KEY, removeDaemonInfo, writeDaemonInfo } from './daemon-info.js';
 import { EventHub } from './events.js';
 import { GraphPool, type StoreFactory } from './graph-pool.js';

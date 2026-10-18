@@ -260,3 +260,6 @@ export interface HealthInput {
 
 /** MCP resource serving the Markdown health report (wave 2). */
 export const HEALTH_RESOURCE_URI = 'flowlens://health';
+
+/** Output formats of `renderHealth` / `flowlens report` (moved from src/health/index.ts, Phase 12 L6). */
+export type HealthFormat = 'md' | 'html' | 'json';

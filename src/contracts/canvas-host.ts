@@ -40,3 +40,14 @@ export class CanvasHostError extends Error {
     this.name = 'CanvasHostError';
   }
 }
+
+/** Where the explorer SPA lives in this install (moved from cli/canvas-host/package-paths.ts, Phase 12 L6). */
+export interface CanvasLocations {
+  packageRoot: string;
+  /** Built SPA (`dist/canvas/app`) — present in any built/installed package. */
+  builtDir: string;
+  builtAvailable: boolean;
+  /** Canvas sources (`src/canvas`) — present only in a source checkout. */
+  sourceDir: string;
+  sourceAvailable: boolean;
+}

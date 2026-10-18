@@ -14,7 +14,7 @@ import { SERVICE_ROUTES, type ReindexRequest, type ReindexResponse } from '../co
 import { runIndex } from '../indexer/indexer.js';
 import { loadProjectConfig } from '../projects/config.js';
 import { projectFlowlensDir } from '../projects/paths.js';
-import type { ServiceDeps } from './app.js';
+import type { ServiceDeps } from '../contracts/service-deps.js';
 import { ServiceError } from './errors.js';
 import { projectParam, route } from './routes-projects.js';
 

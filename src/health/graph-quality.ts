@@ -7,7 +7,12 @@ import type { HealthConfidence } from '../contracts/health.js';
 import type { HealthContext } from './context.js';
 import { plural } from './glossary.js';
 
-export interface GraphQuality {
+/**
+ * Health-engine view of graph quality (renamed from `GraphQuality` in
+ * Phase 12 L6 — not the indexer's `GraphQuality` contract in
+ * contracts/quality.ts, which is what the manifest stores).
+ */
+export interface HealthGraphSignals {
   totalRelations: number;
   danglingRelations: number;
   danglingRatio: number;
@@ -34,7 +39,7 @@ function fileLanguage(ctx: HealthContext, file: string): string {
   return (ents.find((e) => e.kind === 'file') ?? ents[0])?.language ?? 'unknown';
 }
 
-export function measureGraphQuality(ctx: HealthContext): GraphQuality {
+export function measureGraphQuality(ctx: HealthContext): HealthGraphSignals {
   const rels = ctx.input.relations;
   const imports = rels.filter((r) => r.type === 'import');
   const danglingImports = ctx.danglingRelations.filter((r) => r.type === 'import');
@@ -63,7 +68,7 @@ export function measureGraphQuality(ctx: HealthContext): GraphQuality {
 }
 
 /** True when the import graph is good enough to trust "nothing uses this" claims. */
-export function importsTrustworthy(ctx: HealthContext, q: GraphQuality): boolean {
+export function importsTrustworthy(ctx: HealthContext, q: HealthGraphSignals): boolean {
   return (
     q.totalImports > 0 &&
     q.unresolvedImportRatio <= ctx.thresholds.graph.unresolved_import_warn_ratio &&
@@ -72,7 +77,7 @@ export function importsTrustworthy(ctx: HealthContext, q: GraphQuality): boolean
 }
 
 /** Most code files have no links at all: imports were probably not understood. */
-export function looksDisconnected(ctx: HealthContext, q: GraphQuality): boolean {
+export function looksDisconnected(ctx: HealthContext, q: HealthGraphSignals): boolean {
   const g = ctx.thresholds.graph;
   return q.codeFiles >= g.disconnected_min_files && q.connectedShare < g.disconnected_share;
 }
@@ -80,7 +85,7 @@ export function looksDisconnected(ctx: HealthContext, q: GraphQuality): boolean 
 const pct = (r: number): string => `${Math.round(r * 100)}%`;
 
 /** Plain-English caveats about how much to trust this report. */
-export function buildCaveats(ctx: HealthContext, q: GraphQuality): string[] {
+export function buildCaveats(ctx: HealthContext, q: HealthGraphSignals): string[] {
   const out: string[] = [];
   const m = ctx.input.manifest;
   const g = ctx.thresholds.graph;
@@ -127,7 +132,7 @@ export function buildCaveats(ctx: HealthContext, q: GraphQuality): string[] {
 }
 
 /** low: map incomplete/disconnected/many unresolved imports; medium: no manifest, stale, or no git. */
-export function confidenceFor(ctx: HealthContext, q: GraphQuality): HealthConfidence {
+export function confidenceFor(ctx: HealthContext, q: HealthGraphSignals): HealthConfidence {
   const m = ctx.input.manifest;
   const g = ctx.thresholds.graph;
   if (

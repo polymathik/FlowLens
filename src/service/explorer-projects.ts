@@ -18,7 +18,7 @@ import type { HealthReport } from '../contracts/health.js';
 import type { ProjectWithStatus } from '../contracts/projects.js';
 import { buildHealthReport, loadHealthInput, renderHealth, summarizeHealth } from '../health/index.js';
 import { projectFlowlensDir } from '../projects/paths.js';
-import type { ServiceDeps } from './app.js';
+import type { ServiceDeps } from '../contracts/service-deps.js';
 import { ServiceError } from './errors.js';
 import { HealthCache, healthFingerprint } from './health-cache.js';
 import { projectParam, route } from './routes-projects.js';

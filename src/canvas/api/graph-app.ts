@@ -10,6 +10,7 @@
  * handler runs and is released afterwards). The canvas API only reads the
  * graph; the rules editor writes `.flowlens/architecture.json`.
  */
+import type { GraphApp, GraphAppOptions, GraphProvider } from '../../contracts/canvas/graph-app.js';
 import express, { type Request, type Response, type Router } from 'express';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
@@ -29,30 +30,7 @@ import { existsSync } from 'node:fs';
 import { parseArchitectureConfig } from './architecture-schema.js';
 import { computeHotspotList, computeSummary } from './canvas-queries.js';
 
-/** Lends an open store for the duration of `fn` (read-only use). */
-export interface GraphProvider {
-  withGraph<T>(fn: (graph: GraphStore) => Promise<T>): Promise<T>;
-}
-
-/** Where `/events` subscribers go; defaults to a local SSE hub. */
-export interface GraphEvents {
-  subscribe(req: Request, res: Response): void;
-}
-
-export interface GraphAppOptions {
-  graph: GraphStore | GraphProvider;
-  rootDir: string;
-  flowlensDir: string;
-  events?: GraphEvents;
-}
-
-export interface GraphApp {
-  router: Router;
-  /** Push a named SSE event to local subscribers (only when `events` was not given). */
-  broadcast: (type: string, payload: unknown) => void;
-  /** End every local SSE stream. */
-  closeEvents: () => void;
-}
+export type { GraphApp, GraphAppOptions, GraphEvents, GraphProvider } from '../../contracts/canvas/graph-app.js';
 
 type Handler = (req: Request, res: Response) => Promise<unknown>;
 

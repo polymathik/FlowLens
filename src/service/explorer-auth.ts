@@ -14,7 +14,7 @@ import type { Express } from 'express';
 import {
   AUTH_CODE_MAX_TTL_MS, EXPLORER_ROUTES, type AuthCodeRequest, type AuthCodeResponse, type SessionResponse,
 } from '../contracts/canvas/explorer.js';
-import type { ServiceDeps } from './app.js';
+import type { ServiceDeps } from '../contracts/service-deps.js';
 import { isLoopbackHost } from './auth.js';
 import { errorBody } from './errors.js';
 import { SessionStore } from './sessions.js';

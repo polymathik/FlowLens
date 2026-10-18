@@ -13,7 +13,9 @@ import type { HealthReport } from '../contracts/health.js';
 import { renderHtml } from './render/html.js';
 import { renderMarkdown } from './render/markdown.js';
 
-export type HealthFormat = 'md' | 'html' | 'json';
+import type { HealthFormat } from '../contracts/health.js';
+
+export type { HealthFormat } from '../contracts/health.js';
 
 export function renderHealth(report: HealthReport, format: HealthFormat): string {
   if (format === 'html') return renderHtml(report);
