@@ -1,16 +1,16 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
 import type { DiagnosticRunner } from '../../contracts/doctor.js';
+import { isGraphLockedError } from '../../agent/graph-access.js';
+import { graphErrorMessage, lockedMessage, openDoctorGraph } from './open-graph.js';
 
-export const graphPopulatedCheck: DiagnosticRunner = async ({ flowlensDir }) => {
+export const graphPopulatedCheck: DiagnosticRunner = async (ctx) => {
   const base = {
     name: 'graph-populated',
     title: 'Graph populated',
   };
 
-  const graphPath = join(flowlensDir, 'graph');
-  if (!existsSync(graphPath)) {
+  if (!existsSync(join(ctx.flowlensDir, 'graph'))) {
     return {
       ...base,
       status: 'error',
@@ -19,9 +19,12 @@ export const graphPopulatedCheck: DiagnosticRunner = async ({ flowlensDir }) => 
     };
   }
 
-  const store = new LevelGraphStore();
+  const opened = await openDoctorGraph(ctx);
+  if (!opened.ok) {
+    return { ...base, status: 'error', message: opened.locked ? lockedMessage(ctx) : `graph open failed: ${opened.message}` };
+  }
+  const store = opened.graph;
   try {
-    await store.open(graphPath);
     const nodes = await store.getAllNodes();
     const edges = await store.getAllEdges();
     if (nodes.length === 0) {
@@ -41,13 +44,9 @@ export const graphPopulatedCheck: DiagnosticRunner = async ({ flowlensDir }) => 
     return {
       ...base,
       status: 'error',
-      message: `graph open failed: ${err instanceof Error ? err.message : String(err)}`,
+      message: isGraphLockedError(err) ? lockedMessage(ctx) : `graph read failed: ${graphErrorMessage(err)}`,
     };
   } finally {
-    try {
-      await store.close();
-    } catch {
-      /* ignore close errors */
-    }
+    await store.close().catch(() => undefined);
   }
 };

@@ -23,13 +23,17 @@ import { ALL_CHECKS } from './checks/index.js';
 export interface DoctorOptions {
   /** Which check runners to execute. Defaults to ALL_CHECKS. */
   checks?: DiagnosticRunner[];
+  /** `false` opens the graph directly instead of via the daemon (`--no-daemon`). */
+  daemon?: boolean;
 }
 
 export class DefaultDoctor implements Doctor {
   private readonly runners: DiagnosticRunner[];
+  private readonly daemon: boolean | undefined;
 
   constructor(options: DoctorOptions = {}) {
     this.runners = options.checks ?? ALL_CHECKS;
+    this.daemon = options.daemon;
   }
 
   async diagnose(rootDir: string): Promise<DoctorReport> {
@@ -37,6 +41,7 @@ export class DefaultDoctor implements Doctor {
     const ctx: DoctorContext = {
       rootDir: abs,
       flowlensDir: join(abs, '.flowlens'),
+      daemon: this.daemon,
     };
 
     const results: DiagnosticCheck[] = [];
@@ -75,6 +80,6 @@ function rollUp(results: DiagnosticCheck[]): OverallStatus {
 }
 
 /** Convenience for callers that don't want to instantiate the class. */
-export async function runDoctor(rootDir: string): Promise<DoctorReport> {
-  return new DefaultDoctor().diagnose(rootDir);
+export async function runDoctor(rootDir: string, options: DoctorOptions = {}): Promise<DoctorReport> {
+  return new DefaultDoctor(options).diagnose(rootDir);
 }

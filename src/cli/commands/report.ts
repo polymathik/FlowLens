@@ -29,6 +29,8 @@ export interface ReportOptions {
   top?: string | number;
   churnDays?: string | number;
   git?: boolean;
+  /** commander's `--no-daemon` → false. */
+  daemon?: boolean;
 }
 
 export interface ReportResult {
@@ -50,7 +52,7 @@ export async function runReport(rootDir: string, opts: ReportOptions): Promise<R
     return { exitCode: 2, output: '', message: '--top and --churn-days must be positive whole numbers.' };
   }
   try {
-    const input = await loadHealthInput(rootDir, { churnDays, noGit: opts.git === false });
+    const input = await loadHealthInput(rootDir, { churnDays, noGit: opts.git === false, daemon: opts.daemon });
     const report = await buildHealthReport(input, { top });
     const output = renderHealth(report, format);
     if (opts.out) {
@@ -89,6 +91,7 @@ export const reportCommand = new Command('report')
   .option('--top <n>', 'Show only the top N findings', '10')
   .option('--churn-days <n>', 'Days of git history to use for change risk', '90')
   .option('--no-git', 'Ignore git history')
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
   .action(async (opts: ReportOptions) => {
     const result = await runReport(process.cwd(), opts);
     if (!opts.out || result.exitCode !== 0) await write(process.stdout, result.output);

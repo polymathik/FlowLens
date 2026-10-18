@@ -18,11 +18,14 @@ const CLI = resolve(import.meta.dirname, '../../src/cli/index.ts');
 // `--import tsx` resolves from the child's cwd (a temp dir), so pass an absolute URL.
 const TSX = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 
+/** Isolated daemon home: export/doctor reach the graph through the FlowLens daemon. */
+let home = '';
+
 function runCli(args: string[], cwd: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((done) => {
     const child = spawn(process.execPath, ['--import', TSX, CLI, ...args], {
       cwd,
-      env: { ...process.env, FORCE_COLOR: '0' },
+      env: { ...process.env, FORCE_COLOR: '0', FLOWLENS_HOME: home, FLOWLENS_NO_DAEMON: '' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const out: Buffer[] = [];
@@ -70,6 +73,7 @@ describe('CLI export/doctor (spawned)', () => {
 
   beforeAll(async () => {
     tmp = await mkdtemp(join(tmpdir(), 'flowlens-cli-e2e-'));
+    home = await mkdtemp(join(tmpdir(), 'flowlens-cli-e2e-home-'));
     const fl = join(tmp, '.flowlens');
     await mkdir(fl, { recursive: true });
     await writeFile(
@@ -89,8 +93,20 @@ describe('CLI export/doctor (spawned)', () => {
   }, 60_000);
 
   afterAll(async () => {
+    await runCli(['daemon', 'stop'], tmp);
     await rm(tmp, { recursive: true, force: true });
-  });
+    await rm(home, { recursive: true, force: true });
+  }, 60_000);
+
+  it('export --no-daemon reads the graph directly and errors go to stderr', async () => {
+    const r = await runCli(['export', '--no-daemon', '--format', 'json'], tmp);
+    expect(r.code).toBe(0);
+    expect((JSON.parse(r.stdout) as { entities: unknown[] }).entities).toHaveLength(N);
+    const bad = await runCli(['export', '--format', 'bogus'], tmp);
+    expect(bad.code).toBe(2);
+    expect(bad.stdout).toBe('');
+    expect(bad.stderr).toContain('Unknown format "bogus"');
+  }, 60_000);
 
   it('export --format json writes the complete document to a pipe', async () => {
     const r = await runCli(['export', '--format', 'json'], tmp);

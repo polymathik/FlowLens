@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
 import { renderExport } from '../../export/index.js';
 import { writeFully } from '../../export/stream-writer.js';
 import { printError } from '../output.js';
@@ -24,6 +24,7 @@ export const exportCommand = new Command('export')
   .option('--metrics', 'Include metrics in JSON output (default: true)')
   .option('--no-metrics', 'Strip metrics from JSON output')
   .option('--output <file>', 'Write to file (default: stdout)')
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
   .action(async (opts) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
@@ -40,7 +41,7 @@ export const exportCommand = new Command('export')
     }
 
     try {
-      const { entities, relations } = await loadGraph(flowlensDir);
+      const { entities, relations } = await loadGraph(rootDir, opts.daemon);
 
       const exportOpts: ExportOptions = {
         format,
@@ -68,13 +69,9 @@ export const exportCommand = new Command('export')
     }
   });
 
-/**
- * The ONLY place `export` opens the graph. Swap point for the graph service
- * (`openGraphStore(rootDir, { client: 'export' })`) at merge time.
- */
-async function loadGraph(flowlensDir: string): Promise<{ entities: Entity[]; relations: Relation[] }> {
-  const graphStore = new LevelGraphStore();
-  await graphStore.open(join(flowlensDir, 'graph'));
+/** The ONLY place `export` opens the graph (daemon by default, `--no-daemon` direct). */
+async function loadGraph(rootDir: string, daemon?: boolean): Promise<{ entities: Entity[]; relations: Relation[] }> {
+  const graphStore = await openGraphStore(rootDir, { client: 'export', daemon });
   try {
     return { entities: await graphStore.getAllNodes(), relations: await graphStore.getAllEdges() };
   } finally {

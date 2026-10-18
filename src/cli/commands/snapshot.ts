@@ -8,7 +8,7 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { ensureSnapshotForHead } from '../../analysis/snapshot-service.js';
 import { SNAPSHOT_KEEP_COUNT } from '../../contracts/analysis/snapshots.js';
@@ -19,6 +19,7 @@ export const snapshotCommand = new Command('snapshot')
   .option('--force', 'Re-take the snapshot even if one exists for HEAD')
   .option('--list', 'List stored snapshots')
   .option('--keep <n>', `Snapshots to keep when pruning (default ${SNAPSHOT_KEEP_COUNT})`)
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
   .action(async (opts) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
@@ -43,10 +44,13 @@ export const snapshotCommand = new Command('snapshot')
     }
 
     try {
-      const graphStore = new LevelGraphStore();
-      await graphStore.open(join(flowlensDir, 'graph'));
-      const result = await ensureSnapshotForHead({ graph: graphStore, rootDir, flowlensDir, keep, force: Boolean(opts.force) });
-      await graphStore.close();
+      const graphStore = await openGraphStore(rootDir, { client: 'snapshot', daemon: opts.daemon });
+      let result: Awaited<ReturnType<typeof ensureSnapshotForHead>>;
+      try {
+        result = await ensureSnapshotForHead({ graph: graphStore, rootDir, flowlensDir, keep, force: Boolean(opts.force) });
+      } finally {
+        await graphStore.close();
+      }
 
       if (result.status === 'skipped') {
         printError(`Snapshot skipped: ${result.reason}`);

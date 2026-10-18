@@ -2,8 +2,8 @@
  * Load a HealthInput from a project's `.flowlens/` directory (the only
  * I/O in the health engine). Reads the graph, manifest, project identity,
  * architecture rules and git history; tolerates every optional piece being
- * absent. The graph store is injectable so the graph service (Lane B) can
- * hand in its own client instead of opening LevelDB.
+ * absent. Without an injected store the graph is opened through
+ * `openGraphStore` (FlowLens daemon by default; `daemon: false` direct).
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import type { ArchitectureConfig } from '../contracts/architecture.js';
 import type { GraphStore } from '../contracts/graph.js';
 import type { HealthInput } from '../contracts/health.js';
 import type { GraphManifest } from '../contracts/manifest.js';
-import { LevelGraphStore } from '../graph/levelgraph-store.js';
+import { openGraphStore } from '../service/open-graph-store.js';
 import { getLastIndexed } from '../mcp/last-indexed.js';
 import { readProjectIdentity } from '../utils/project-identity.js';
 import { HEALTH_THRESHOLDS } from './config.js';
@@ -33,6 +33,8 @@ export interface LoadOptions {
   churnDays?: number;
   /** Skip git entirely (treat as no history). */
   noGit?: boolean;
+  /** `false` opens LevelDB directly instead of via the daemon (`--no-daemon`). */
+  daemon?: boolean;
 }
 
 export async function loadHealthInput(rootDir: string, opts: LoadOptions = {}): Promise<HealthInput> {
@@ -41,7 +43,7 @@ export async function loadHealthInput(rootDir: string, opts: LoadOptions = {}): 
   const graphDir = join(flowlensDir, 'graph');
   if (!opts.graphStore && !existsSync(graphDir)) throw new HealthGraphMissingError(flowlensDir);
 
-  const { entities, relations } = await readGraph(graphDir, opts.graphStore);
+  const { entities, relations } = await readGraph(root, opts);
   const manifest = readJson<GraphManifest>(join(flowlensDir, 'manifest.json'));
   const identity = readProjectIdentity(flowlensDir);
   const architecture = readJson<ArchitectureConfig>(join(flowlensDir, 'architecture.json'));
@@ -61,9 +63,9 @@ export async function loadHealthInput(rootDir: string, opts: LoadOptions = {}): 
   };
 }
 
-async function readGraph(graphDir: string, injected?: GraphStore) {
-  const store = injected ?? new LevelGraphStore();
-  if (!injected) await store.open(graphDir);
+async function readGraph(root: string, opts: LoadOptions) {
+  const injected = opts.graphStore;
+  const store: GraphStore = injected ?? await openGraphStore(root, { client: 'report', daemon: opts.daemon });
   try {
     const [entities, relations] = await Promise.all([store.getAllNodes(), store.getAllEdges()]);
     return { entities, relations };
