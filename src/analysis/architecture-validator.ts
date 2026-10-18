@@ -35,35 +35,51 @@ function compiledPattern(pattern: string): Minimatch {
   return mm;
 }
 
-function matchesLayer(entity: Entity, layer: ArchitectureLayer): boolean {
-  // Check glob patterns against entity file path
+function matchesFile(file: string, layer: ArchitectureLayer): boolean {
   if (layer.include.patterns) {
     for (const pattern of layer.include.patterns) {
-      if (compiledPattern(pattern).match(entity.file)) return true;
+      if (compiledPattern(pattern).match(file)) return true;
     }
   }
-  // Check explicit file list
-  if (layer.include.files?.includes(entity.file)) return true;
-  // Check entity name / qualified_name patterns
-  if (layer.include.entities) {
-    for (const eName of layer.include.entities) {
-      if (entity.name === eName || entity.qualified_name === eName)
-        return true;
-    }
-  }
-  return false;
+  return layer.include.files?.includes(file) ?? false;
+}
+
+function matchesEntityRule(entity: Entity, layer: ArchitectureLayer): boolean {
+  return layer.include.entities?.some((n) => entity.name === n || entity.qualified_name === n) ?? false;
+}
+
+function matchesLayer(entity: Entity, layer: ArchitectureLayer): boolean {
+  return matchesFile(entity.file, layer) || matchesEntityRule(entity, layer);
 }
 
 /**
  * Build a lookup table: entity id -> layer name (or null for unassigned).
+ *
+ * Glob matching is done once per distinct file path (not per entity); only
+ * layers with explicit `include.entities` rules are checked per entity, and
+ * only those ordered before the file's first matching layer (first match wins).
  */
 export function buildLayerMap(
   entities: Entity[],
   config: ArchitectureConfig,
 ): Map<string, string | null> {
+  const layers = config.layers;
+  const entityRuleIdx = layers.flatMap((l, i) => (l.include.entities?.length ? [i] : []));
+  const firstFileLayer = new Map<string, number>(); // file -> index, or layers.length if none
   const map = new Map<string, string | null>();
   for (const entity of entities) {
-    map.set(entity.id, resolveLayer(entity, config));
+    let fi = firstFileLayer.get(entity.file);
+    if (fi === undefined) {
+      fi = layers.findIndex((l) => matchesFile(entity.file, l));
+      if (fi < 0) fi = layers.length;
+      firstFileLayer.set(entity.file, fi);
+    }
+    let idx = fi;
+    for (const i of entityRuleIdx) {
+      if (i >= idx) break;
+      if (matchesEntityRule(entity, layers[i])) { idx = i; break; }
+    }
+    map.set(entity.id, idx < layers.length ? layers[idx].name : null);
   }
   return map;
 }
