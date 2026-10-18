@@ -2,7 +2,9 @@
  * Rule: tangles — files that depend on each other in a loop.
  *
  * Uses the existing file-level cycle detector (Tarjan SCC) and adds an
- * ordered loop path for the explanation. Penalty is a per-file sum
+ * ordered loop path for the explanation. Only runtime dependencies count
+ * (Phase 12): loops made of type-only imports / type annotations are
+ * reported separately as `type_cycle` design notes (see type-cycles.ts). Penalty is a per-file sum
  * (TANGLE_POINTS_PER_FILE × impact of each file in a tangle) so adding a
  * dependency can never lower it, even when two tangles merge into one.
  */
@@ -31,7 +33,7 @@ function tangleFinding(ctx: HealthContext, members: string[]): RawFinding {
   const severity = tangleSeverity(members.length, blast, ctx.files.length);
   const evidence: HealthEvidence[] = [];
   for (let i = 0; i < loop.length - 1; i++) {
-    const site = ctx.depSites.get(`${loop[i]}->${loop[i + 1]}`);
+    const site = ctx.runtimeSites.get(`${loop[i]}->${loop[i + 1]}`);
     evidence.push({
       file: loop[i],
       line: site?.line,
@@ -86,7 +88,11 @@ export function tangleSeverity(size: number, blast: number, totalFiles: number):
  * A shortest loop through the first member (BFS inside the tangle), as an
  * ordered path ending where it started: [a, b, c, a].
  */
-export function orderedLoop(ctx: HealthContext, members: string[]): string[] {
+export function orderedLoop(
+  ctx: HealthContext,
+  members: string[],
+  deps: Map<string, Set<string>> = ctx.runtimeDeps,
+): string[] {
   const inside = new Set(members);
   const start = members[0];
   const prev = new Map<string, string>();
@@ -94,7 +100,7 @@ export function orderedLoop(ctx: HealthContext, members: string[]): string[] {
   const seen = new Set<string>([start]);
   while (queue.length > 0) {
     const cur = queue.shift()!;
-    for (const next of [...(ctx.fileDeps.get(cur) ?? [])].sort()) {
+    for (const next of [...(deps.get(cur) ?? [])].sort()) {
       if (!inside.has(next)) continue;
       if (next === start) {
         const path = [cur];

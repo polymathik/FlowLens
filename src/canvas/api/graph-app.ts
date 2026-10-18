@@ -144,7 +144,11 @@ export function createGraphApp(opts: GraphAppOptions): GraphApp {
     res.json(JSON.parse(await readFile(annPath, 'utf-8')));
   }));
 
-  router.get('/cycles', route(async (_req, res) => res.json(await withGraph((s) => detectCycles(s, { granularity: 'file' })))));
+  // Runtime cycles by default; `?include_type_only=1` also counts type-level edges (Phase 12).
+  router.get('/cycles', route(async (req, res) => {
+    const includeTypeOnly = req.query.include_type_only === '1' || req.query.include_type_only === 'true';
+    res.json(await withGraph((s) => detectCycles(s, { granularity: 'file', include_type_only: includeTypeOnly })));
+  }));
 
   router.get('/violations', route(async (_req, res) => {
     const config = await loadArchConfigOrNull(flowlensDir);

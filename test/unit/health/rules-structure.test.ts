@@ -112,3 +112,25 @@ describe('health rule: fragile hubs', () => {
     expect(hubBar(buildHealthContext(g.input()))).toBe(20);
   });
 });
+
+describe('health rule: type-only loops (Phase 12)', () => {
+  it('a loop closed only by `import type` is not a tangle but an info note', async () => {
+    const { typeCycleRule } = await import('../../../src/health/rules/type-cycles.js');
+    const g = new GraphBuilder().dep('src/a.ts', 'src/b.ts', { line: 2 }).dep('src/b.ts', 'src/a.ts', { line: 4 });
+    g.relations[g.relations.length - 1].meta = { type_only: true };
+    const ctx = buildHealthContext(g.input());
+    expect(await cycleRule.run(ctx)).toEqual([]);
+    const [note, ...rest] = await typeCycleRule.run(ctx);
+    expect(rest).toHaveLength(0);
+    expect(note.kind).toBe('type_cycle');
+    expect(note.severity).toBe('info');
+    expect(note.penalty).toBe(0);
+    expect(note.evidence.map((e: any) => e.note)).toEqual(['uses src/b.ts (line 2)', 'uses only types from src/a.ts (line 4)']);
+  });
+
+  it('a real runtime loop gives no type note', async () => {
+    const { typeCycleRule } = await import('../../../src/health/rules/type-cycles.js');
+    const g = new GraphBuilder().dep('a.ts', 'b.ts').dep('b.ts', 'a.ts');
+    expect(await typeCycleRule.run(buildHealthContext(g.input()))).toEqual([]);
+  });
+});

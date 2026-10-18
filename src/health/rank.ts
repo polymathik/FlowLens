@@ -50,6 +50,7 @@ function linkRelated(findings: HealthFinding[]): void {
 
 const VERBS: Record<HealthFinding['kind'], string> = {
   cycle: 'Untangle',
+  type_cycle: 'Optionally untangle types',
   god_file: 'Split up',
   fragile_hub: 'Make safer to change',
   complex_function: 'Simplify',

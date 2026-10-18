@@ -34,9 +34,11 @@ export const DetectedCycleSchema = z.strictObject({
   path_labels: z.array(z.string()).optional(),
   edges: z.array(z.strictObject({
     from: z.string(), to: z.string(), relation_types: z.array(RelationTypeSchema),
+    type_only: z.boolean().optional(),
   })).optional(),
   severity_reasons: z.array(z.string()).optional(),
   layers: z.array(z.string()).optional(),
+  type_only: z.boolean().optional(),
 });
 
 export const InterfaceDiffEntrySchema = z.strictObject({
@@ -91,6 +93,8 @@ export const DetectCyclesInputShape = {
   scope: z.string().optional().describe('Only cycles with a member under this path prefix'),
   relation_types: z.array(RelationTypeSchema).optional().describe('Relation types forming edges (file/module)'),
   severity_threshold: CycleSeveritySchema.optional().describe('Minimum severity'),
+  include_type_only: z.boolean().optional()
+    .describe('Also count type-level edges (import type, type annotations, interface references). Default false: runtime cycles only; extra loops are marked type_only'),
   max_results: maxResultsField(ANALYSIS_LIMITS.cycles.default, ANALYSIS_LIMITS.cycles.cap),
 };
 

@@ -38,7 +38,9 @@ export function createGraphClient(base: string) {
     fetchEntities: () => get<Entity[]>('/entities'),
     fetchRelations: () => get<Relation[]>('/relations'),
     fetchSummary: () => get<CanvasSummary>('/summary'),
-    fetchCycles: () => get<DetectedCycle[]>('/cycles'),
+    /** Runtime cycles; `includeTypeOnly` also counts type-only imports/annotations. */
+    fetchCycles: (includeTypeOnly = false) =>
+      get<DetectedCycle[]>(includeTypeOnly ? '/cycles?include_type_only=1' : '/cycles'),
     fetchViolations: () => get<ArchitectureViolation[]>('/violations'),
     fetchAnnotations: async (): Promise<unknown[]> => (await get<{ annotations?: unknown[] }>('/annotations')).annotations ?? [],
     fetchHotspots: (limit = 50) => get<CanvasHotspotsResponse>(`/hotspots?limit=${encodeURIComponent(String(limit))}`),

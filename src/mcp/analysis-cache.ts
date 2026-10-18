@@ -35,14 +35,17 @@ export interface CycleQuery {
   relation_types?: RelationType[];
   scope?: string;
   severity_threshold?: CycleSeverity;
+  include_type_only?: boolean;
 }
 
 export function cachedCycles(view: GraphView, q: CycleQuery, arch: ArchContext | null): DetectedCycle[] {
   const rel = q.relation_types ? [...q.relation_types].sort().join(',') : '*';
-  const key = `cycles:${q.granularity}:${rel}:${arch?.key ?? 'noarch'}`;
+  const types = q.include_type_only ? 'types' : 'runtime';
+  const key = `cycles:${q.granularity}:${rel}:${types}:${arch?.key ?? 'noarch'}`;
   const all = view.cached(key, () => detectCyclesInData(view.nodes, view.edges, {
     granularity: q.granularity,
     relation_types: q.relation_types,
+    include_type_only: q.include_type_only,
     architecture: arch?.config ?? null,
     layerMap: arch?.layerMap,
   }));

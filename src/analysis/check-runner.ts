@@ -19,6 +19,8 @@ export interface CheckRunOptions {
   runArchitecture: boolean;
   severity: CycleSeverity;
   scope?: string;
+  /** Count type-level edges as dependencies (default false: runtime cycles only). */
+  includeTypeOnly?: boolean;
 }
 
 export interface CheckRunResult {
@@ -44,6 +46,7 @@ export async function runCheck(graph: GraphStore, opts: CheckRunOptions): Promis
       scope,
       architecture: config,
       layerMap,
+      include_type_only: opts.includeTypeOnly,
     });
   }
 
@@ -64,6 +67,7 @@ export async function runCheck(graph: GraphStore, opts: CheckRunOptions): Promis
     timestamp: new Date().toISOString(),
     ...(scope ? { scope } : {}),
     severity_threshold: opts.severity,
+    ...(opts.includeTypeOnly ? { include_type_only: true } : {}),
     architecture,
     cycles: cycles.map((c) => ({
       severity: c.severity,
@@ -71,6 +75,7 @@ export async function runCheck(graph: GraphStore, opts: CheckRunOptions): Promis
       path: c.path_labels ?? c.path ?? c.entities,
       members: c.length,
       severity_reasons: c.severity_reasons ?? [],
+      ...(c.type_only ? { type_only: true } : {}),
     })),
     architecture_violations: violations.map((v) => ({
       rule: v.rule,

@@ -3,16 +3,28 @@
  *
  * Converts raw entity/relation graphs into simplified adjacency lists
  * grouped by file, module, function, or raw entity level.
+ *
+ * Phase 12: type-level edges (see `type-level.ts`) are dropped unless
+ * `includeTypeOnly` is set; when they are kept, hops made only of type-level
+ * relations are recorded in `typeOnlyHops`.
  */
 
 import type { Entity } from '../contracts/entities.js';
 import type { Relation, RelationType } from '../contracts/relations.js';
 import type { CycleGranularity } from '../contracts/analysis/cycles.js';
 import { moduleOfEntity } from './module-path.js';
+import { typeLevelPredicate } from './type-level.js';
 
 export interface CollapsedGraph {
   adjacency: Map<string, Set<string>>;
   relationTypes: Map<string, Set<RelationType>>;
+  /** `${from}->${to}` keys whose every underlying relation is type-level. */
+  typeOnlyHops: Set<string>;
+}
+
+export interface CollapseOptions {
+  /** Keep type-level edges (default false: runtime dependencies only). */
+  includeTypeOnly?: boolean;
 }
 
 /**
@@ -29,19 +41,55 @@ export function collapseGraph(
   edges: Relation[],
   granularity: CycleGranularity,
   relationTypeFilter?: RelationType[],
+  options: CollapseOptions = {},
 ): CollapsedGraph {
-  const filteredEdges = filterEdges(edges, granularity, relationTypeFilter);
+  const isTypeLevel = typeLevelPredicate(entities);
+  const filtered = filterEdges(edges, granularity, relationTypeFilter)
+    .filter((e) => options.includeTypeOnly || !isTypeLevel(e));
+  const nodeOf = nodeMapper(entities, granularity);
+  const graph: CollapsedGraph = { adjacency: new Map(), relationTypes: new Map(), typeOnlyHops: new Set() };
+  const runtimeHops = new Set<string>();
 
-  switch (granularity) {
-    case 'file':
-      return collapseByFile(entities, filteredEdges);
-    case 'module':
-      return collapseByModule(entities, filteredEdges);
-    case 'function':
-      return collapseByFunction(entities, filteredEdges);
-    case 'all':
-      return collapseAll(entities, filteredEdges);
+  for (const node of new Set(nodeOf.values())) graph.adjacency.set(node, new Set());
+
+  for (const edge of filtered) {
+    const from = nodeOf.get(edge.from);
+    const to = nodeOf.get(edge.to);
+    if (!from || !to || from === to) continue;
+    graph.adjacency.get(from)!.add(to);
+    const key = `${from}->${to}`;
+    if (!graph.relationTypes.has(key)) graph.relationTypes.set(key, new Set());
+    graph.relationTypes.get(key)!.add(edge.type);
+    if (isTypeLevel(edge)) {
+      if (!runtimeHops.has(key)) graph.typeOnlyHops.add(key);
+    } else {
+      runtimeHops.add(key);
+      graph.typeOnlyHops.delete(key);
+    }
   }
+  return graph;
+}
+
+/** Entity id → collapsed node id for the granularity. */
+function nodeMapper(entities: Entity[], granularity: CycleGranularity): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const e of entities) {
+    switch (granularity) {
+      case 'file':
+        map.set(e.id, e.file);
+        break;
+      case 'module':
+        map.set(e.id, moduleOfEntity(e));
+        break;
+      case 'function':
+        if (e.kind === 'function' || e.kind === 'method') map.set(e.id, e.id);
+        break;
+      case 'all':
+        map.set(e.id, e.id);
+        break;
+    }
+  }
+  return map;
 }
 
 function filterEdges(
@@ -49,125 +97,10 @@ function filterEdges(
   granularity: CycleGranularity,
   relationTypeFilter?: RelationType[],
 ): Relation[] {
-  let filtered = edges;
-
-  if (granularity === 'function') {
-    filtered = filtered.filter((e) => e.type === 'call');
-  } else if (relationTypeFilter && relationTypeFilter.length > 0) {
+  if (granularity === 'function') return edges.filter((e) => e.type === 'call');
+  if (relationTypeFilter && relationTypeFilter.length > 0) {
     const typeSet = new Set(relationTypeFilter);
-    filtered = filtered.filter((e) => typeSet.has(e.type));
+    return edges.filter((e) => typeSet.has(e.type));
   }
-
-  return filtered;
+  return edges;
 }
-
-function collapseByFile(entities: Entity[], edges: Relation[]): CollapsedGraph {
-  const entityToFile = new Map<string, string>();
-  for (const e of entities) {
-    entityToFile.set(e.id, e.file);
-  }
-
-  const adjacency = new Map<string, Set<string>>();
-  const relationTypes = new Map<string, Set<RelationType>>();
-
-  // Ensure all files appear as nodes
-  for (const file of new Set(entityToFile.values())) {
-    if (!adjacency.has(file)) adjacency.set(file, new Set());
-  }
-
-  for (const edge of edges) {
-    const fromFile = entityToFile.get(edge.from);
-    const toFile = entityToFile.get(edge.to);
-    if (!fromFile || !toFile || fromFile === toFile) continue;
-
-    if (!adjacency.has(fromFile)) adjacency.set(fromFile, new Set());
-    adjacency.get(fromFile)!.add(toFile);
-
-    const key = `${fromFile}->${toFile}`;
-    if (!relationTypes.has(key)) relationTypes.set(key, new Set());
-    relationTypes.get(key)!.add(edge.type);
-  }
-
-  return { adjacency, relationTypes };
-}
-
-function collapseByModule(entities: Entity[], edges: Relation[]): CollapsedGraph {
-  const entityToModule = new Map<string, string>();
-  for (const e of entities) {
-    entityToModule.set(e.id, moduleOfEntity(e));
-  }
-
-  const adjacency = new Map<string, Set<string>>();
-  const relationTypes = new Map<string, Set<RelationType>>();
-
-  // Ensure all modules appear as nodes
-  for (const mod of new Set(entityToModule.values())) {
-    if (!adjacency.has(mod)) adjacency.set(mod, new Set());
-  }
-
-  for (const edge of edges) {
-    const fromMod = entityToModule.get(edge.from);
-    const toMod = entityToModule.get(edge.to);
-    if (!fromMod || !toMod || fromMod === toMod) continue;
-
-    if (!adjacency.has(fromMod)) adjacency.set(fromMod, new Set());
-    adjacency.get(fromMod)!.add(toMod);
-
-    const key = `${fromMod}->${toMod}`;
-    if (!relationTypes.has(key)) relationTypes.set(key, new Set());
-    relationTypes.get(key)!.add(edge.type);
-  }
-
-  return { adjacency, relationTypes };
-}
-
-function collapseByFunction(entities: Entity[], edges: Relation[]): CollapsedGraph {
-  const funcKinds = new Set(['function', 'method']);
-  const funcIds = new Set(entities.filter((e) => funcKinds.has(e.kind)).map((e) => e.id));
-
-  const adjacency = new Map<string, Set<string>>();
-  const relationTypes = new Map<string, Set<RelationType>>();
-
-  // Only function/method entities
-  for (const id of funcIds) {
-    if (!adjacency.has(id)) adjacency.set(id, new Set());
-  }
-
-  for (const edge of edges) {
-    if (!funcIds.has(edge.from) || !funcIds.has(edge.to)) continue;
-    if (edge.from === edge.to) continue;
-
-    if (!adjacency.has(edge.from)) adjacency.set(edge.from, new Set());
-    adjacency.get(edge.from)!.add(edge.to);
-
-    const key = `${edge.from}->${edge.to}`;
-    if (!relationTypes.has(key)) relationTypes.set(key, new Set());
-    relationTypes.get(key)!.add(edge.type);
-  }
-
-  return { adjacency, relationTypes };
-}
-
-function collapseAll(entities: Entity[], edges: Relation[]): CollapsedGraph {
-  const entityIds = new Set(entities.map((e) => e.id));
-  const adjacency = new Map<string, Set<string>>();
-  const relationTypes = new Map<string, Set<RelationType>>();
-
-  for (const id of entityIds) {
-    if (!adjacency.has(id)) adjacency.set(id, new Set());
-  }
-
-  for (const edge of edges) {
-    if (edge.from === edge.to) continue;
-
-    if (!adjacency.has(edge.from)) adjacency.set(edge.from, new Set());
-    adjacency.get(edge.from)!.add(edge.to);
-
-    const key = `${edge.from}->${edge.to}`;
-    if (!relationTypes.has(key)) relationTypes.set(key, new Set());
-    relationTypes.get(key)!.add(edge.type);
-  }
-
-  return { adjacency, relationTypes };
-}
-

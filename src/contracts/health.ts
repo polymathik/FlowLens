@@ -39,6 +39,12 @@ export type HealthConfidence = 'high' | 'medium' | 'low';
 export type HealthFindingKind =
   /** Files that depend on each other in a loop ("tangle"). */
   | 'cycle'
+  /**
+   * Phase 12: files that form a loop only through type-only imports or type
+   * annotations. No runtime effect; reported as `info` design notes with no
+   * score penalty.
+   */
+  | 'type_cycle'
   /** One file doing far too many jobs. */
   | 'god_file'
   /** Many files rely on this one, and it is itself hard to change safely. */
