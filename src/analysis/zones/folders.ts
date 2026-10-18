@@ -3,10 +3,11 @@
  *
  * A folder / package node becomes a zone when it directly holds at least
  * one file or has at least two child folders (packages always do). A
- * folder that is only a bridge to a single child folder is skipped, its
- * child moves up. Zones nest up to `maxDepth` levels below the scope;
- * deeper folders are merged into their depth-cap ancestor, which then
- * starts collapsed (`absorbed`).
+ * folder that only bridges to one child folder, or whose child folders are
+ * all packages (`packages/`, `apps/`), is skipped; its children move up.
+ * Zones nest up to `maxDepth` levels below the scope; deeper folders are
+ * merged into their depth-cap ancestor, which then starts collapsed
+ * (`absorbed`).
  *
  * Files directly in the scope root form the `Root` zone; the scope's own
  * config group (config files, lockfiles) forms the muted `Config` zone.
@@ -38,7 +39,8 @@ export function foldersDrafts(input: ZoningInput): ZoneDraft[] {
   const visit = (node: HierarchyNode, parentKey: string | null, level: number): void => {
     const files = directFiles(h, node);
     const subs = node.childIds.map((id) => h.nodes.get(id)).filter((n): n is HierarchyNode => !!n && isFolderish(n));
-    const worthy = node.kind === 'package' ? files.length + subs.length > 0 : files.length >= 1 || subs.length >= 2;
+    const onlyPackages = subs.length > 0 && subs.every((n) => n.kind === 'package'); // `packages/`, `apps/`: a bridge, not a zone
+    const worthy = node.kind === 'package' ? files.length + subs.length > 0 : files.length >= 1 || (subs.length >= 2 && !onlyPackages);
     if (!worthy) {
       for (const sub of subs) visit(sub, parentKey, level); // a bridge folder adds no level
       return;

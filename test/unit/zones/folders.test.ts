@@ -36,6 +36,14 @@ describe('folders mode', () => {
     expect(expectConsistent(zs, allFileIds(h))).toEqual([]);
   });
 
+  it('a folder that only holds packages (packages/, apps/) is a bridge, not a zone', () => {
+    const { h } = treeOf(['packages/a/src/x.ts', 'packages/b/src/y.ts', 'packages/shared.ts', 'apps/w/src/z.ts', 'apps/v/src/q.ts'], [['packages/a', 'A'], ['packages/b', 'B'], ['apps/w', 'W'], ['apps/v', 'V']]);
+    const zs = computeZones({ mode: 'folders', hierarchy: h });
+    // `packages/` also holds a file of its own, so it IS a zone; `apps/` only holds packages, so it is not.
+    expect(outline(zs)).toEqual(['packages (3)', '  A (1)', '    src (1)', '  B (1)', '    src (1)', 'V (1)', '  src (1)', 'W (1)', '  src (1)']);
+    expect(zs.zones.find((z) => z.key === 'apps')).toBeUndefined();
+  });
+
   it('src has no files of its own but two child folders, so it is a zone; a single bridge folder is not', () => {
     const { h } = treeOf(['a/b/c.ts', 'a/b/d.ts', 'x/y/z/q.ts', 'x/w.ts']);
     const zs = computeZones({ mode: 'folders', hierarchy: h });
