@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runIndex } from '../../src/indexer/indexer.js';
@@ -29,6 +29,7 @@ function git(cwd: string, ...args: string[]): void {
 describe('health report end to end (health-app fixture)', () => {
   let root: string;
   let report: HealthReport;
+  let headSha: string;
 
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), 'flowlens-health-'));
@@ -40,6 +41,7 @@ describe('health report end to end (health-app fixture)', () => {
       appendFileSync(join(root, 'src/services/pricing.ts'), `// tweak ${i}\n`);
       git(root, 'commit', '-qam', `tweak ${i}`);
     }
+    headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
     const flowlens = join(root, '.flowlens');
     mkdirSync(flowlens);
     copyFileSync(join(root, 'architecture.json'), join(flowlens, 'architecture.json'));
@@ -75,10 +77,12 @@ describe('health report end to end (health-app fixture)', () => {
   });
 
   it('ranks the riskiest items first and info last', () => {
+    // computePrice has cognitive complexity 49 (Sonar S3776, counted by hand);
+    // the pre-Phase-8 metric over-counted it as 51 (critical). At 49 it is
+    // "high", so the helpers.ts hub/god file and the billing↔orders tangle lead.
     const top3 = report.findings.slice(0, 3).map((f) => `${f.kind}:${f.focus.files[0]}`);
-    expect(top3).toEqual(
-      expect.arrayContaining(['fragile_hub:src/utils/helpers.ts', 'complex_function:src/services/pricing.ts']),
-    );
+    expect(top3).toEqual(['fragile_hub:src/utils/helpers.ts', 'god_file:src/utils/helpers.ts', 'cycle:src/services/billing.ts']);
+    expect(find('complex_function', 'src/services/pricing.ts')[0]).toMatchObject({ severity: 'high', rank: 5 });
     expect(report.findings.at(-1)!.severity).toBe('info');
     expect(report.next_steps).toHaveLength(3);
     expect(report.grade).toMatch(/[C-F]/);
@@ -95,12 +99,29 @@ describe('health report end to end (health-app fixture)', () => {
     }
   });
 
-  it('measures change risk from git and reports no-manifest caveat', () => {
+  it('measures change risk from git and trusts the manifest the indexer wrote', () => {
     expect(report.breakdown.sub_scores.find((s) => s.category === 'change_risk')!.score).toBeLessThan(100);
-    expect(report.caveats.join('\n')).toMatch(/No index manifest/);
-    expect(report.caveats.join('\n')).not.toMatch(/No git history/);
+    expect(report.caveats.join('\n')).not.toMatch(/No index manifest/);
+    expect(report.caveats.join('\n')).not.toMatch(/No git history|code changed since/);
+    expect(report.graph).toMatchObject({ has_manifest: true, completion: 'complete', git_head: headSha });
+    expect(report.confidence).toBe('high');
     expect(report.stats.files).toBe(14);
     expect(report.graph.last_indexed).toMatch(/^\d{4}-/);
+  });
+
+  it('reports the no-manifest caveat when the manifest is missing', async () => {
+    const manifest = join(root, '.flowlens/manifest.json');
+    const saved = readFileSync(manifest, 'utf8');
+    rmSync(manifest);
+    try {
+      const r = await buildHealthReport(await loadHealthInput(root), { now: '2026-10-18T00:00:00Z' });
+      expect(r.caveats.join('\n')).toMatch(/No index manifest/);
+      expect(r.graph).toMatchObject({ has_manifest: false, completion: 'unknown' });
+      expect(r.confidence).toBe('medium');
+      expect(r.graph.last_indexed).toMatch(/^\d{4}-/);
+    } finally {
+      writeFileSync(manifest, saved);
+    }
   });
 
   it('runReport writes HTML to a file and returns exit 0', async () => {

@@ -36,7 +36,8 @@ describe('canvas graph server', () => {
     expect(s.file_count).toBe(9);
     expect(s.relations_by_type.import).toBeGreaterThanOrEqual(8);
     expect(s.cycle_count).toBe(1);
-    expect(s.violation_count).toBe(1);
+    // routes.ts→ui/view.ts import plus the cross-file handleGetUser→renderUser call (Phase 8).
+    expect(s.violation_count).toBe(2);
     expect(Date.parse(s.last_indexed!)).not.toBeNaN();
   });
 

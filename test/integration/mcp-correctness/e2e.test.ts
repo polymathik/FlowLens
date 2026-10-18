@@ -10,6 +10,12 @@ import { createHarness, git, type Harness } from './harness.js';
 import { TOOL_NAMES, toolEnvelopeSchema, type ToolName } from '../../../src/contracts/mcp/tools.js';
 import { ToolErrorSchema } from '../../../src/contracts/mcp/schemas/common.js';
 
+/*
+ * Exact totals reflect cross-file resolution (Phase 8): `format` has five
+ * same-file callers plus Store.get/Store.put in core/store.ts (7); the
+ * architecture check sees 3 import violations plus the 3 cross-file calls
+ * behind them (route->formatTitle, register->handle, handle->formatName).
+ */
 interface ListCase {
   tool: ToolName;
   args: Record<string, unknown>;
@@ -22,13 +28,13 @@ interface ListCase {
 
 const LIST_CASES: ListCase[] = [
   { tool: 'get_context', args: { entity: 'src/core/store.ts/Store' }, list: 'relations', cap: 250, min: 5 },
-  { tool: 'get_dependents', args: { entity: 'src/shared/format.ts/format' }, list: 'dependents', cap: 250, exact: 5 },
+  { tool: 'get_dependents', args: { entity: 'src/shared/format.ts/format' }, list: 'dependents', cap: 250, exact: 7 },
   { tool: 'get_module_interface', args: { module: 'src/shared/format.ts' }, list: 'exports', cap: 250, exact: 6 },
-  { tool: 'traverse', args: { start: 'format', direction: 'inbound', max_depth: 1 }, list: 'nodes', limitKey: 'max_nodes', cap: 500, exact: 5 },
+  { tool: 'traverse', args: { start: 'format', direction: 'inbound', max_depth: 1 }, list: 'nodes', limitKey: 'max_nodes', cap: 500, exact: 7 },
   { tool: 'detect_cycles', args: {}, list: 'cycles', cap: 250, min: 3 },
   { tool: 'get_metrics', args: {}, list: 'entries', cap: 250, min: 5 },
   { tool: 'diff_interface', args: { since: 'HEAD~1', breaking_only: false }, list: 'changes', cap: 250, min: 6 },
-  { tool: 'check_architecture', args: {}, list: 'violations', cap: 250, exact: 3 },
+  { tool: 'check_architecture', args: {}, list: 'violations', cap: 250, exact: 6 },
   { tool: 'get_hotspots', args: {}, list: 'hotspots', cap: 250, min: 2 },
 ];
 
