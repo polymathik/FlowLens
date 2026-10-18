@@ -14,6 +14,7 @@ import { reportCommand } from './commands/report.js';
 import { daemonCommand } from './commands/daemon.js';
 import { projectsCommand } from './commands/projects.js';
 import { agentCommand } from './commands/agent.js';
+import { historyCommand } from './commands/history.js';
 
 const program = new Command();
 
@@ -35,5 +36,6 @@ program.addCommand(reportCommand);
 program.addCommand(daemonCommand);
 program.addCommand(projectsCommand);
 program.addCommand(agentCommand);
+program.addCommand(historyCommand);
 
 program.parse();
