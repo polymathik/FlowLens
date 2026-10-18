@@ -79,7 +79,7 @@ export const explorerScenarios = [
       const { page, base, projects } = ctx;
       await signIn(page, base, `#/p/${projects.a.id}/map?overlay=cycles`);
       await waitMap(page);
-      await page.dblclick('.react-flow__node[data-id="folder:src"]');
+      await page.dblclick('.react-flow__node[data-id="folder:src"] [data-testid="zone-chip"]');
       await settle(page);
       assert((await nodeIds(page)).includes('folder:src/ui'), 'A drilled into src');
 

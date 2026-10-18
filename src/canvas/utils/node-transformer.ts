@@ -11,6 +11,7 @@
 import type { Node } from '@xyflow/react';
 import type { Entity } from '../../contracts/entities.js';
 import type { Hierarchy, HierarchyNode } from '../../contracts/hierarchy.js';
+import { buildCutNodes } from './zone-nodes';
 import type {
   CanvasAnnotation,
   CanvasNodeType,
@@ -26,6 +27,7 @@ import type {
 
 /** Node box sizes (px). Cards that list top files are taller. */
 export const NODE_SIZES: Record<CanvasNodeType, { width: number; height: number }> = {
+  zone: { width: 244, height: 112 },
   package: { width: 244, height: 112 },
   folder: { width: 244, height: 112 },
   config: { width: 204, height: 58 },
@@ -150,8 +152,8 @@ function portalNode(p: PortalSpec): Node {
 
 /** Flow nodes of a view: children (or the leaf itself), the scope node, then portals. */
 export function buildViewNodes(ctx: NodeContext, view: MapView): Node[] {
-  const out: Node[] = [];
-  for (const id of view.nodeIds) {
+  const out: Node[] = view.cut ? buildCutNodes(ctx.hierarchy, view) : [];
+  for (const id of view.cut ? (view.scopeId ? [view.scopeId] : []) : view.nodeIds) {
     if (view.scopeId && id === view.scopeId) {
       const container = ctx.hierarchy.nodes.get(view.containerId)!;
       const data: ScopeNodeData = { level: 'scope', label: `${container.name} (file scope)`, hierarchyId: container.id, filePath: container.path };

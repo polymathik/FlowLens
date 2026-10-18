@@ -17,6 +17,7 @@
 import type { EntityKind, Visibility } from '../entities.js';
 import type { RelationType, Relation } from '../relations.js';
 import type { HierarchyKind } from '../hierarchy.js';
+import type { ZoneSource } from '../zones.js';
 
 /**
  * React Flow node type identifiers — discriminator for the data union.
@@ -25,6 +26,7 @@ import type { HierarchyKind } from '../hierarchy.js';
  * the container in the breadcrumb, plus portals for links that leave it.
  */
 export type CanvasNodeType =
+  | 'zone'     // Map v2 M2: coloured zone — a frame holding its cards (expanded) or a single card (collapsed)
   | 'package'  // workspace package (named by its manifest)
   | 'folder'   // directory (single-child chains collapsed)
   | 'config'   // muted pseudo-folder holding config files / lockfiles
@@ -95,6 +97,12 @@ export interface ConfigNodeData extends CanvasNodeBase, ContainerFacts {
   level: 'config';
 }
 
+/** One symbol row listed inside a file card at close zoom. */
+export interface FileSymbolRow {
+  name: string;
+  kind: EntityKind;
+}
+
 /** Data payload for a file-level node. */
 export interface FileNodeData extends CanvasNodeBase {
   level: 'file';
@@ -105,6 +113,36 @@ export interface FileNodeData extends CanvasNodeBase {
   role?: string;
   language?: string;
   lines?: number;
+  /** Top-level symbols for the close-zoom rows (at most `ZONE_LAYOUT.maxSymbolRows`). Rich cards only. */
+  symbols?: FileSymbolRow[];
+  /** Symbols beyond the listed rows ("+N"). */
+  moreSymbols?: number;
+  /** Card was laid out with room for symbol rows. */
+  rich?: boolean;
+  /** Zone frame the card sits in (absent for loose cards). */
+  zoneId?: string;
+}
+
+/**
+ * Map v2 M2: a zone — an expanded frame (border-only, label chip, cards
+ * inside) or a collapsed card (one box standing for every file in it).
+ */
+export interface ZoneNodeData extends CanvasNodeBase {
+  level: 'zone';
+  zoneId: string;
+  /** Hierarchy node the zone stands for (double-click drills into it); absent for graph-based zones. */
+  hierarchyId?: string;
+  source: ZoneSource;
+  /** 0..5 — mapped to `--fl-zone-<n>-*` CSS variables (light and dark). */
+  colorIndex: number;
+  expanded: boolean;
+  /** Nesting depth below the open container (0 = top level). */
+  depth: number;
+  /** File cards below (recursive, lockfiles excluded unless shown). */
+  fileCount: number;
+  symbolCount: number;
+  topFiles: string[];
+  customized?: boolean;
 }
 
 /** Data payload for an entity-level node (class, function, etc.). */
@@ -151,6 +189,7 @@ export interface CanvasAnnotation {
 
 /** Discriminated union of all node-data shapes, keyed by `level`. */
 export type CanvasNodeData =
+  | ZoneNodeData
   | FolderNodeData
   | ConfigNodeData
   | FileNodeData
@@ -194,6 +233,15 @@ export interface CanvasEdgeData {
   relationIds?: string[];
   /** Set on edges between a portal stub and an inner node. */
   portal?: 'in' | 'out';
+  /**
+   * Map v2 M2 edge layer: `sibling` — between two cards (or collapsed zones)
+   * under the same frame; `bundle` — frame-level aggregate between zones;
+   * `detail` — card-to-card edge across frames, dimmed until hovered/selected;
+   * `portal` — stub link.
+   */
+  layer?: 'sibling' | 'bundle' | 'detail' | 'portal';
+  /** Touches the hovered / selected node (drawn at full strength while others dim). */
+  hot?: boolean;
   /** Present on entity-level edges only. */
   relation?: Relation;
   is_violation?: boolean;

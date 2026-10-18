@@ -13,3 +13,6 @@ export interface LayoutLink {
 }
 
 export type Positions = Map<string, { x: number; y: number }>;
+
+/** Positions, and — for frames and cards of zone views — the size the layout gave a node. */
+export type LayoutPositions = Map<string, { x: number; y: number; w?: number; h?: number }>;

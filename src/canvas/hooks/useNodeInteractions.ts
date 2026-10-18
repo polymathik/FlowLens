@@ -7,10 +7,10 @@
  *   shows itself with its callers and callees as portals)
  * - edge click: select the edge (the detail panel lists its relations)
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Edge, Node } from '@xyflow/react';
 import type { Hierarchy } from '../../contracts/hierarchy.js';
-import type { PortalNodeData } from '../../contracts/canvas/index.js';
+import type { PortalNodeData, ZoneNodeData } from '../../contracts/canvas/index.js';
 import { pathTo } from '../../analysis/hierarchy/index.js';
 import type { Entity } from '../api/graph-client';
 import { useCanvasStore } from '../store/canvas-store';
@@ -34,6 +34,23 @@ export function useNodeInteractions(entityById: Map<string, Entity>, hierarchy: 
   const selectEdge = useCanvasStore((s) => s.selectEdge);
   const setDrillPath = useCanvasStore((s) => s.setDrillPath);
   const navigateTo = useCanvasStore((s) => s.navigateTo);
+  const setHoveredNode = useCanvasStore((s) => s.setHoveredNode);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (leaveTimer.current && clearTimeout(leaveTimer.current)), []);
+
+  // Hovering a node strengthens its edges. Moving between neighbours passes through gaps; the short
+  // delay on leave keeps the edges from flickering between "focused" and "all equal".
+  const onNodeMouseEnter = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      if (leaveTimer.current) clearTimeout(leaveTimer.current);
+      if (node.type !== 'portal') setHoveredNode(node.id);
+    },
+    [setHoveredNode],
+  );
+  const onNodeMouseLeave = useCallback(() => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    leaveTimer.current = setTimeout(() => setHoveredNode(null), 90);
+  }, [setHoveredNode]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -49,8 +66,9 @@ export function useNodeInteractions(entityById: Map<string, Entity>, hierarchy: 
 
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      if (node.type === 'portal' || node.type === 'scope' || !hierarchy.nodes.has(node.id)) return;
-      const path = pathTo(hierarchy, node.id);
+      const target = node.type === 'zone' ? ((node.data as ZoneNodeData).hierarchyId ?? node.id) : node.id;
+      if (node.type === 'portal' || node.type === 'scope' || !hierarchy.nodes.has(target)) return;
+      const path = pathTo(hierarchy, target);
       if (path.join('|') === useCanvasStore.getState().drillPath.join('|')) return; // already open (leaf view)
       selectNode(null);
       setDrillPath(path);
@@ -61,5 +79,5 @@ export function useNodeInteractions(entityById: Map<string, Entity>, hierarchy: 
   const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => selectEdge(edge.id), [selectEdge]);
   const onPaneClick = useCallback(() => selectNode(null), [selectNode]);
 
-  return { onNodeClick, onNodeDoubleClick, onEdgeClick, onPaneClick };
+  return { onNodeClick, onNodeDoubleClick, onEdgeClick, onPaneClick, onNodeMouseEnter, onNodeMouseLeave };
 }

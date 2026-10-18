@@ -15,13 +15,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useReactFlow, type Edge, type Node } from '@xyflow/react';
 import { FIT_VIEW_MAX_ZOOM } from '../../contracts/canvas/index.js';
-import { boxesFor, computeLayout, sortForLayout } from '../layout/compute-layout';
+import { boxesFor, sortForLayout } from '../layout/compute-layout';
 import { gridLayout } from '../layout/grid-layout';
 import { useCanvasStore } from '../store/canvas-store';
+import { applyBoxes } from '../utils/zone-nodes';
 import type { MapModel } from './useMapModel';
 
 interface Params {
-  model: Pick<MapModel, 'nodes' | 'edges' | 'key'>;
+  model: Pick<MapModel, 'nodes' | 'edges' | 'key' | 'layout'>;
   visibleIds: ReadonlySet<string>;
   commit: (nodes: Node[], edges: Edge[]) => void;
 }
@@ -41,16 +42,13 @@ export function useCanvasLayout({ model, visibleIds, commit }: Params) {
   useEffect(() => {
     const run = ++runId.current;
     pending.current = true;
-    const apply = (positions: Awaited<ReturnType<typeof computeLayout>>) => {
+    const apply = (positions: Awaited<ReturnType<MapModel['layout']>>) => {
       if (run !== runId.current) return;
-      commit(
-        model.nodes.map((n) => ({ ...n, position: positions.get(n.id) ?? n.position })),
-        model.edges,
-      );
+      commit(applyBoxes(model.nodes, positions), model.edges);
       pending.current = false;
       setLayoutVersion((v) => v + 1);
     };
-    computeLayout(model.nodes, model.edges).then(apply, (err) => {
+    model.layout().then(apply, (err) => {
       console.error('[flowlens] layout failed, using a grid', err);
       apply(gridLayout(boxesFor(sortForLayout(model.nodes))));
     });

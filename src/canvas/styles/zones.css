@@ -1,0 +1,131 @@
+/*
+ * Zones (Map v2 M2): border-only coloured containers with a label chip,
+ * Halcyon style. The hue comes from `data-hue` (0..5 → --fl-zone-N in tokens.css,
+ * tuned for light and dark). Frames let clicks fall through to the cards and
+ * the pane; only the chip is interactive.
+ */
+.react-flow__node.fl-zone-frame {
+  pointer-events: none !important;
+}
+.fl-zone {
+  --z: var(--fl-zone-5);
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  border: 1.5px solid rgb(var(--z) / var(--fl-zone-border));
+  background: rgb(var(--z) / var(--fl-zone-fill));
+}
+.fl-zone[data-hue='0'] { --z: var(--fl-zone-0); }
+.fl-zone[data-hue='1'] { --z: var(--fl-zone-1); }
+.fl-zone[data-hue='2'] { --z: var(--fl-zone-2); }
+.fl-zone[data-hue='3'] { --z: var(--fl-zone-3); }
+.fl-zone[data-hue='4'] { --z: var(--fl-zone-4); }
+.fl-zone[data-hue='5'] { --z: var(--fl-zone-5); }
+.fl-zone[data-source='config'] { border-style: dashed; }
+.fl-zone[data-selected='true'] { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.4); }
+.fl-zone[data-collapsed='true'] {
+  background: var(--fl-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+}
+.fl-zone[data-collapsed='true']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: rgb(var(--z) / var(--fl-zone-fill));
+  pointer-events: none;
+}
+.fl-zone-chip {
+  pointer-events: auto;
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  padding: 2px 8px 2px 6px;
+  border: 1px solid rgb(var(--z) / 0.35);
+  border-radius: 8px;
+  background: var(--fl-surface);
+  color: var(--fl-text);
+  font: 650 12.5px/18px var(--fl-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transform-origin: top left;
+}
+.fl-zone-chip:hover { border-color: rgb(var(--z) / 0.8); }
+.fl-zone-head { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.fl-zone-chip.is-summary {
+  top: 50%;
+  left: 50%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 12px;
+  text-align: center;
+  transform-origin: center;
+  font-size: 14px;
+}
+.fl-zone-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.fl-zone-swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: rgb(var(--z));
+}
+.fl-zone-name { overflow: hidden; text-overflow: ellipsis; }
+.fl-zone-count { color: var(--fl-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.fl-zone-caret { color: var(--fl-muted); font-size: 10px; }
+.fl-zone-card-body { padding: 34px 12px 8px; font-size: 10.5px; color: var(--fl-muted); pointer-events: none; }
+.fl-zone-card-body ul { margin: 4px 0 0; padding: 0; list-style: none; line-height: 14px; }
+.fl-zone-card-body li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-zone-notice {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  z-index: 40;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--fl-border-strong);
+  background: var(--fl-surface);
+  color: var(--fl-text);
+  font-size: 12px;
+  box-shadow: var(--fl-shadow);
+}
+.fl-zone-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--fl-border-strong);
+  border-radius: 10px;
+  background: var(--fl-surface);
+  color: var(--fl-text);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.18);
+  font-size: 12.5px;
+}
+.fl-zone-menu button {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.fl-zone-menu button:hover { background: var(--fl-accent-soft); }
+.fl-zone-menu hr { border: 0; border-top: 1px solid var(--fl-border); margin: 4px 0; }
+.fl-zone-menu .swatches { display: flex; gap: 6px; padding: 5px 10px; }
+.fl-zone-menu .swatch { width: 18px; height: 18px; padding: 0; border-radius: 5px; border: 2px solid transparent; background: rgb(var(--z)); }
+.fl-zone-menu .swatch[aria-pressed='true'] { border-color: var(--fl-text); }

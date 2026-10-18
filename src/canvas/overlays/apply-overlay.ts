@@ -43,6 +43,21 @@ function decorate(nodes: Node[], fn: (n: Node) => NodeOverlayStyle | undefined):
   });
 }
 
+/**
+ * A problem on a card also marks the zone frames around it (they are visible boxes that "contain" the
+ * problem): counts of every member are added to each ancestor frame.
+ */
+function rollUp(members: Map<string, number>, nodes: Node[]): Map<string, number> {
+  if (members.size === 0) return members;
+  const parentOf = new Map(nodes.filter((n) => n.parentId).map((n) => [n.id, n.parentId!]));
+  if (parentOf.size === 0) return members;
+  const out = new Map(members);
+  for (const [id, count] of members) {
+    for (let up = parentOf.get(id); up; up = parentOf.get(up)) out.set(up, (out.get(up) ?? 0) + count);
+  }
+  return out;
+}
+
 function maxOf(nodes: Node[], key: string): number {
   let max = 0;
   for (const n of nodes) if (decoratable(n)) max = Math.max(max, num(n, key) ?? 0);
@@ -96,9 +111,9 @@ export function applyOverlay(
     }
 
     case 'cycles': {
-      const sets = resolveCycles(extra.cycles, index, visibleIds);
+      const members = rollUp(resolveCycles(extra.cycles, index, visibleIds).members, nodes);
       return decorate(nodes, (n) => {
-        const count = sets.members.get(n.id);
+        const count = members.get(n.id);
         if (!count) return { ...MUTED, tag: 'cycles' };
         return {
           tag: 'cycles',
@@ -112,9 +127,9 @@ export function applyOverlay(
     }
 
     case 'architecture-violations': {
-      const sets = resolveViolations(extra.violations, index, visibleIds);
+      const members = rollUp(resolveViolations(extra.violations, index, visibleIds).members, nodes);
       return decorate(nodes, (n) => {
-        const count = sets.members.get(n.id);
+        const count = members.get(n.id);
         if (!count) return { ...MUTED, tag: 'violations' };
         return {
           tag: 'violations',

@@ -13,6 +13,7 @@ import type { CanvasNodeType, NodeOverlayStyle } from '../../../contracts/canvas
 
 /** Per-level palette as CSS variables (light/dark in styles/tokens.css). */
 export const LEVEL_PALETTE: Record<CanvasNodeType, { fill: string; stroke: string; text: string; muted: string }> = {
+  zone: { fill: 'var(--fl-surface)', stroke: 'var(--fl-border-strong)', text: 'var(--fl-text)', muted: 'var(--fl-muted)' },
   package: { fill: 'var(--fl-node-system-fill)', stroke: 'var(--fl-node-system-stroke)', text: 'var(--fl-node-system-text)', muted: 'var(--fl-node-system-muted)' },
   folder: { fill: 'var(--fl-node-module-fill)', stroke: 'var(--fl-node-module-stroke)', text: 'var(--fl-node-module-text)', muted: 'var(--fl-node-module-muted)' },
   config: { fill: 'var(--fl-overlay-muted-fill)', stroke: 'var(--fl-overlay-muted-stroke)', text: 'var(--fl-muted)', muted: 'var(--fl-faint)' },
@@ -24,6 +25,7 @@ export const LEVEL_PALETTE: Record<CanvasNodeType, { fill: string; stroke: strin
 
 /** Minimap node colours: theme tokens (React Flow sets them as inline `style.fill`, which reads CSS variables). */
 export const MINIMAP_STROKE: Record<CanvasNodeType, string> = {
+  zone: 'var(--fl-minimap-module)',
   package: 'var(--fl-minimap-system)',
   folder: 'var(--fl-minimap-module)',
   config: 'var(--fl-minimap-entity)',
@@ -46,9 +48,11 @@ export interface NodeShellProps {
   icon?: React.ReactNode;
   children?: React.ReactNode;
   tooltip?: string;
+  /** Stack the content from the top (cards that list rows) instead of centring it. */
+  top?: boolean;
 }
 
-export function NodeShell({ level, selected, overlay, accent, title, subtitle, icon, children, tooltip }: NodeShellProps) {
+export function NodeShell({ level, selected, overlay, accent, title, subtitle, icon, children, tooltip, top }: NodeShellProps) {
   const p = LEVEL_PALETTE[level];
   const nodeId = useNodeId();
   const highlighted = useCanvasStore((s) => (nodeId ? s.highlightedIds.includes(nodeId) : false));
@@ -75,7 +79,7 @@ export function NodeShell({ level, selected, overlay, accent, title, subtitle, i
     transformOrigin: 'center',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: level === 'package' || level === 'folder' ? 'flex-start' : 'center',
+    justifyContent: top || level === 'package' || level === 'folder' ? 'flex-start' : 'center',
     overflow: 'hidden',
     cursor: level === 'portal' ? 'pointer' : undefined,
   };
@@ -91,7 +95,7 @@ export function NodeShell({ level, selected, overlay, accent, title, subtitle, i
       style={body}
     >
       <Handle type="target" position={Position.Top} style={hidden} isConnectable={false} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexShrink: 0 }}>
         {icon}
         <span
           style={{
@@ -106,7 +110,7 @@ export function NodeShell({ level, selected, overlay, accent, title, subtitle, i
         </span>
       </div>
       {subtitle && (
-        <div style={{ fontSize: 10.5, color: p.muted, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: 10.5, color: p.muted, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }}>
           {subtitle}
         </div>
       )}

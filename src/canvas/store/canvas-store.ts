@@ -19,7 +19,9 @@ import {
   type ZoomLevel as ContractZoomLevel,
   type OverlayType as ContractOverlayType,
 } from '../../contracts/canvas/index.js';
+import { EMPTY_ZONE_OVERRIDES, type ZoningMode } from '../../contracts/zones.js';
 import { DEFAULT_VISIBLE_RELATION_TYPES } from '../utils/relation-defaults';
+import { readZoneSession, writeZoneSession } from './zone-session';
 
 export type ZoomLevel = ContractZoomLevel;
 /** Store variant: `null` means no overlay is active. */
@@ -40,62 +42,93 @@ function readEditorScheme(): EditorScheme {
   }
 }
 
-export function createCanvasStore(): CanvasStore {
-  return createStore<CanvasState>()((set) => ({
-    currentZoomLevel: 'system',
-    selectedNodeId: null,
-    selectedEdgeId: null,
-    focusRequest: null,
-    showLockfiles: false,
-    editorScheme: readEditorScheme(),
-    visibleRelationTypes: new Set<string>(DEFAULT_VISIBLE_RELATION_TYPES),
-    activeOverlay: null,
-    searchQuery: '',
-    searchOpen: false,
-    diffSha: '',
-    previewViolations: null,
-    highlightedIds: [],
-    drillPath: [],
+export interface CanvasStoreOptions {
+  /** Project id: zone choices (group-by, expanded zones) are remembered per project in sessionStorage. */
+  projectId?: string;
+}
 
-    setZoomLevel: (level) => set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
-    selectNode: (id) => set(id === null ? { selectedNodeId: null, selectedEdgeId: null, highlightedIds: [] } : { selectedNodeId: id, selectedEdgeId: null }),
-    selectEdge: (id) => set({ selectedEdgeId: id, selectedNodeId: null }),
-    setShowLockfiles: (show) => set({ showLockfiles: show }),
-    setEditorScheme: (scheme) => {
-      try {
-        window.localStorage.setItem(EDITOR_KEY, scheme);
-      } catch {
-        /* storage blocked: the choice lasts for this session only */
-      }
-      set({ editorScheme: scheme });
-    },
-    toggleRelationType: (type) =>
-      set((state) => {
-        const next = new Set(state.visibleRelationTypes);
-        if (next.has(type)) next.delete(type);
-        else next.add(type);
-        return { visibleRelationTypes: next };
-      }),
-    setOverlay: (overlay) => set({ activeOverlay: overlay }),
-    setSearch: (query) => set({ searchQuery: query }),
-    setSearchOpen: (open) => set(open ? { searchOpen: true } : { searchOpen: false, searchQuery: '' }),
-    setDiffSha: (sha) => set({ diffSha: sha }),
-    setPreviewViolations: (violations) => set({ previewViolations: violations }),
-    setDrillPath: (path) => set({ drillPath: [...path] }),
-    drillUp: () => set((s) => ({ drillPath: s.drillPath.slice(0, -1) })),
-    drillToLevel: (index) => set((s) => ({ drillPath: s.drillPath.slice(0, Math.max(0, index + 1)) })),
-    navigateTo: (target) =>
-      set((s) => ({
-        drillPath: [...target.drillPath],
-        selectedNodeId: target.nodeId,
-        selectedEdgeId: null,
-        focusRequest: target.nodeId ? { nodeId: target.nodeId, seq: ++focusSeq } : null,
-        activeOverlay: target.overlay === undefined ? s.activeOverlay : target.overlay,
-        highlightedIds: target.highlight ? [...target.highlight] : [],
-      })),
-    clearFocusRequest: () => set({ focusRequest: null }),
-    setHighlighted: (ids) => set({ highlightedIds: [...ids] }),
-  }));
+export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore {
+  const session = readZoneSession(options.projectId);
+  return createStore<CanvasState>()((set, get) => {
+    const remember = () => writeZoneSession(options.projectId, { groupBy: get().groupBy, zoneExpansion: get().zoneExpansion });
+    return {
+      currentZoomLevel: 'system',
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      focusRequest: null,
+      showLockfiles: false,
+      editorScheme: readEditorScheme(),
+      visibleRelationTypes: new Set<string>(DEFAULT_VISIBLE_RELATION_TYPES),
+      activeOverlay: null,
+      searchQuery: '',
+      searchOpen: false,
+      diffSha: '',
+      previewViolations: null,
+      highlightedIds: [],
+      drillPath: [],
+      groupBy: session.groupBy,
+      zoneExpansion: session.zoneExpansion,
+      zoneOverrides: EMPTY_ZONE_OVERRIDES,
+      hoveredNodeId: null,
+      zoneNotice: null,
+
+      setZoomLevel: (level) => set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
+      selectNode: (id) => set(id === null ? { selectedNodeId: null, selectedEdgeId: null, highlightedIds: [] } : { selectedNodeId: id, selectedEdgeId: null }),
+      selectEdge: (id) => set({ selectedEdgeId: id, selectedNodeId: null }),
+      setShowLockfiles: (show) => set({ showLockfiles: show }),
+      setEditorScheme: (scheme) => {
+        try {
+          window.localStorage.setItem(EDITOR_KEY, scheme);
+        } catch {
+          /* storage blocked: the choice lasts for this session only */
+        }
+        set({ editorScheme: scheme });
+      },
+      toggleRelationType: (type) =>
+        set((state) => {
+          const next = new Set(state.visibleRelationTypes);
+          if (next.has(type)) next.delete(type);
+          else next.add(type);
+          return { visibleRelationTypes: next };
+        }),
+      setOverlay: (overlay) => set({ activeOverlay: overlay }),
+      setSearch: (query) => set({ searchQuery: query }),
+      setSearchOpen: (open) => set(open ? { searchOpen: true } : { searchOpen: false, searchQuery: '' }),
+      setDiffSha: (sha) => set({ diffSha: sha }),
+      setPreviewViolations: (violations) => set({ previewViolations: violations }),
+      setDrillPath: (path) => set({ drillPath: [...path] }),
+      drillUp: () => set((s) => ({ drillPath: s.drillPath.slice(0, -1) })),
+      drillToLevel: (index) => set((s) => ({ drillPath: s.drillPath.slice(0, Math.max(0, index + 1)) })),
+      navigateTo: (target) =>
+        set((s) => ({
+          drillPath: [...target.drillPath],
+          selectedNodeId: target.nodeId,
+          selectedEdgeId: null,
+          focusRequest: target.nodeId ? { nodeId: target.nodeId, seq: ++focusSeq } : null,
+          activeOverlay: target.overlay === undefined ? s.activeOverlay : target.overlay,
+          highlightedIds: target.highlight ? [...target.highlight] : [],
+        })),
+      clearFocusRequest: () => set({ focusRequest: null }),
+      setHighlighted: (ids) => set({ highlightedIds: [...ids] }),
+      setGroupBy: (mode: ZoningMode) => {
+        set({ groupBy: mode, zoneNotice: null });
+        remember();
+      },
+      setZoneExpansion: (entries) => {
+        set((s) => ({ zoneExpansion: { ...s.zoneExpansion, ...entries } }));
+        remember();
+      },
+      resetZoneExpansion: (containerId) => {
+        set((s) => ({
+          zoneExpansion: Object.fromEntries(Object.entries(s.zoneExpansion).filter(([k]) => !k.startsWith(`${containerId}|`))),
+        }));
+        remember();
+      },
+      setZoneOverrides: (overrides) => set({ zoneOverrides: overrides }),
+      setHoveredNode: (id) => set((s) => (s.hoveredNodeId === id ? s : { hoveredNodeId: id })),
+      setZoneNotice: (notice) => set((s) => (s.zoneNotice === notice ? s : { zoneNotice: notice })),
+    };
+  });
 }
 
 const defaultStore = createCanvasStore();

@@ -9,7 +9,7 @@ const stores = new Map<string, CanvasStore>();
 
 export function getProjectStore(projectId: string): CanvasStore {
   let s = stores.get(projectId);
-  if (!s) stores.set(projectId, (s = createCanvasStore()));
+  if (!s) stores.set(projectId, (s = createCanvasStore({ projectId })));
   return s;
 }
 

@@ -1,11 +1,11 @@
 /**
- * Package, folder, Config, file and file-scope nodes. Containers list what
+ * Package, folder, Config and file-scope nodes (file cards: FileNode.tsx). Containers list what
  * they hold (folder / file / symbol counts) and their largest files; the
  * quality badge appears from the "module" detail tier up.
  */
 import React from 'react';
 import type { Node, NodeProps } from '@xyflow/react';
-import type { ConfigNodeData, FileNodeData, FolderNodeData, ScopeNodeData } from '../../../contracts/canvas/index.js';
+import type { ConfigNodeData, FolderNodeData, ScopeNodeData } from '../../../contracts/canvas/index.js';
 import { useCanvasStore } from '../../store/canvas-store';
 import { MetricsBadge } from '../shared/MetricsBadge';
 import { NodeShell } from './NodeShell';
@@ -61,26 +61,6 @@ export const ConfigNode = React.memo(({ data, selected }: NodeProps<Node<ConfigN
     tooltip={`Configuration files${data.path ? ` in ${data.path}` : ''} — double-click to open`}
   />
 ));
-
-export const FileNode = React.memo(({ data, selected }: NodeProps<Node<FileNodeData, 'file'>>) => {
-  const tier = useCanvasStore((s) => s.currentZoomLevel);
-  return (
-    <NodeShell
-      level="file"
-      selected={selected}
-      overlay={data.overlay}
-      icon={<span aria-hidden style={{ fontSize: 11, color: '#94a3b8' }}>▤</span>}
-      title={data.label}
-      subtitle={
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          {data.symbolCount > 0 ? plural(data.symbolCount, 'symbol') : data.role && data.role !== 'source' ? data.role : 'no symbols'}
-          {tier !== 'system' && <MetricsBadge score={data.qualityScore} />}
-        </span>
-      }
-      tooltip={`${data.filePath} — double-click to see its contents`}
-    />
-  );
-});
 
 export const ScopeNode = React.memo(({ data, selected }: NodeProps<Node<ScopeNodeData, 'scope'>>) => (
   <NodeShell
