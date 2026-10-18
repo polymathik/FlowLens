@@ -13,6 +13,7 @@
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createIndexedFixture, createNotesProject } from '../helpers/fixture-project.js';
+import { createDeepProject } from '../helpers/deep-fixture.js';
 import { startDaemon } from '../../../src/service/daemon.js';
 import { DaemonClient } from '../../../src/service/client.js';
 import { RemoteGraphStore } from '../../../src/service/remote-graph-store.js';
@@ -30,6 +31,7 @@ await mkdir(process.env.FLOWLENS_HOME, { recursive: true });
 const a = await createIndexedFixture(join(workDir, 'a'));
 await mkdir(join(workDir, 'b'), { recursive: true });
 const b = await createNotesProject(join(workDir, 'b'));
+const deep = await createDeepProject(join(workDir, 'deep'));
 const goneRoot = join(workDir, 'gone-app');
 await mkdir(join(goneRoot, '.flowlens'), { recursive: true });
 
@@ -53,7 +55,7 @@ console.log(`READY ${JSON.stringify({
   token: daemon.info.token,
   hasGit: a.hasGit,
   mode: dev ? 'dev' : 'bundle',
-  projects: { a: { id: pa.id, root: a.rootDir }, b: { id: pb.id, root: b.rootDir }, missing: { id: pc.id, root: goneRoot } },
+  projects: { deep: { root: deep.rootDir }, a: { id: pa.id, root: a.rootDir }, b: { id: pb.id, root: b.rootDir }, missing: { id: pc.id, root: goneRoot } },
 })}`);
 
 const shutdown = async () => {

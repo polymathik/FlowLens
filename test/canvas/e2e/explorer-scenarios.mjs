@@ -79,14 +79,14 @@ export const explorerScenarios = [
       const { page, base, projects } = ctx;
       await signIn(page, base, `#/p/${projects.a.id}/map?overlay=cycles`);
       await waitMap(page);
-      await page.dblclick('.react-flow__node[data-id="system:src"]');
+      await page.dblclick('.react-flow__node[data-id="folder:src"]');
       await settle(page);
-      assert((await nodeIds(page)).includes('module:src/ui'), 'A drilled into src');
+      assert((await nodeIds(page)).includes('folder:src/ui'), 'A drilled into src');
 
       await signInTab(page, projects.b.id);
       await waitMap(page);
       const idsB = await nodeIds(page);
-      assert(!idsB.some((id) => id.startsWith('module:src/ui')), `B shows its own graph: ${idsB}`);
+      assert(!idsB.some((id) => id.startsWith('folder:src/ui')), `B shows its own graph: ${idsB}`);
       assert((await page.inputValue('[data-testid="overlay-select"]')) === '', 'B has no overlay');
       const crumbB = await page.textContent('[data-testid="breadcrumb"]');
       assert(!crumbB.includes('src /'), `B breadcrumb is at the root: ${crumbB}`);
@@ -94,7 +94,7 @@ export const explorerScenarios = [
       await page.click(`[data-testid="tab-${projects.a.id}"]`);
       await waitMap(page);
       assert((await page.inputValue('[data-testid="overlay-select"]')) === 'cycles', 'A kept its overlay');
-      assert((await nodeIds(page)).includes('module:src/ui'), 'A kept its drill path');
+      assert((await nodeIds(page)).includes('folder:src/ui'), 'A kept its drill path');
 
       const before = Number(await attr(page, '[data-testid="map-view"]', 'data-node-count'));
       const revB = await attr(page, `[data-testid="tab-${projects.b.id}"]`, 'data-revision');
@@ -127,7 +127,8 @@ export const explorerScenarios = [
       await page.evaluate(() => (window.location.hash = `#/file/${encodeURIComponent('src/notes/note.ts')}`));
       await page.waitForSelector('.react-flow__node[data-id="file:src/notes/note.ts"] .flowlens-node[data-selected="true"]');
       const hash = await page.evaluate(() => window.location.hash);
-      assert(hash.startsWith(`#/p/${projects.b.id}/map/file/`), `legacy link rewritten onto B: ${hash}`);
+      assert(hash.startsWith(`#/p/${projects.b.id}/map/`), `legacy link rewritten onto B: ${hash}`);
+      assert(hash.includes('/map/path/') && hash.includes('notes'), `normalised to the real path of the folder: ${hash}`);
     },
   },
   {

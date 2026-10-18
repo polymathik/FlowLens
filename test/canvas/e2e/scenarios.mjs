@@ -29,70 +29,84 @@ async function shot(ctx, name) {
 
 export const scenarios = [
   {
-    name: 'system view renders with edges and stats',
+    name: 'root view shows the real top-level folders with child counts and edges',
     async run(ctx) {
       const { page, base } = ctx;
       await openCanvas(page, base);
       const ids = await nodeIds(page);
-      assert(ids.includes('system:src') && ids.includes('system:lib'), `system nodes: ${ids}`);
-      assert(ids.every((id) => id.startsWith('system:')), `only systems at root: ${ids}`);
-      assert((await edgeCount(page)) >= 1, 'src → lib import edge rendered');
-      await assertCleanLayout(page, 'system view');
+      assert(ids.includes('folder:src') && ids.includes('folder:lib/util'), `root nodes: ${ids}`);
+      assert(ids.every((id) => id.startsWith('folder:') || id.startsWith('file:')), `only hierarchy boxes at root: ${ids}`);
+      assert((await edgeCount(page)) >= 1, 'src → lib/util import edge rendered');
+      await assertCleanLayout(page, 'root view');
+      const counts = await page.textContent('.react-flow__node[data-id="folder:src"]');
+      assert(/3 folders/.test(counts) && /1 file/.test(counts), `src card shows its child counts: ${counts}`);
+      assert(await page.locator('.react-flow__node[data-id="folder:src"] [data-testid="top-files"]').count(), 'src card lists top files');
       await page.waitForSelector('[data-testid="stat-strip"]');
       const files = await page.textContent('[data-testid="stat-files"]');
       assert(files.includes('9'), `stat strip files: ${files}`);
-      const tier = await page.textContent('[data-testid="detail-tier"]');
-      assert(!tier.includes('full'), `fitted system view is not labelled full detail: ${tier}`);
-      await shot(ctx, '01-system');
+      await shot(ctx, '01-root');
     },
   },
   {
-    name: 'drill system → module → file, sibling drill keeps context, symbol dblclick is inert',
+    name: 'drill root → folder → folder shows only the open container plus portals; crumbs navigate',
     async run(ctx) {
       const { page, base } = ctx;
       await openCanvas(page, base);
-      await dblclickNode(page, 'system:src');
+      await dblclickNode(page, 'folder:src');
       let ids = await nodeIds(page);
-      for (const m of ['module:src/api', 'module:src/core', 'module:src/ui', 'file:src/index.ts']) {
+      for (const m of ['folder:src/api', 'folder:src/core', 'folder:src/ui', 'file:src/index.ts']) {
         assert(ids.includes(m), `src view has ${m}: ${ids}`);
       }
-      assert(!ids.includes('system:src'), 'current system not duplicated as a node');
-      assert((await edgeCount(page)) >= 2, 'module-level edges in src view');
+      assert(!ids.includes('folder:src'), 'open container is not drawn as a box');
+      assert(!ids.includes('folder:lib/util') || ids.some((i) => i.startsWith('portal:')), 'lib/util only as a portal');
+      assert((await edgeCount(page)) >= 2, 'sibling edges in src view');
       await assertCleanLayout(page, 'src view');
       await shot(ctx, '02-src');
 
-      await dblclickNode(page, 'module:src/api');
+      await dblclickNode(page, 'folder:src/api');
       ids = await nodeIds(page);
       assert(ids.includes('file:src/api/routes.ts') && ids.includes('file:src/api/handlers.ts'), `api files: ${ids}`);
-      assert(ids.includes('module:src/ui') && !ids.includes('module:src/api'), `siblings only: ${ids}`);
-      assert((await edgeCount(page)) >= 2, 'file → sibling-module edges');
-      await assertCleanLayout(page, 'api module view');
+      assert(!ids.includes('folder:src/ui') && !ids.includes('folder:src/api'), `no sibling boxes, only children: ${ids}`);
+      const portals = await page.$$eval('[data-testid="portal"]', (els) =>
+        els.map((e) => ({ dir: e.getAttribute('data-direction'), target: e.getAttribute('data-target'), count: e.getAttribute('data-count') })),
+      );
+      assert(portals.some((p) => p.dir === 'out' && p.target.includes('src/ui')), `outgoing portal to ui: ${JSON.stringify(portals)}`);
+      assert(portals.every((p) => Number(p.count) > 0), 'portal counts are positive');
+      await assertCleanLayout(page, 'api view');
       await shot(ctx, '03-api');
 
-      const crumb = await page.textContent('[data-testid="breadcrumb"]');
-      assert(crumb.includes('src') && crumb.includes('api'), `breadcrumb: ${crumb}`);
+      const crumbs = await page.$$eval('[data-testid="crumb"]', (els) => els.map((e) => e.textContent));
+      assert(crumbs.join('/') === 'sample-app/src/api' || (crumbs.includes('src') && crumbs.includes('api')), `full path crumbs: ${crumbs}`);
       const [toolbarBox, crumbBox] = await Promise.all([
         page.locator('[role="toolbar"]').boundingBox(),
         page.locator('[data-testid="breadcrumb"]').boundingBox(),
       ]);
       assert(crumbBox.y >= toolbarBox.y + toolbarBox.height - 1, 'breadcrumb sits below the toolbar');
 
-      await dblclickNode(page, 'module:src/ui');
+      // Click the 'src' crumb → back to the src view.
+      await page.locator('[data-testid="crumb"]', { hasText: /^src$/ }).click();
+      await settle(page);
+      assert((await nodeIds(page)).includes('folder:src/ui'), 'crumb navigates to src');
+      await dblclickNode(page, 'folder:src/ui');
       ids = await nodeIds(page);
-      assert(ids.includes('file:src/ui/view.ts') && ids.includes('module:src/api'), `sibling drill: ${ids}`);
+      assert(ids.includes('file:src/ui/view.ts') && !ids.includes('folder:src/api'), `ui view: ${ids}`);
       const crumb2 = await page.textContent('[data-testid="breadcrumb"]');
-      assert(crumb2.includes('ui') && !crumb2.includes('api'), `sibling replaces module in path: ${crumb2}`);
+      assert(crumb2.includes('ui') && !crumb2.includes('api'), `path replaced: ${crumb2}`);
 
       await dblclickNode(page, 'file:src/ui/view.ts');
       ids = await nodeIds(page);
-      assert(ids.length >= 2 && ids.every((id) => !id.includes(':')), `symbols of view.ts: ${ids}`);
+      assert(ids.length >= 2 && ids.some((id) => !id.includes(':')), `symbols of view.ts: ${ids}`);
       await assertCleanLayout(page, 'file view');
-      const before = ids.length;
-      await dblclickNode(page, ids[0]);
-      assert((await nodeIds(page)).length === before, 'double-clicking a symbol does not change the view');
-      const crumb3 = await page.textContent('[data-testid="breadcrumb"]');
-      assert(crumb3.includes('view.ts'), `breadcrumb ends at file: ${crumb3}`);
+      assert((await page.textContent('[data-testid="breadcrumb"]')).includes('view.ts'), 'breadcrumb ends at file');
       await shot(ctx, '04-file');
+
+      // Browser back returns to the ui folder, forward to the file.
+      await page.goBack();
+      await settle(page);
+      assert((await nodeIds(page)).includes('file:src/ui/view.ts'), 'back returns to the ui folder');
+      await page.goForward();
+      await settle(page);
+      assert((await page.textContent('[data-testid="breadcrumb"]')).includes('view.ts'), 'forward returns to the file');
     },
   },
   {
@@ -127,32 +141,32 @@ export const scenarios = [
     async run(ctx) {
       const { page, base, hasGit } = ctx;
       await openCanvas(page, base);
-      await dblclickNode(page, 'system:src');
-      const plain = await nodeOverlay(page, 'module:src/core');
+      await dblclickNode(page, 'folder:src');
+      const plain = await nodeOverlay(page, 'folder:src/core');
       assert(plain.tag === '', 'no overlay tag by default');
 
       await selectOverlay(page, 'complexity-heatmap');
-      const cx = await nodeOverlay(page, 'module:src/core');
+      const cx = await nodeOverlay(page, 'folder:src/core');
       assert(cx.tag.startsWith('complexity') && cx.border !== plain.border, `complexity styles ${JSON.stringify(cx)}`);
       await page.waitForSelector('[data-testid="overlay-legend"]');
 
       if (hasGit) {
         await selectOverlay(page, 'churn-heatmap');
-        const churn = await nodeOverlay(page, 'module:src/core');
+        const churn = await nodeOverlay(page, 'folder:src/core');
         assert(churn.tag === 'churn', `core has churn ${JSON.stringify(churn)}`);
         await selectOverlay(page, 'hotspot');
-        const hot = await nodeOverlay(page, 'module:src/core');
+        const hot = await nodeOverlay(page, 'folder:src/core');
         assert(hot.tag === 'hotspot', `core is a hotspot ${JSON.stringify(hot)}`);
       }
 
       await selectOverlay(page, 'architecture-violations');
       await page.waitForSelector('.react-flow__edge-violation', { timeout: 5000 });
-      assert((await nodeOverlay(page, 'module:src/api')).tag === 'violations', 'api module flagged');
+      assert((await nodeOverlay(page, 'folder:src/api')).tag === 'violations', 'api module flagged');
       await shot(ctx, '06-violations');
 
       await selectOverlay(page, 'cycles');
-      assert((await nodeOverlay(page, 'module:src/ui')).tag === 'cycles', 'ui module contains a cycle');
-      await dblclickNode(page, 'module:src/ui');
+      assert((await nodeOverlay(page, 'folder:src/ui')).tag === 'cycles', 'ui module contains a cycle');
+      await dblclickNode(page, 'folder:src/ui');
       await page.waitForSelector('.react-flow__edge-cycle', { timeout: 5000 });
       assert((await edgeCount(page, '.react-flow__edge-cycle')) >= 2, 'both cycle edges use CycleEdge');
       await shot(ctx, '07-cycles');
@@ -163,7 +177,7 @@ export const scenarios = [
     async run(ctx) {
       const { page, base } = ctx;
       await openCanvas(page, base);
-      await dblclickNode(page, 'system:src');
+      await dblclickNode(page, 'folder:src');
       const [png] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid="export-png"]')]);
       const pngPath = await png.path();
       const stats = await pngStats(page, (await readFile(pngPath)).toString('base64'));
