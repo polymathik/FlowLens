@@ -7,7 +7,8 @@ import type { ServerDependencies } from './server.js';
 import { buildAgentContext } from '../agent/context-builder.js';
 import { buildAgentGuardReport } from '../agent/guard.js';
 import { formatContextMarkdown, formatGuardMarkdown } from '../agent/format.js';
-import { getGitChangedFiles } from '../agent/changed-files.js';
+import { getFilteredGitChangedFiles } from '../agent/changed-files.js';
+import { readFreshDigest } from '../agent/digest-cache.js';
 
 export function registerAgentResources(server: McpServer, deps: ServerDependencies): void {
   server.registerResource(
@@ -33,7 +34,7 @@ export function registerAgentResources(server: McpServer, deps: ServerDependenci
       const context = await buildAgentContext(deps.graph, {
         event: 'session_start',
         max_items: 10,
-      }, { flowlensDir: deps.flowlensDir });
+      }, await contextOptions(deps));
       return textResource(uri.href, formatContextMarkdown(context), 'text/markdown');
     },
   );
@@ -47,12 +48,12 @@ export function registerAgentResources(server: McpServer, deps: ServerDependenci
       mimeType: 'text/markdown',
     },
     async (uri) => {
-      const changed = getGitChangedFiles(deps.rootDir);
+      const changed = await getFilteredGitChangedFiles(deps.rootDir);
       const context = await buildAgentContext(deps.graph, {
         event: 'pre_commit',
         changed_files: changed,
         max_items: 10,
-      }, { flowlensDir: deps.flowlensDir });
+      }, await contextOptions(deps));
       return textResource(uri.href, formatContextMarkdown(context), 'text/markdown');
     },
   );
@@ -73,7 +74,7 @@ export function registerAgentPrompts(server: McpServer, deps: ServerDependencies
         event: 'prompt_submit',
         prompt: task,
         max_items: 8,
-      }, { flowlensDir: deps.flowlensDir });
+      }, await contextOptions(deps));
       return {
         messages: [{
           role: 'user',
@@ -103,7 +104,7 @@ export function registerAgentPrompts(server: McpServer, deps: ServerDependencies
     async ({ changed_files }) => {
       const changed = changed_files
         ? changed_files.split(',').map((file) => file.trim()).filter(Boolean)
-        : getGitChangedFiles(deps.rootDir);
+        : await getFilteredGitChangedFiles(deps.rootDir);
       const guard = await buildAgentGuardReport(deps.graph, {
         changed_files: changed,
         changed_source: changed_files ? 'argument' : 'git',
@@ -124,6 +125,12 @@ export function registerAgentPrompts(server: McpServer, deps: ServerDependencies
       };
     },
   );
+}
+
+/** Reuse the persisted agent digest when it matches the on-disk graph (avoids full scans). */
+async function contextOptions(deps: ServerDependencies) {
+  const digest = await readFreshDigest(deps.flowlensDir);
+  return { flowlensDir: deps.flowlensDir, digest: digest ?? undefined };
 }
 
 async function readArchitecture(flowlensDir: string): Promise<string> {

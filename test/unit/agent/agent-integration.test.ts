@@ -3,9 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { GraphStore } from '../../../src/contracts/graph.js';
-import type { Entity, EntityKind } from '../../../src/contracts/entities.js';
-import type { Relation, RelationType } from '../../../src/contracts/relations.js';
+import { InMemoryGraph } from '../../../src/agent/memory-graph.js';
+import { makeGraph } from './helpers.js';
 import { buildAgentContext } from '../../../src/agent/context-builder.js';
 import { buildAgentGuardReport } from '../../../src/agent/guard.js';
 import {
@@ -62,12 +61,14 @@ describe('agent integration', () => {
   it('builds Claude Code hook settings with expected lifecycle events', () => {
     const settings = buildClaudeCodeHookSettings('flowlens');
 
-    expect(settings.hooks?.SessionStart?.[0]?.matcher).toBe('startup|resume');
+    // Updated for Phase 7 hardening: marker + $CLAUDE_PROJECT_DIR root + clear/compact re-injection.
+    expect(settings.hooks?.SessionStart?.[0]?.matcher).toBe('startup|resume|clear|compact');
     expect(settings.hooks?.UserPromptSubmit?.[0]?.hooks[0]?.command)
-      .toBe('flowlens agent context --hook --event prompt_submit');
+      .toBe('flowlens agent context --hook --event prompt_submit --root "${CLAUDE_PROJECT_DIR}" # flowlens-managed');
     expect(settings.hooks?.PostToolUse?.[0]?.matcher).toBe('Edit|MultiEdit|Write');
     expect(settings.hooks?.PostToolUse?.[0]?.hooks[0]?.command)
-      .toBe('flowlens agent guard --hook --reindex --strict');
+      .toBe('flowlens agent guard --hook --reindex --strict --root "${CLAUDE_PROJECT_DIR}" # flowlens-managed');
+    expect(settings.hooks?.PostToolUse?.[0]?.hooks[0]?.timeout).toBe(60);
   });
 
   it('installs Claude Code hooks without dropping existing settings', async () => {
@@ -116,7 +117,7 @@ describe('agent integration', () => {
   it('incrementally re-indexes changed files for hook guards', async () => {
     await mkdir(join(tmp, 'src'));
     await writeFile(join(tmp, 'src/a.ts'), 'export function alpha() { return 1; }');
-    const graph = new FakeGraph([], []);
+    const graph = new InMemoryGraph();
     const result = await reindexAgentChangedFiles(tmp, graph, ['src/a.ts']);
 
     expect(result?.files_reparsed).toBe(1);
@@ -153,57 +154,6 @@ describe('agent integration', () => {
   });
 });
 
-class FakeGraph implements GraphStore {
-  constructor(private entities: Entity[], private relations: Relation[]) {}
-
-  async putNode(entity: Entity): Promise<void> {
-    this.entities = this.entities.filter((item) => item.id !== entity.id).concat(entity);
-  }
-  async getNode(id: string): Promise<Entity | null> {
-    return this.entities.find((entity) => entity.id === id) ?? null;
-  }
-  async getNodesByKind(kind: EntityKind): Promise<Entity[]> {
-    return this.entities.filter((entity) => entity.kind === kind);
-  }
-  async getNodesByFile(filePath: string): Promise<Entity[]> {
-    return this.entities.filter((entity) => entity.file === filePath);
-  }
-  async deleteNode(): Promise<void> {}
-  async deleteNodesByFile(filePath: string): Promise<void> {
-    this.entities = this.entities.filter((entity) => entity.file !== filePath);
-  }
-  async putEdge(relation: Relation): Promise<void> {
-    this.relations = this.relations.filter((item) => item.id !== relation.id).concat(relation);
-  }
-  async getEdgesFrom(entityId: string, type?: RelationType): Promise<Relation[]> {
-    return this.relations.filter((relation) =>
-      relation.from === entityId && (!type || relation.type === type));
-  }
-  async getEdgesTo(entityId: string, type?: RelationType): Promise<Relation[]> {
-    return this.relations.filter((relation) =>
-      relation.to === entityId && (!type || relation.type === type));
-  }
-  async deleteEdge(): Promise<void> {}
-  async deleteEdgesByFile(filePath: string): Promise<void> {
-    this.relations = this.relations.filter((relation) => relation.location.file !== filePath);
-  }
-  async putNodes(entities: Entity[]): Promise<void> {
-    for (const entity of entities) await this.putNode(entity);
-  }
-  async putEdges(relations: Relation[]): Promise<void> {
-    for (const relation of relations) await this.putEdge(relation);
-  }
-  async getAllNodes(): Promise<Entity[]> {
-    return this.entities;
-  }
-  async getAllEdges(): Promise<Relation[]> {
-    return this.relations;
-  }
-  async open(): Promise<void> {}
-  async close(): Promise<void> {}
-  async clear(): Promise<void> {}
-}
-
 class FakeMcpServer {
   resources: Array<{ name: string; uri: string }> = [];
   prompts: Array<{ name: string }> = [];
@@ -215,51 +165,4 @@ class FakeMcpServer {
   registerPrompt(name: string): void {
     this.prompts.push({ name });
   }
-}
-
-function makeGraph(): GraphStore {
-  const entities = [
-    entity('file:service', 'file', 'user-service.ts', 'src/services/user-service.ts'),
-    entity('file:repo', 'file', 'user-repo.ts', 'src/data/user-repo.ts'),
-    entity('svc', 'class', 'UserService', 'src/services/user-service.ts', 6),
-    entity('repo', 'class', 'UserRepo', 'src/data/user-repo.ts', 4),
-  ];
-  const relations = [
-    relation('r1', 'file:service', 'file:repo', 'src/services/user-service.ts'),
-    relation('r2', 'file:repo', 'file:service', 'src/data/user-repo.ts'),
-    relation('r3', 'svc', 'repo', 'src/services/user-service.ts'),
-  ];
-  return new FakeGraph(entities, relations);
-}
-
-function entity(
-  id: string,
-  kind: EntityKind,
-  name: string,
-  file: string,
-  hotspot = 0,
-): Entity {
-  return {
-    id,
-    kind,
-    name,
-    qualified_name: `${file}:${name}`,
-    file,
-    location: { line_start: 1, line_end: 5, column_start: 1, column_end: 1 },
-    visibility: 'public',
-    language: 'typescript',
-    metrics: { line_count: 5, quality_score: 70, hotspot_score: hotspot },
-  };
-}
-
-function relation(id: string, from: string, to: string, file: string): Relation {
-  return {
-    id,
-    from,
-    to,
-    type: 'import',
-    location: { file, line: 1, column: 1 },
-    weight: 1,
-    confidence: 1,
-  };
 }

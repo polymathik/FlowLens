@@ -1,58 +1,83 @@
-import { relative, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import type { ClaudeHookInput } from '../contracts/agent.js';
 
-export type ClaudeHookInput = {
-  prompt?: string;
-  cwd?: string;
-  tool_input?: {
-    file_path?: string;
-    filePath?: string;
-    edits?: Array<{ file_path?: string; filePath?: string }>;
-  };
-  tool_response?: {
-    filePath?: string;
-    file_path?: string;
-  };
-};
+export type { ClaudeHookInput } from '../contracts/agent.js';
 
 export function promptFromHook(input: ClaudeHookInput): string | undefined {
   return typeof input.prompt === 'string' ? input.prompt : undefined;
 }
 
-export function changedFilesFromHook(
-  input: ClaudeHookInput,
-  rootDir: string,
-): string[] {
+/**
+ * Project root for an agent command: `--root` (hooks pass "$CLAUDE_PROJECT_DIR";
+ * an empty value means the variable was unset), then the hook input `cwd`,
+ * then process.cwd(). If the candidate has no `.flowlens/`, the nearest parent
+ * that has one wins (monorepo subdirectories), otherwise the candidate itself.
+ */
+export function resolveAgentRoot(
+  rootOption: string | undefined,
+  hookInput: ClaudeHookInput,
+  cwd: string = process.cwd(),
+): string {
+  const candidate = nonEmpty(rootOption) ?? nonEmpty(hookInput.cwd) ?? cwd;
+  const start = resolve(candidate);
+  let dir = start;
+  for (let i = 0; i < 32; i++) {
+    if (existsSync(join(dir, '.flowlens'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return start;
+}
+
+export function changedFilesFromHook(input: ClaudeHookInput, rootDir: string): string[] {
   const files = new Set<string>();
-  addFile(files, input.tool_input?.file_path, rootDir);
-  addFile(files, input.tool_input?.filePath, rootDir);
-  addFile(files, input.tool_response?.filePath, rootDir);
-  addFile(files, input.tool_response?.file_path, rootDir);
+  const add = (file: unknown) => addFile(files, file, rootDir);
+  add(input.tool_input?.file_path);
+  add(input.tool_input?.filePath);
+  add(input.tool_input?.notebook_path);
+  add(input.tool_response?.filePath);
+  add(input.tool_response?.file_path);
   for (const edit of input.tool_input?.edits ?? []) {
-    addFile(files, edit.file_path, rootDir);
-    addFile(files, edit.filePath, rootDir);
+    add(edit.file_path);
+    add(edit.filePath);
   }
   return [...files].sort();
 }
 
-export async function readHookInput(stdin: NodeJS.ReadStream): Promise<ClaudeHookInput> {
+export async function readHookInput(stdin: NodeJS.ReadableStream): Promise<ClaudeHookInput> {
+  if ((stdin as NodeJS.ReadStream).isTTY) return {};
   const chunks: Buffer[] = [];
-  for await (const chunk of stdin) chunks.push(Buffer.from(chunk));
-  const raw = Buffer.concat(chunks).toString('utf-8').trim();
-  if (!raw) return {};
+  for await (const chunk of stdin) chunks.push(Buffer.from(chunk as Buffer));
+  return parseHookInput(Buffer.concat(chunks).toString('utf-8'));
+}
+
+export function parseHookInput(raw: string): ClaudeHookInput {
+  const text = raw.trim();
+  if (!text) return {};
   try {
-    return JSON.parse(raw) as ClaudeHookInput;
+    const parsed = JSON.parse(text) as unknown;
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as ClaudeHookInput
+      : {};
   } catch {
     return {};
   }
 }
 
-function addFile(files: Set<string>, file: string | undefined, rootDir: string): void {
-  if (!file) return;
+function addFile(files: Set<string>, file: unknown, rootDir: string): void {
+  if (typeof file !== 'string' || !file) return;
   const absoluteRoot = resolve(rootDir);
-  const normalized = file.startsWith('/')
-    ? relative(absoluteRoot, file)
-    : file;
-  if (!normalized.startsWith('..')) {
-    files.add(normalized.replaceAll('\\', '/'));
-  }
+  const normalizedInput = file.replaceAll('\\', '/');
+  const rel = isAbsolute(file) || /^[A-Za-z]:\//.test(normalizedInput)
+    ? relative(absoluteRoot, file).replaceAll('\\', '/')
+    : normalizedInput.replace(/^\.\//, '');
+  if (rel && !rel.startsWith('..') && !isAbsolute(rel)) files.add(rel);
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  // An unexpanded placeholder (e.g. run outside Claude Code) means "not set".
+  return value.includes('${') ? undefined : value;
 }
