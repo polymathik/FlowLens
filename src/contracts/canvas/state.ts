@@ -43,6 +43,8 @@ export interface NavigationTarget {
   nodeId: string;
   /** Optional overlay to switch on as part of the jump. */
   overlay?: OverlayType | null;
+  /** Optional ids to highlight alongside the selection (Health "Show on map"). */
+  highlight?: string[];
 }
 
 /**
@@ -72,6 +74,11 @@ export interface CanvasState {
    * instead of the saved rules' violations.
    */
   previewViolations: ArchitectureViolation[] | null;
+  /**
+   * Node ids to emphasise (e.g. every file of a Health finding after
+   * "Show on map"). Empty = none. Cleared by `selectNode(null)`.
+   */
+  highlightedIds: string[];
 
   // Drill-down
   /**
@@ -98,6 +105,7 @@ export interface CanvasState {
   /** Drill, select and request focus in one update. */
   navigateTo: (target: NavigationTarget) => void;
   clearFocusRequest: () => void;
+  setHighlighted: (ids: string[]) => void;
 }
 
 /**
