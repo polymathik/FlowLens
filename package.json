@@ -42,9 +42,11 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit && tsc -p src/canvas --noEmit",
+    "lint": "tsc --noEmit && tsc -p src/canvas/tsconfig.json --noEmit",
     "bench": "tsx benchmarks/run-all.ts",
-    "prepublishOnly": "npm run lint && npm test && npm run clean && npm run build"
+    "prepublishOnly": "npm run lint && npm test && npm run clean && npm run build",
+    "test:canvas:e2e": "node test/canvas/e2e/run.mjs",
+    "smoke:pack": "node .github/scripts/pack-smoke.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -102,7 +104,9 @@
     "@xyflow/react": "^12.10.2",
     "d3-force": "^3.0.0",
     "elkjs": "^0.11.1",
+    "html-to-image": "1.11.11",
     "memory-level": "^3.1.0",
+    "playwright": "1.56.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tsx": "^4.21.0",

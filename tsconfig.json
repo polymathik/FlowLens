@@ -12,8 +12,26 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test", "src/canvas"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "src/canvas/*.ts",
+    "src/canvas/*.tsx",
+    "src/canvas/components",
+    "src/canvas/hooks",
+    "src/canvas/layout",
+    "src/canvas/overlays",
+    "src/canvas/router",
+    "src/canvas/store",
+    "src/canvas/styles",
+    "src/canvas/utils"
+  ]
 }

@@ -11,7 +11,8 @@ import { renderExport } from '../../export/index.js';
 import { writeFully } from '../../export/stream-writer.js';
 import { printError } from '../output.js';
 import type { ExportFormat, ExportOptions } from '../../contracts/export.js';
-import type { RelationType } from '../../contracts/relations.js';
+import type { Relation, RelationType } from '../../contracts/relations.js';
+import type { Entity } from '../../contracts/entities.js';
 
 const VALID_FORMATS: ExportFormat[] = ['json', 'dot', 'mermaid'];
 
@@ -39,11 +40,7 @@ export const exportCommand = new Command('export')
     }
 
     try {
-      const graphStore = new LevelGraphStore();
-      await graphStore.open(join(flowlensDir, 'graph'));
-      const entities = await graphStore.getAllNodes();
-      const relations = await graphStore.getAllEdges();
-      await graphStore.close();
+      const { entities, relations } = await loadGraph(flowlensDir);
 
       const exportOpts: ExportOptions = {
         format,
@@ -70,3 +67,17 @@ export const exportCommand = new Command('export')
       process.exit(2);
     }
   });
+
+/**
+ * The ONLY place `export` opens the graph. Swap point for the graph service
+ * (`openGraphStore(rootDir, { client: 'export' })`) at merge time.
+ */
+async function loadGraph(flowlensDir: string): Promise<{ entities: Entity[]; relations: Relation[] }> {
+  const graphStore = new LevelGraphStore();
+  await graphStore.open(join(flowlensDir, 'graph'));
+  try {
+    return { entities: await graphStore.getAllNodes(), relations: await graphStore.getAllEdges() };
+  } finally {
+    await graphStore.close();
+  }
+}

@@ -39,6 +39,8 @@ export const mcpReachableCheck: DiagnosticRunner = async ({ rootDir, flowlensDir
     return { ...BASE, status: 'error', message: 'cannot init MCP: graph missing' };
   }
 
+  // Graph-opening swap point for the graph service
+  // (`openGraphStore(rootDir, { client: 'doctor' })`) at merge time.
   const graph = new LevelGraphStore();
   try {
     await graph.open(graphPath);
