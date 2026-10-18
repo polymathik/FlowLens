@@ -145,6 +145,17 @@ export interface ZoneNodeData extends CanvasNodeBase {
   customized?: boolean;
   /** Share (0..1) of the dependency weight of the zone's files that stays inside it (communities). */
   cohesion?: number;
+  /** Timeline (Map v2 M5b): the zone as of the commit being shown; `fileCount` already holds `count`. */
+  timeline?: ZoneTimelineData;
+}
+
+/** What the growth timeline adds to a zone: files then, change since the previous step, files ever. */
+export interface ZoneTimelineData {
+  count: number;
+  /** Net file change since the previous step shown (or since commit A while comparing). */
+  delta: number;
+  /** Files the zone holds at its fullest across the cards below (today's and removed ones). */
+  total: number;
 }
 
 /** Data payload for an entity-level node (class, function, etc.). */
