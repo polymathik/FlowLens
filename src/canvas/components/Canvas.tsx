@@ -12,7 +12,7 @@
  * Interaction: wheel / pinch zooms; drag pans; hold Shift and scroll to pan
  * with a trackpad or wheel. Off-screen elements are not rendered.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -34,6 +34,9 @@ import { useCanvasView } from '../hooks/useCanvasView';
 import { useCanvasLayout } from '../hooks/useCanvasLayout';
 import { useSemanticZoom } from '../hooks/useSemanticZoom';
 import { useNodeInteractions } from '../hooks/useNodeInteractions';
+import { useZoneOverridesLoader } from '../hooks/useZoneOverrides';
+import { useCanvasStoreApi } from '../store/canvas-store';
+import { expansionKey } from '../utils/zone-cut';
 import { useHashRoute } from '../router/useHashRoute';
 import { useDrillUrl } from '../router/useDrillUrl';
 import type { CanvasEdgeData } from '../../contracts/canvas/index.js';
@@ -45,6 +48,10 @@ import { FilterPanel } from './panels/FilterPanel';
 import { SearchPanel } from './panels/SearchPanel';
 import { DetailPanel } from './panels/DetailPanel';
 import { OverlayLegend } from './panels/OverlayLegend';
+import { ZoneControls } from './panels/ZoneControls';
+import { ZoneMenu, type MenuTarget } from './panels/ZoneMenu';
+import { ZoneNotice } from './panels/ZoneNotice';
+import { ZoneActionsContext, type ZoneActions } from './nodes/zone-actions';
 import { ArchitectureEditor } from './panels/rules/ArchitectureEditor';
 import { MINIMAP_STROKE } from './nodes/NodeShell';
 import { useColorMode } from './explorer/theme';
@@ -58,7 +65,10 @@ function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error
   );
 }
 
-const minimapColor = (n: Node) => MINIMAP_STROKE[(n.type as keyof typeof MINIMAP_STROKE) ?? 'entity'] ?? 'var(--fl-minimap-entity)';
+const minimapColor = (n: Node) =>
+  n.type === 'zone'
+    ? `rgb(var(--fl-zone-${(n.data as { colorIndex?: number }).colorIndex ?? 5}) / 0.55)`
+    : (MINIMAP_STROKE[(n.type as keyof typeof MINIMAP_STROKE) ?? 'entity'] ?? 'var(--fl-minimap-entity)');
 
 function CanvasInner() {
   const graph = useGraphData();
@@ -67,11 +77,22 @@ function CanvasInner() {
   const [showFilter, setShowFilter] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const store = useCanvasStoreApi();
   const shiftHeld = useKeyPress('Shift');
   const colorMode = useColorMode();
 
+  useZoneOverridesLoader();
   const overlayData = useOverlayData(graph.version);
   const model = useMapModel(graph);
+  const containerId = model.view.containerId;
+  const zoneActions = useMemo<ZoneActions>(
+    () => ({
+      toggle: (itemId, expanded) => store.getState().setZoneExpansion({ [expansionKey(containerId, itemId)]: expanded }),
+      openMenu: (nodeId, x, y) => setMenu({ nodeId, x, y }),
+    }),
+    [store, containerId],
+  );
   const commit = useCallback(
     (laidOut: Node[], edges: Edge[]) => {
       setNodes(laidOut);
@@ -116,8 +137,10 @@ function CanvasInner() {
         onToggleRules={() => setShowRules((v) => !v)}
         onExport={onExport}
         exporting={exporting}
+        zoneControls={<ZoneControls view={model.view} hierarchy={graph.hierarchy} />}
       />
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        <ZoneActionsContext.Provider value={zoneActions}>
         <ReactFlow
           nodes={view.displayNodes}
           edges={view.displayEdges}
@@ -128,7 +151,9 @@ function CanvasInner() {
           onNodeDoubleClick={handlers.onNodeDoubleClick}
           onEdgeClick={handlers.onEdgeClick}
           onPaneClick={handlers.onPaneClick}
-          minZoom={0.05}
+          onNodeMouseEnter={handlers.onNodeMouseEnter}
+          onNodeMouseLeave={handlers.onNodeMouseLeave}
+          minZoom={0.02}
           maxZoom={4}
           zoomOnScroll
           zoomOnPinch
@@ -144,6 +169,9 @@ function CanvasInner() {
           <Controls showInteractive={false} />
           <MiniMap nodeColor={minimapColor} nodeStrokeWidth={2} zoomable pannable style={{ width: 150, height: 100 }} />
         </ReactFlow>
+        </ZoneActionsContext.Provider>
+        <ZoneNotice view={model.view} />
+        {menu && <ZoneMenu target={menu} view={model.view} hierarchy={graph.hierarchy} onClose={() => setMenu(null)} />}
         {showFilter && <FilterPanel />}
         {showRules && <ArchitectureEditor onClose={() => setShowRules(false)} />}
         <OverlayLegend nodes={view.displayNodes} />

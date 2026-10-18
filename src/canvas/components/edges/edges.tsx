@@ -13,7 +13,15 @@ import React from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type Edge, type EdgeProps } from '@xyflow/react';
 import type { CanvasEdgeData } from '../../../contracts/canvas/index.js';
 import { PROBLEM_COLOR, relationColor } from '../../utils/relation-colors';
+import { useCanvasStore } from '../../store/canvas-store';
 import { useFloatingEndpoints } from './floating';
+
+/** Opacity of an edge: strong when it touches the hovered / selected node, ~10% while others are focused, dimmed card-level edges across frames. */
+export function edgeOpacity(layer: CanvasEdgeData['layer'], hot: boolean | undefined, focusActive: boolean): number {
+  if (hot) return 1;
+  if (focusActive) return 0.1;
+  return layer === 'detail' ? 0.16 : layer === 'portal' ? 0.4 : layer === 'sibling' ? 0.55 : layer === 'bundle' ? 0.85 : 0.75;
+}
 
 type CanvasEdgeProps = EdgeProps<Edge<CanvasEdgeData>>;
 
@@ -30,7 +38,7 @@ function useBezier(p: CanvasEdgeProps) {
   });
 }
 
-function CountLabel({ x, y, text, color, title }: { x: number; y: number; text: string | number; color: string; title: string }) {
+function CountLabel({ x, y, text, color, title, opacity = 1 }: { x: number; y: number; text: string | number; color: string; title: string; opacity?: number }) {
   return (
     <EdgeLabelRenderer>
       <div
@@ -49,6 +57,7 @@ function CountLabel({ x, y, text, color, title }: { x: number; y: number; text: 
           padding: '0 5px',
           borderRadius: 10,
           pointerEvents: 'all',
+          opacity,
         }}
       >
         {text}
@@ -64,23 +73,29 @@ function describe(data?: CanvasEdgeData): string {
 
 export const RelationEdge = React.memo((props: CanvasEdgeProps) => {
   const [path, labelX, labelY] = useBezier(props);
+  const focusActive = useCanvasStore((s) => s.hoveredNodeId !== null || s.selectedNodeId !== null);
   const color = relationColor(props.data?.dominantType);
   const aggregated = props.data?.kind === 'aggregated-edge';
+  const layer = props.data?.layer;
+  const opacity = edgeOpacity(layer, props.data?.hot, focusActive);
+  // Card-level edges across frames stay unlabelled until they are hot; bundles and siblings carry their counts.
+  const labelled = aggregated && ((props.data?.count ?? 0) > 1 || layer === 'bundle') && (layer !== 'detail' || props.data?.hot);
   return (
     <>
       <BaseEdge
         id={props.id}
         path={path}
         markerEnd={props.markerEnd}
-        style={{ stroke: color, strokeWidth: aggregated ? 2 : 1.5, opacity: 0.75, ...props.style }}
+        style={{ stroke: color, strokeWidth: aggregated ? 2 : 1.5, ...props.style, opacity, ...(props.data?.hot ? { strokeWidth: Number(props.style?.strokeWidth ?? 2) + 0.75 } : {}) }}
       />
-      {aggregated && (props.data?.count ?? 0) > 1 && (
+      {labelled && (
         <CountLabel
           x={labelX}
           y={labelY}
           text={props.data!.portal ? props.data!.count : props.data!.label || props.data!.count}
           color={color}
           title={describe(props.data)}
+          opacity={opacity < 0.5 ? 0.25 : 1}
         />
       )}
     </>

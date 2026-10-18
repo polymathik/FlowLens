@@ -13,6 +13,8 @@
  */
 import type { RelationType } from '../relations.js';
 import type { HierarchyKind } from '../hierarchy.js';
+import type { ZoneOverrides, ZoneSet, ZoningMode } from '../zones.js';
+import type { MapCut } from './zones-view.js';
 
 export type TypeCounts = Partial<Record<RelationType, number>>;
 
@@ -24,6 +26,11 @@ export interface AggregatedLink {
   typeCounts: TypeCounts;
   /** Every relation id behind the link. */
   relationIds: string[];
+  /**
+   * Zone views: the endpoints sit under different frames. The link is drawn
+   * dimmed at card level and is also counted in a frame-level bundle.
+   */
+  cross?: boolean;
 }
 
 export interface PortalSpec {
@@ -69,10 +76,35 @@ export interface MapView {
   links: AggregatedLink[];
   portals: PortalSpec[];
   accounting: RelationAccounting;
+  /** Zone views (Map v2 M2): the cut of the zone tree that is on screen. */
+  cut?: MapCut;
+  /** Zone views: the grouping in effect (falls back to folders when `requested` finds no zone) and its zones. */
+  zoning?: { mode: ZoningMode; requested: ZoningMode; zoneSet: ZoneSet };
+  /**
+   * Zone views: frame-level aggregates of the `cross` links. Their counts add
+   * up to the `cross` links' counts (every relation sits in exactly one bundle).
+   */
+  bundles?: AggregatedLink[];
 }
 
 export interface MapViewOptions {
   showLockfiles: boolean;
   /** Maximum portals per direction before they roll up to coarser containers. */
   portalCap?: number;
+  /** Map v2 M2: render folders / packages as zones (absent = flat M1 children view). */
+  zones?: ZoneViewOptions;
+}
+
+/** Inputs of the zone view: grouping, user state and overrides. */
+export interface ZoneViewOptions {
+  mode: ZoningMode;
+  overrides?: ZoneOverrides;
+  /** Explicit expand / collapse state keyed `<containerId>|<itemId>` (beats every default). */
+  expansion: Record<string, boolean>;
+  /** Zone item ids that must be expanded now. */
+  reveal?: string[];
+  /** Hierarchy refs (file / symbol / entity ids) to reveal: every zone containing them opens (search, deep link). */
+  revealRefs?: string[];
+  /** Mounted-node budget (default `ZONE_LAYOUT.nodeBudget`). */
+  nodeBudget?: number;
 }

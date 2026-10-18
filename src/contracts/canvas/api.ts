@@ -8,6 +8,7 @@
 import type { EntityKind } from '../entities.js';
 import type { ArchitectureViolation } from '../analysis/architecture.js';
 import type { WorkspaceInfo } from '../hierarchy.js';
+import type { ZoneOverrides } from '../zones.js';
 
 /** GET /flowlens-api/summary */
 export interface CanvasSummary {
@@ -78,3 +79,11 @@ export interface ArchitectureSaveResponse {
  * inferred from the entity list.
  */
 export type CanvasWorkspaceResponse = WorkspaceInfo;
+
+/**
+ * GET / PUT /flowlens-api/zones (Map v2 M2, served by the zoning lane) — the
+ * user's zone overrides (`.flowlens/zones.json`). GET answers an empty set when
+ * nothing is saved; PUT validates, writes atomically and returns what is stored.
+ * The canvas treats a 404 on GET as "no overrides" so it works against older daemons.
+ */
+export type CanvasZonesResponse = ZoneOverrides;

@@ -40,5 +40,5 @@ export function relationColor(type: string | undefined): string {
  * inside its own edge SVG, so arrows survive image export.
  */
 export function arrowMarker(color: string): EdgeMarker {
-  return { type: MarkerType.ArrowClosed, color, width: 16, height: 16 };
+  return { type: MarkerType.ArrowClosed, color, width: 16, height: 16, markerUnits: 'userSpaceOnUse' };
 }

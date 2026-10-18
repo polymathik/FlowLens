@@ -19,6 +19,8 @@ export const OVERLAY_OPTIONS: Array<{ value: OverlayType | null; label: string }
 ];
 
 interface ToolbarProps {
+  /** Zone controls (group by, expand / collapse all), rendered at the left. */
+  zoneControls?: React.ReactNode;
   showFilter: boolean;
   showRules: boolean;
   onToggleFilter: () => void;
@@ -27,7 +29,7 @@ interface ToolbarProps {
   exporting: boolean;
 }
 
-export function Toolbar({ showFilter, showRules, onToggleFilter, onToggleRules, onExport, exporting }: ToolbarProps) {
+export function Toolbar({ zoneControls, showFilter, showRules, onToggleFilter, onToggleRules, onExport, exporting }: ToolbarProps) {
   const overlay = useCanvasStore((s) => s.activeOverlay);
   const setOverlay = useCanvasStore((s) => s.setOverlay);
   const tier = useCanvasStore((s) => s.currentZoomLevel);
@@ -50,6 +52,7 @@ export function Toolbar({ showFilter, showRules, onToggleFilter, onToggleRules, 
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        {zoneControls}
         <span data-testid="detail-tier" style={{ color: COLORS.faint }}>
           {DETAIL_LABELS[tier]}
         </span>

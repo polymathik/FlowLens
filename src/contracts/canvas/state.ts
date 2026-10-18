@@ -12,6 +12,7 @@
  */
 import type { RelationType } from '../relations.js';
 import type { ArchitectureViolation } from '../analysis/architecture.js';
+import type { ZoneOverrides, ZoningMode } from '../zones.js';
 
 /** Four discrete zoom tiers mapped from React Flow viewport zoom (names are historical; they are detail tiers). */
 export type ZoomLevel = 'system' | 'module' | 'file' | 'entity';
@@ -97,6 +98,22 @@ export interface CanvasState {
   /** URL scheme of the "Open in editor" links. */
   editorScheme: EditorScheme;
 
+  // Zones (Map v2 M2)
+  /** How files are grouped into zones. `communities` / `layers` are roadmap items (disabled in the UI). */
+  groupBy: ZoningMode;
+  /**
+   * Explicit expand (true) / collapse (false) choices, keyed
+   * `<containerId>|<itemId>`; absent keys follow the defaults. Remembered per
+   * project in sessionStorage (best effort).
+   */
+  zoneExpansion: Record<string, boolean>;
+  /** User adjustments from `GET /canvas/zones` (rename, colour, collapse, pins). */
+  zoneOverrides: ZoneOverrides;
+  /** Node under the pointer (its edges stay strong, the rest dim). */
+  hoveredNodeId: string | null;
+  /** One-line message about zones (override save failed, zones collapsed for performance…). */
+  zoneNotice: string | null;
+
   // Drill-down
   /**
    * The real path from the project root to the open container, as hierarchy
@@ -127,6 +144,14 @@ export interface CanvasState {
   navigateTo: (target: NavigationTarget) => void;
   clearFocusRequest: () => void;
   setHighlighted: (ids: string[]) => void;
+  setGroupBy: (mode: ZoningMode) => void;
+  /** Set one or several expand / collapse choices at once. */
+  setZoneExpansion: (entries: Record<string, boolean>) => void;
+  /** Forget every explicit choice for the container (back to the defaults). */
+  resetZoneExpansion: (containerId: string) => void;
+  setZoneOverrides: (overrides: ZoneOverrides) => void;
+  setHoveredNode: (id: string | null) => void;
+  setZoneNotice: (notice: string | null) => void;
 }
 
 /**

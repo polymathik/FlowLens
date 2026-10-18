@@ -57,3 +57,12 @@ export function postJson<T>(url: string, body: unknown, signal?: AbortSignal): P
     signal,
   });
 }
+
+export function putJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return requestJson<T>(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+}
