@@ -35,7 +35,31 @@ export interface RelationMeta {
    * a re-export (barrel), not a consuming import (Map M0, additive).
    */
   reexport?: boolean;
+  /**
+   * Every occurrence of an aggregated `call` / `create` / `use` / `throw` edge
+   * (Parser truth 2, additive), sorted by position, capped at
+   * `MAX_RELATION_SITES`. Present only when the edge aggregates more than one
+   * occurrence (a single occurrence is `Relation.location`); use
+   * `relationSites()` (src/graph/sites.ts) to read either form. All sites are
+   * in `location.file`. `Relation.location` stays the first *emitted*
+   * occurrence (it feeds the stable relation id), so `sites[0]` can precede it.
+   */
+  sites?: RelationSite[];
+  /** Total number of occurrences when `sites` was capped (equals `weight` of the edge). */
+  sites_total?: number;
 }
+
+/** One occurrence of a relation in its file (1-based line and column). */
+export interface RelationSite {
+  line: number;
+  column: number;
+}
+
+/** Relation types whose individual occurrences are kept in `meta.sites`. */
+export const SITED_RELATION_TYPES: readonly RelationType[] = ['call', 'create', 'use', 'throw'];
+
+/** Cap of `meta.sites` per aggregated edge. */
+export const MAX_RELATION_SITES = 20;
 
 /**
  * Relation types that only express type annotations (Phase 12). In TS/JS they

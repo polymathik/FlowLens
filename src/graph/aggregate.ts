@@ -4,9 +4,12 @@
  * Repeated occurrences (two calls to the same function, a value and a type
  * import of the same module) collapse into the first occurrence; `weight`
  * becomes the occurrence count, `confidence` the maximum, and `type_only`
- * survives only when every occurrence was type-only.
+ * survives only when every occurrence was type-only. For call / create / use /
+ * throw edges every occurrence's position is kept in `meta.sites`
+ * (see sites.ts); other types carry only the first occurrence.
  */
 import type { Relation } from '../contracts/relations.js';
+import { mergeSites } from './sites.js';
 
 export function edgeKey(r: Pick<Relation, 'from' | 'type' | 'to' | 'target_name'>): string {
   const to = r.to || `?${r.target_name ?? ''}`;
@@ -24,6 +27,7 @@ export function aggregateRelations(relations: Relation[]): Relation[] {
     }
     prev.weight += r.weight || 1;
     prev.confidence = Math.max(prev.confidence, r.confidence);
+    mergeSites(prev, r);
     if (prev.meta?.type_only && !r.meta?.type_only) {
       delete prev.meta.type_only;
       if (Object.keys(prev.meta).length === 0) delete prev.meta;
