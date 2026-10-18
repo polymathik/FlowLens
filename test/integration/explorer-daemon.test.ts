@@ -139,7 +139,7 @@ describe('per-project explorer API', () => {
     const s = JSON.parse(res.body) as CanvasSummary;
     expect(s.file_count).toBe(9);
     expect(s.cycle_count).toBe(1);
-    expect(s.violation_count).toBe(1);
+    expect(s.violation_count).toBe(2); // import + the cross-file call it carries (Phase 8 resolution)
     const ents = JSON.parse((await raw(port, 'GET', `/api/projects/${project.id}/canvas/entities`, browser())).body) as Entity[];
     expect(ents.length).toBeGreaterThan(9);
   });
