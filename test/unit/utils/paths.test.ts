@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extensionToLanguage, normalizeRelativePath, isDeepExtractionLanguage } from '../../../src/utils/paths.js';
+import { extensionToLanguage, normalizeRelativePath } from '../../../src/utils/paths.js';
 
 describe('extensionToLanguage', () => {
   it('maps .ts to typescript', () => {
@@ -14,20 +14,16 @@ describe('extensionToLanguage', () => {
     expect(extensionToLanguage('.go')).toBe('go');
   });
 
+  it('maps .mts and .cts to typescript', () => {
+    expect(extensionToLanguage('.mts')).toBe('typescript');
+    expect(extensionToLanguage('.cts')).toBe('typescript');
+  });
+
   it('returns null for unknown extensions', () => {
     expect(extensionToLanguage('.xyz')).toBeNull();
   });
 });
 
-describe('isDeepExtractionLanguage', () => {
-  it('returns true for typescript', () => {
-    expect(isDeepExtractionLanguage('typescript')).toBe(true);
-  });
-
-  it('returns false for python', () => {
-    expect(isDeepExtractionLanguage('python')).toBe(false);
-  });
-});
 
 describe('normalizeRelativePath', () => {
   it('strips leading ./', () => {

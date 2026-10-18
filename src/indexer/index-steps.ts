@@ -10,19 +10,14 @@ import type { Entity } from '../contracts/entities.js';
 import type { FileIndexEntry } from '../contracts/file-index.js';
 import { discoverFiles } from '../discovery/file-walker.js';
 import { loadIgnorePatterns } from '../discovery/ignore-rules.js';
-import { LANGUAGE_EXTENSIONS } from '../utils/paths.js';
+import { getSupportedExtensions } from '../utils/paths.js';
 import { generateEntityId } from '../utils/id.js';
 import { computeChurn } from '../analysis/churn-analyzer.js';
 import { FileIndexManager } from './file-index.js';
 import { parallelParse, PARALLEL_THRESHOLD, type ParsedFileOutput } from './parallel-parser.js';
 import type { FileEdges } from './pass2.js';
 
-/** Extensions enabled by `config.languages` (languages not listed are enabled). */
-export function getSupportedExtensions(languages: Record<string, boolean>): string[] {
-  return Object.entries(LANGUAGE_EXTENSIONS)
-    .filter(([, lang]) => languages[lang] !== false)
-    .map(([ext]) => ext);
-}
+export { getSupportedExtensions };
 
 export async function discoverProjectFiles(
   rootDir: string,

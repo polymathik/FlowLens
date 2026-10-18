@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import type { FlowLensConfig } from '../contracts/config.js';
 import { buildIgnoreFilter, loadIgnorePatterns } from '../discovery/ignore-rules.js';
-import { LANGUAGE_EXTENSIONS } from '../utils/paths.js';
+import { getSupportedExtensions } from '../utils/paths.js';
 
 const ALWAYS_EXCLUDED = ['.flowlens/**', '.claude/**', '.git/**', 'node_modules/**'];
 
@@ -35,9 +35,7 @@ export async function buildChangedFileFilter(rootDir: string): Promise<ChangedFi
 
 /** Mirrors the indexer: a language absent from `config.languages` is enabled. */
 export function supportedExtensions(languages: Record<string, boolean>): Set<string> {
-  return new Set(Object.entries(LANGUAGE_EXTENSIONS)
-    .filter(([, lang]) => languages[lang] !== false)
-    .map(([ext]) => ext));
+  return new Set(getSupportedExtensions(languages));
 }
 
 async function readConfig(rootDir: string): Promise<Partial<FlowLensConfig> | null> {

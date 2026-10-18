@@ -1,5 +1,7 @@
 export const LANGUAGE_EXTENSIONS: Record<string, string> = {
   '.ts': 'typescript',
+  '.mts': 'typescript',
+  '.cts': 'typescript',
   '.tsx': 'tsx',
   '.js': 'javascript',
   '.jsx': 'jsx',
@@ -31,16 +33,15 @@ export const LANGUAGE_EXTENSIONS: Record<string, string> = {
   '.bash': 'bash',
 };
 
-const DEEP_EXTRACTION_LANGUAGES = new Set([
-  'typescript', 'tsx', 'javascript', 'jsx',
-]);
+/** Extensions enabled by `config.languages` (languages not listed are enabled). */
+export function getSupportedExtensions(languages: Record<string, boolean>): string[] {
+  return Object.entries(LANGUAGE_EXTENSIONS)
+    .filter(([, lang]) => languages[lang] !== false)
+    .map(([ext]) => ext);
+}
 
 export function extensionToLanguage(ext: string): string | null {
   return LANGUAGE_EXTENSIONS[ext] ?? null;
-}
-
-export function isDeepExtractionLanguage(language: string): boolean {
-  return DEEP_EXTRACTION_LANGUAGES.has(language);
 }
 
 export function normalizeRelativePath(p: string): string {
