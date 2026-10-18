@@ -9,6 +9,8 @@ import { canvasCommand } from './commands/canvas.js';
 import { doctorCommand } from './commands/doctor.js';
 import { exportCommand } from './commands/export.js';
 import { watchCommand } from './commands/watch.js';
+import { daemonCommand } from './commands/daemon.js';
+import { projectsCommand } from './commands/projects.js';
 
 const program = new Command();
 
@@ -25,5 +27,7 @@ program.addCommand(canvasCommand);
 program.addCommand(doctorCommand);
 program.addCommand(exportCommand);
 program.addCommand(watchCommand);
+program.addCommand(daemonCommand);
+program.addCommand(projectsCommand);
 
 program.parse();

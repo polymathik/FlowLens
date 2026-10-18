@@ -9,7 +9,7 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
 import { detectCycles } from '../../analysis/cycle-detector.js';
 import { validateArchitecture } from '../../analysis/architecture-validator.js';
 import { printHeader, printError, printSuccess } from '../output.js';
@@ -23,6 +23,7 @@ export const checkCommand = new Command('check')
   .option('--architecture', 'Run architecture validation only')
   .option('--severity <level>', 'Minimum severity: low, medium, high', 'low')
   .option('--scope <path>', 'Limit check to a subtree')
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
   .action(async (opts) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
@@ -33,8 +34,7 @@ export const checkCommand = new Command('check')
     }
 
     try {
-      const graphStore = new LevelGraphStore();
-      await graphStore.open(join(flowlensDir, 'graph'));
+      const graphStore = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'check' });
 
       let cycleResults: Awaited<ReturnType<typeof detectCycles>> = [];
       let violations: Awaited<ReturnType<typeof validateArchitecture>> = [];
