@@ -17,12 +17,14 @@ import { commonPrefixLength, resolveRef } from '../../analysis/hierarchy/index.j
 import { buildPortals, baseChain, DEFAULT_PORTAL_CAP, type PortalHit } from './portals';
 import { addToLink, emptyAccounting, isZoneContainer, pathOf, resolveContainer, scopeNodeId, sortedLinks, visibleChildren } from './view-scope';
 import { computeZoneView } from './zone-view';
+import { computeFocusView } from '../focus/focus-view';
 
 export { resolveContainer, scopeNodeId, visibleChildren };
 
 type Slot = { t: 'inner'; id: string } | { t: 'hidden' } | { t: 'out'; chain: string[] };
 
 export function computeMapView(h: Hierarchy, relations: Relation[], drillPath: string[], options: MapViewOptions): MapView {
+  if (options.focus && options.zones) return computeFocusView(h, relations, options.focus.id, options.focus, options);
   const containerId = resolveContainer(h, drillPath);
   if (options.zones && isZoneContainer(h, containerId)) return computeZoneView(h, relations, containerId, options, options.zones);
   const containerPath = pathOf(h, containerId);

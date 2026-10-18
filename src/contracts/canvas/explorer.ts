@@ -24,7 +24,7 @@
  */
 import type { HealthSummary } from '../health.js';
 import type { CanvasOverlay } from '../canvas-links.js';
-import type { CanvasRouteTargetKind } from './router.js';
+import type { CanvasRouteFocus, CanvasRouteTargetKind } from './router.js';
 
 /** Explorer routes (templates; `:id` = project id). Additive to SERVICE_ROUTES. */
 export const EXPLORER_ROUTES = {
@@ -115,6 +115,8 @@ export type ExplorerRoute =
       view: ProjectView;
       target?: { kind: CanvasRouteTargetKind; identifier: string };
       overlay?: CanvasOverlay;
+      /** Map v2 M4: Focus mode link; implies `view: 'map'`. */
+      focus?: CanvasRouteFocus;
     };
 
 /** Persisted tab bar state (localStorage, best effort). */

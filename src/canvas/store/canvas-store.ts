@@ -73,6 +73,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       zoneNotice: null,
       architectureLayers: null,
       rulesRevision: 0,
+      focus: null,
 
       setZoomLevel: (level) => set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
       selectNode: (id) => set(id === null ? { selectedNodeId: null, selectedEdgeId: null, highlightedIds: [] } : { selectedNodeId: id, selectedEdgeId: null }),
@@ -104,6 +105,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       navigateTo: (target) =>
         set((s) => ({
           drillPath: [...target.drillPath],
+          focus: null, // a jump (search, portal, deep link) leaves Focus mode; a focus link sets it again right after
           selectedNodeId: target.nodeId,
           selectedEdgeId: null,
           focusRequest: target.nodeId ? { nodeId: target.nodeId, seq: ++focusSeq } : null,
@@ -131,6 +133,8 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): CanvasStore
       setZoneNotice: (notice) => set((s) => (s.zoneNotice === notice ? s : { zoneNotice: notice })),
       setArchitectureLayers: (layers) => set({ architectureLayers: layers }),
       bumpRulesRevision: () => set((s) => ({ rulesRevision: s.rulesRevision + 1 })),
+      // Entering clears the selection (its card may not be in the neighbourhood); leaving keeps whatever is selected.
+      setFocus: (focus) => set(focus ? { focus, selectedNodeId: null, selectedEdgeId: null, hoveredNodeId: null, focusRequest: null } : { focus: null }),
     };
   });
 }

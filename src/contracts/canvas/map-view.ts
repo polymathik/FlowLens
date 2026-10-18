@@ -16,6 +16,7 @@ import type { HierarchyKind } from '../hierarchy.js';
 import type { ZoneOverrides, ZoneSet, ZoningMode } from '../zones.js';
 import type { ArchitectureLayer } from '../architecture.js';
 import type { MapCut } from './zones-view.js';
+import type { FocusInfo, FocusSpec } from './focus.js';
 
 export type TypeCounts = Partial<Record<RelationType, number>>;
 
@@ -86,6 +87,8 @@ export interface MapView {
    * up to the `cross` links' counts (every relation sits in exactly one bundle).
    */
   bundles?: AggregatedLink[];
+  /** Focus mode (M4): this view is the neighbourhood of one node; absent for the normal Map. */
+  focus?: FocusInfo;
 }
 
 export interface MapViewOptions {
@@ -94,6 +97,8 @@ export interface MapViewOptions {
   portalCap?: number;
   /** Map v2 M2: render folders / packages as zones (absent = flat M1 children view). */
   zones?: ZoneViewOptions;
+  /** Map v2 M4: show the neighbourhood of one node instead of the open container (needs `zones`). */
+  focus?: FocusSpec;
 }
 
 /** Inputs of the zone view: grouping, user state and overrides. */
@@ -110,4 +115,9 @@ export interface ZoneViewOptions {
   nodeBudget?: number;
   /** Architecture layers for the `layers` grouping (from `.flowlens/architecture.json`). */
   layers?: ArchitectureLayer[];
+  /**
+   * Focus mode: the files to draw and the zone set that groups them, derived by `src/canvas/focus`
+   * from the grouping above. Replaces the container's own files and zone set.
+   */
+  fixed?: { files: string[]; zoneSet: ZoneSet };
 }

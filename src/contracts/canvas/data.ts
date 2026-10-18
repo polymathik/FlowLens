@@ -268,6 +268,8 @@ export interface CanvasEdgeData {
   bulgeX?: number;
   /** Focus mode: relation ids behind the edge that lie on a path to the hovered card. */
   onPath?: boolean;
+  /** Focus mode: many edges are drawn, so single-relation edges are labelled only when hovered. */
+  crowded?: boolean;
   /** Index signature required by React Flow's `Edge<Data>` constraint. */
   [key: string]: unknown;
 }
