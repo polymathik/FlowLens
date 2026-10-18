@@ -26,13 +26,12 @@ import { populateEntityMetrics } from '../../metrics/compute-entity-metrics.js';
 import { extractEntities } from '../entity-extractor.js';
 import { extractRelations } from '../relation-extractor.js';
 import { extractTsSymbols } from '../symbols/ts-symbols.js';
-import { RelationEmitter } from '../symbols/emitter.js';
 import { dedupeEntities } from '../entity-dedupe.js';
 import { findSyntaxErrorLines } from '../ast-walk.js';
 import { countLines, createFileEntity } from '../file-entity.js';
 import { isPending } from '../pending.js';
 import { maskToScript, type SfcFlavor } from './blocks.js';
-import { scanTemplate, type TemplateRef } from './template-scan.js';
+import { templateRelations } from './template-relations.js';
 
 export const SFC_LANGUAGES: ReadonlySet<string> = new Set(['svelte', 'vue']);
 
@@ -59,30 +58,6 @@ function componentEntity(filePath: string, language: string, lineCount: number):
     language,
     metrics: { line_count: lineCount },
   };
-}
-
-/** Candidate binding names for a tag: as written, PascalCase, camelCase (Vue kebab-case tags). */
-function tagCandidates(name: string, flavor: SfcFlavor): string[] {
-  if (flavor !== 'vue' || !name.includes('-')) return [name];
-  const pascal = name.split('-').map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('');
-  return [pascal, pascal.charAt(0).toLowerCase() + pascal.slice(1), name];
-}
-
-function templateRelations(
-  content: string, flavor: SfcFlavor, component: Entity, entities: Entity[], symbols: FileSymbols,
-): Relation[] {
-  const emitter = new RelationEmitter(component.file, entities, symbols);
-  const scan = scanTemplate(content, flavor);
-  const at = (r: TemplateRef) => ({ line: r.line, column: r.column });
-  for (const tag of scan.tags) {
-    const name = tagCandidates(tag.name, flavor).find((c) => {
-      const head = c.split('.')[0];
-      return emitter.isImported(head) || (emitter.isLocal(head) && head !== component.name);
-    });
-    if (name) emitter.link(component, 'create', name, at(tag), { kinds: ['component', 'class'] });
-  }
-  for (const call of scan.calls) emitter.link(component, 'call', call.name, at(call), { optional: true });
-  return emitter.relations;
 }
 
 export function parseSfc(

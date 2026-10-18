@@ -8,6 +8,11 @@
   import { PUBLIC_KEY } from '$env/static/public';
   import { ghost } from '#lib/ghost.js';
 
+  let query = $state('');
+  function reset() {
+    query = '';
+  }
+
   async function load() {
     await api.workspace();
     writeTextPref('k', formatName(title('x')));
@@ -16,5 +21,8 @@
   }
 </script>
 
+<input bind:value={query} />
 <button onclick={load}>load</button>
+<button onclick={() => reset()}>reset</button>
+<Canvas onclose={reset} />
 <Canvas />

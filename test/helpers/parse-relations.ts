@@ -11,7 +11,7 @@ export interface ParsedSource {
   entities: Entity[];
   relations: Relation[];
   pending: Relation[];
-  /** `type from -> to` (+ ` [module]` / ` x3` / ` @receiver`) for direct and pending relations. */
+  /** `type from -> to` (+ ` [module]` / ` x3` / ` @receiver` / ` ~ref:via`) for direct and pending relations. */
   lines(types?: RelationType[]): string[];
   find(type: RelationType, from: string, to: string): Relation | undefined;
 }
@@ -26,7 +26,7 @@ export async function parseSource(code: string, file = 'src/a.ts', rootDir = '')
   };
   const render = (r: Relation): string => {
     const to = r.to ? name(r.to) : `?${r.target_name}`;
-    const tags = [r.meta?.owner ? `[${r.meta.owner}]` : '', r.weight > 1 ? `x${r.weight}` : '', r.meta?.receiver ? `@${r.meta.receiver}` : '']
+    const tags = [r.meta?.owner ? `[${r.meta.owner}]` : '', r.weight > 1 ? `x${r.weight}` : '', r.meta?.receiver ? `@${r.meta.receiver}` : '', r.meta?.ref ? `~${r.meta.ref}${r.meta.ref_via ? ':' + r.meta.ref_via : ''}` : '']
       .filter(Boolean).join(' ');
     return `${r.type} ${name(r.from)} -> ${to}${tags ? ' ' + tags : ''}`;
   };

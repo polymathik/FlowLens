@@ -61,6 +61,21 @@ export interface RelationMeta {
   receiver?: string;
   /** Total number of occurrences when `sites` was capped (equals `weight` of the edge). */
   sites_total?: number;
+  /**
+   * How a `use` / `create` edge to a function, class or component was written
+   * when it is a reference rather than a read or a call (Parser truth 2, additive):
+   *  - `argument` — passed to a call: `app.get('/x', handler)`, `xs.map(fn)`,
+   *                 `emitter.on('e', this.onEvent)`; `ref_via` is the callee as written.
+   *  - `table`    — a value in an object / array literal that is exported, assigned
+   *                 or passed on: `export default { save }`, `[{ handler: run }]`.
+   *  - `binding`  — a markup attribute or directive: JSX `onClick={fn}`, Svelte
+   *                 `onclick={fn}` / `on:click={fn}` / `use:action` / `bind:value={x}`,
+   *                 Vue `@click="fn"` / `v-model="x"`; `ref_via` is the attribute as written.
+   * An aggregated edge keeps the `ref` of its first occurrence.
+   */
+  ref?: 'argument' | 'table' | 'binding';
+  /** The callee (`ref: 'argument'`) or attribute / directive (`ref: 'binding'`) the reference sits in. */
+  ref_via?: string;
 }
 
 /** One occurrence of a relation in its file (1-based line and column). */

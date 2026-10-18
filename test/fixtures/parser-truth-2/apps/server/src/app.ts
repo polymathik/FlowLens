@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { parseId } from '@pt/core';
-import { boot } from './boot.js';
+import { boot, onShutdown } from './boot.js';
 
 function health(): string {
   return 'ok';
@@ -8,6 +8,10 @@ function health(): string {
 
 function audit(id: string): void {
   void id;
+}
+
+function sessionList(c: { text(s: string): string }): string {
+  return c.text('list');
 }
 
 const app = new Hono();
@@ -20,6 +24,8 @@ app.get('/sessions/:id', (c) => {
   return c.text(String(id));
 });
 
+app.get('/sessions', sessionList);
+process.on('SIGTERM', onShutdown);
 boot(app);
 
 export function listRoutes(items: string[]): number {
