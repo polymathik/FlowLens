@@ -84,6 +84,23 @@ export interface ZoningInput {
   scopeId?: string;
   overrides?: ZoneOverrides;
   options?: ZoningOptions;
+  /** Weighted file-to-file dependency graph (for `communities`); built by `buildFileGraph`. */
+  fileGraph?: ZoningFileGraph;
+  /** Architecture layers (for `layers`), from `.flowlens/architecture.json`. */
+  layers?: import('./architecture.js').ArchitectureLayer[];
+  /** The previous community assignment (file path → community key) for stable re-zoning. */
+  previousAssignment?: Record<string, string>;
+}
+
+/** Undirected weighted edge between two hierarchy file-node ids (weights already combined). */
+export interface ZoningFileEdge {
+  a: string;
+  b: string;
+  weight: number;
+}
+
+export interface ZoningFileGraph {
+  edges: ZoningFileEdge[];
 }
 
 /**
