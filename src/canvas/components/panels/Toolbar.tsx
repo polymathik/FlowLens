@@ -1,114 +1,100 @@
 /**
- * Top toolbar with overlay selector, filter toggle, and export buttons.
- * Provides quick access to canvas-level controls and search shortcut hint.
+ * Top toolbar: product name, overlay picker, search, filters, rules editor
+ * and image export. Plain-language labels; data names stay in code.
  */
 import React from 'react';
-import { useCanvasStore, type OverlayType } from '../../store/canvas-store';
+import type { OverlayType } from '../../../contracts/canvas/index.js';
+import { useCanvasStore } from '../../store/canvas-store';
+import { DETAIL_LABELS } from '../../utils/zoom';
+import { COLORS, button, buttonActive, input } from '../shared/ui';
 
-const OVERLAYS: Array<{ value: OverlayType; label: string }> = [
-  { value: null, label: 'None' },
-  { value: 'complexity-heatmap', label: 'Complexity' },
-  { value: 'churn-heatmap', label: 'Churn' },
+export const OVERLAY_OPTIONS: Array<{ value: OverlayType | null; label: string }> = [
+  { value: null, label: 'No overlay' },
+  { value: 'complexity-heatmap', label: 'Code quality' },
+  { value: 'churn-heatmap', label: 'Recent changes (churn)' },
   { value: 'hotspot', label: 'Hotspots' },
-  { value: 'cycles', label: 'Cycles' },
-  { value: 'architecture-violations', label: 'Violations' },
-  { value: 'interface-diff', label: 'Diff' },
+  { value: 'cycles', label: 'Dependency cycles' },
+  { value: 'architecture-violations', label: 'Rule breaks' },
+  { value: 'interface-diff', label: 'API changes since…' },
 ];
 
-const buttonStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  borderRadius: 4,
-  border: '1px solid #cbd5e1',
-  cursor: 'pointer',
-  fontSize: 11,
-  backgroundColor: 'transparent',
-};
-
-export function Toolbar({
-  onExportSVG,
-  onExportPNG,
-  onToggleFilter,
-  onToggleArchEditor,
-}: {
-  onExportSVG: () => void;
-  onExportPNG: () => void;
+interface ToolbarProps {
+  showFilter: boolean;
+  showRules: boolean;
   onToggleFilter: () => void;
-  onToggleArchEditor: () => void;
-}) {
+  onToggleRules: () => void;
+  onExport: (format: 'png' | 'svg') => void;
+  exporting: boolean;
+}
+
+export function Toolbar({ showFilter, showRules, onToggleFilter, onToggleRules, onExport, exporting }: ToolbarProps) {
   const overlay = useCanvasStore((s) => s.activeOverlay);
   const setOverlay = useCanvasStore((s) => s.setOverlay);
-  const zoomLevel = useCanvasStore((s) => s.currentZoomLevel);
+  const tier = useCanvasStore((s) => s.currentZoomLevel);
   const diffSha = useCanvasStore((s) => s.diffSha);
   const setDiffSha = useCanvasStore((s) => s.setDiffSha);
+  const setSearchOpen = useCanvasStore((s) => s.setSearchOpen);
 
   return (
     <div
+      role="toolbar"
       style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 10,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '6px 12px',
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        borderBottom: '1px solid #e2e8f0',
+        gap: 12,
+        padding: '8px 14px',
+        background: COLORS.surface,
+        borderBottom: `1px solid ${COLORS.border}`,
         fontSize: 12,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span style={{ fontWeight: 700, fontSize: 14 }}>FlowLens</span>
-        <span style={{ color: '#94a3b8' }}>Zoom: {zoomLevel}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.text }}>FlowLens</span>
+        <span data-testid="detail-tier" style={{ color: COLORS.faint }}>
+          {DETAIL_LABELS[tier]}
+        </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <select
-          value={overlay ?? ''}
-          onChange={(e) =>
-            setOverlay((e.target.value || null) as OverlayType)
-          }
-          style={{
-            padding: '4px 8px',
-            borderRadius: 4,
-            border: '1px solid #cbd5e1',
-            fontSize: 11,
-          }}
-        >
-          {OVERLAYS.map((o) => (
-            <option key={o.value ?? 'none'} value={o.value ?? ''}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <button data-testid="search-button" style={button} onClick={() => setSearchOpen(true)} title="Search symbols (Ctrl/Cmd+K)">
+          Search <span style={{ color: COLORS.faint, marginLeft: 4 }}>⌘K</span>
+        </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: COLORS.muted }}>
+          Overlay
+          <select
+            data-testid="overlay-select"
+            value={overlay ?? ''}
+            onChange={(e) => setOverlay((e.target.value || null) as OverlayType | null)}
+            style={{ ...input, width: 'auto', padding: '4px 6px' }}
+          >
+            {OVERLAY_OPTIONS.map((o) => (
+              <option key={o.value ?? 'none'} value={o.value ?? ''}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
         {overlay === 'interface-diff' && (
           <input
             type="text"
             placeholder="Snapshot SHA"
             value={diffSha}
-            onChange={(e) => setDiffSha(e.target.value)}
-            style={{
-              padding: '4px 8px',
-              borderRadius: 4,
-              border: '1px solid #cbd5e1',
-              fontSize: 11,
-              width: 120,
-            }}
+            onChange={(e) => setDiffSha(e.target.value.trim())}
+            style={{ ...input, width: 120 }}
           />
         )}
-        <button onClick={onToggleFilter} style={buttonStyle}>
-          Filters
+        <button style={showFilter ? buttonActive : button} onClick={onToggleFilter}>
+          Relations
         </button>
-        <button onClick={onToggleArchEditor} style={buttonStyle}>
-          Layers
+        <button data-testid="rules-button" style={showRules ? buttonActive : button} onClick={onToggleRules}>
+          Rules
         </button>
-        <button onClick={onExportSVG} style={buttonStyle}>
-          SVG
-        </button>
-        <button onClick={onExportPNG} style={buttonStyle}>
+        <button data-testid="export-png" style={button} disabled={exporting} onClick={() => onExport('png')}>
           PNG
         </button>
-        <span style={{ color: '#94a3b8', fontSize: 10 }}>Cmd+K Search</span>
+        <button data-testid="export-svg" style={button} disabled={exporting} onClick={() => onExport('svg')}>
+          SVG
+        </button>
       </div>
     </div>
   );

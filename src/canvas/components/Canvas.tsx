@@ -1,417 +1,135 @@
 /**
- * Main React Flow canvas component.
+ * Main canvas: header (toolbar, breadcrumb, stats) above a React Flow
+ * surface with floating panels.
  *
- * Wraps the graph in a ReactFlowProvider and renders Background, Controls,
- * and MiniMap alongside the nodes/edges loaded from the graph API.
- * Uses custom node types (System, File, Entity) with dual layout:
- * d3-force for module/system views, ELK.js for file/entity views.
+ * Data flow:
+ *   useGraphData → all nodes (all levels) + GraphIndex
+ *   useCanvasView → visible nodes for the drill path, aggregated edges,
+ *                   overlay decoration, relation filters, problem edges
+ *   useCanvasLayout → layout on visible-set change, then focus or fit
+ *   useHashRoute → deep links (#/entity/<id>?overlay=…)
  *
- * Integrations:
- * - Zustand store for state management
- * - Semantic zoom (viewport zoom -> discrete zoom level)
- * - Breadcrumb drill-down navigation (filters nodes by drill state)
- * - Edge filtering by visible relation types
- * - Overlay system (complexity, churn, hotspot, cycles, violations, diff)
- * - Custom edge types (relation, violation, cycle)
- * - Panels: toolbar, filter, search, detail, architecture editor
- * - SVG/PNG export
+ * Interaction: wheel / pinch zooms; drag pans; hold Shift and scroll to pan
+ * with a trackpad or wheel. Off-screen elements are not rendered.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ReactFlow,
-  ReactFlowProvider,
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
-  useNodesState,
-  BackgroundVariant,
   PanOnScrollMode,
+  ReactFlow,
+  ReactFlowProvider,
+  useKeyPress,
+  useNodesState,
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useGraphData } from '../hooks/useGraphData';
-import { useLayout } from '../hooks/useLayout';
-import { useForceLayout } from '../hooks/useForceLayout';
+import { useOverlayData } from '../hooks/useOverlayData';
+import { useCanvasView } from '../hooks/useCanvasView';
+import { useCanvasLayout } from '../hooks/useCanvasLayout';
 import { useSemanticZoom } from '../hooks/useSemanticZoom';
-import { useCanvasStore } from '../store/canvas-store';
-import { SystemNode } from './nodes/SystemNode';
-import { ModuleNode } from './nodes/ModuleNode';
-import { FileNode } from './nodes/FileNode';
-import { EntityNode } from './nodes/EntityNode';
-import { RelationEdge, TYPE_COLORS } from './edges/RelationEdge';
-import { ViolationEdge } from './edges/ViolationEdge';
-import { CycleEdge } from './edges/CycleEdge';
-import { BreadcrumbBar } from './panels/BreadcrumbBar';
-import { Toolbar } from './panels/Toolbar';
+import { useNodeInteractions } from '../hooks/useNodeInteractions';
+import { useHashRoute } from '../router/useHashRoute';
+import { exportCanvas, type ExportFormat } from '../utils/export-utils';
+import { nodeTypes } from './nodes';
+import { edgeTypes } from './edges/edges';
+import { CanvasHeader } from './panels/CanvasHeader';
 import { FilterPanel } from './panels/FilterPanel';
 import { SearchPanel } from './panels/SearchPanel';
 import { DetailPanel } from './panels/DetailPanel';
-import { ArchitectureEditor } from './panels/ArchitectureEditor';
-import { OverlayLegend } from './overlays/OverlayLegend';
-import { applyOverlay, type OverlayExtraData } from './overlays/OverlayManager';
-import { fetchCycles, fetchViolations, fetchDiff } from '../api/graph-client';
-import { exportToSVG, exportToPNG } from '../utils/export-utils';
-import { transformRelationsToEdges } from '../utils/edge-transformer';
+import { OverlayLegend } from './panels/OverlayLegend';
+import { ArchitectureEditor } from './panels/rules/ArchitectureEditor';
+import { LEVEL_PALETTE } from './nodes/NodeShell';
+import { COLORS } from './shared/ui';
 
-const nodeTypes = {
-  system: SystemNode,
-  module: ModuleNode,
-  file: FileNode,
-  entity: EntityNode,
-};
-
-const edgeTypes = {
-  relation: RelationEdge,
-  violation: ViolationEdge,
-  cycle: CycleEdge,
-};
-
-/**
- * Given all nodes and the current drill state, return only the nodes
- * that should be visible.
- *
- * Flat node strategy — no parentId nesting. Parent references are stored
- * in node data: data.parentSystem (module/file nodes), data.parentModule
- * (file nodes), and data.parentFile (entity nodes).
- *
- * 4-level hierarchy:
- * - No drill: show only system-level nodes (type === 'system').
- * - Drilled into system: show module nodes for that system + root files (no module).
- * - Drilled into module: show file nodes for that module (+ sibling modules for context).
- * - Drilled into file: show entity nodes for that file.
- */
-function getVisibleNodes(
-  allNodes: Node[],
-  drillPath: string[],
-): Node[] {
-  if (drillPath.length === 0) {
-    // Top-level view: only system nodes
-    return allNodes.filter((n) => n.type === 'system');
-  }
-
-  const currentDrill = drillPath[drillPath.length - 1];
-  const data = (n: Node) => n.data as Record<string, unknown>;
-
-  if (currentDrill.startsWith('system:')) {
-    // Drilled into a system → show module nodes for this system + root files (no module)
-    return allNodes.filter((n) => {
-      // Keep all system nodes for context
-      if (n.type === 'system') return true;
-      // Module nodes belonging to this system
-      if (n.type === 'module' && data(n).parentSystem === currentDrill) return true;
-      // Files directly in this system dir (no module parent)
-      if (
-        n.type === 'file' &&
-        data(n).parentSystem === currentDrill &&
-        !data(n).parentModule
-      ) return true;
-      return false;
-    });
-  }
-
-  if (currentDrill.startsWith('module:')) {
-    // Drilled into a module → show file nodes for this module
-    // Also show sibling modules for context (same parent system)
-    const parentSystem = drillPath.length >= 2 ? drillPath[drillPath.length - 2] : null;
-    return allNodes.filter((n) => {
-      // Sibling modules for context
-      if (
-        n.type === 'module' &&
-        parentSystem &&
-        data(n).parentSystem === parentSystem
-      ) return true;
-      // File nodes belonging to this module
-      if (n.type === 'file' && data(n).parentModule === currentDrill) return true;
-      return false;
-    });
-  }
-
-  if (currentDrill.startsWith('file:')) {
-    // Drilled into a file → show entity nodes for this file
-    return allNodes.filter((n) => {
-      if (n.type === 'entity' && data(n).parentFile === currentDrill) return true;
-      return false;
-    });
-  }
-
-  return allNodes;
+function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error' }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: tone ? COLORS.danger : COLORS.muted }}>
+      {children}
+    </div>
+  );
 }
 
+const minimapColor = (n: Node) => LEVEL_PALETTE[(n.type as keyof typeof LEVEL_PALETTE) ?? 'entity']?.stroke ?? '#cbd5e1';
+
 function CanvasInner() {
-  const {
-    nodes: initialNodes,
-    entities,
-    relations: rawRelations,
-    loading,
-    error,
-  } = useGraphData();
+  const graph = useGraphData();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-
-  // Zustand state
-  const drillInto = useCanvasStore((s) => s.drillInto);
-  const selectNode = useCanvasStore((s) => s.selectNode);
-  const activeOverlay = useCanvasStore((s) => s.activeOverlay);
-  const visibleTypes = useCanvasStore((s) => s.visibleRelationTypes);
-  const drillPath = useCanvasStore((s) => s.drillPath);
-  const diffSha = useCanvasStore((s) => s.diffSha);
-
-  // Determine layout mode: force-directed for module/system view, ELK for file/entity
-  const isModuleView =
-    drillPath.length === 0 ||
-    (drillPath.length > 0 &&
-      drillPath[drillPath.length - 1].startsWith('system:'));
-
-  const { runLayout: runForceLayout } = useForceLayout({
-    enabled: isModuleView,
-    strength: -300,
-    distance: 120,
-  });
-  const { runLayout: runElkLayout } = useLayout();
-
-  // Semantic zoom — keeps store in sync with viewport zoom level
-  useSemanticZoom();
-
-  // Panel visibility toggles
   const [showFilter, setShowFilter] = useState(false);
-  const [showArchEditor, setShowArchEditor] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const shiftHeld = useKeyPress('Shift');
 
-  // Extra data for overlays that need external data (cycles, violations, diff)
-  const [overlayData, setOverlayData] = useState<OverlayExtraData>({});
+  useEffect(() => setNodes(graph.nodes), [graph.nodes, setNodes]);
 
-  // Fetch overlay-specific data when overlay changes
-  useEffect(() => {
-    let cancelled = false;
+  const overlayData = useOverlayData(graph.version);
+  const view = useCanvasView(nodes, graph.relations, graph.index, overlayData, graph.version);
+  useCanvasLayout({ ...view, setNodes });
+  useSemanticZoom();
+  const allNodeIds = useMemo(() => new Set(graph.nodes.map((n) => n.id)), [graph.nodes]);
+  useHashRoute(graph.entities, allNodeIds, !graph.loading && graph.nodes.length > 0);
+  const handlers = useNodeInteractions(graph.index.entityById);
 
-    if (activeOverlay === 'cycles') {
-      fetchCycles()
-        .then((data) => {
-          if (!cancelled)
-            setOverlayData({ cycles: data as OverlayExtraData['cycles'] });
-        })
-        .catch(() => {
-          /* overlay data is optional */
-        });
-    } else if (activeOverlay === 'architecture-violations') {
-      fetchViolations()
-        .then((data) => {
-          if (!cancelled)
-            setOverlayData({
-              violations: data as OverlayExtraData['violations'],
-            });
-        })
-        .catch(() => {
-          /* overlay data is optional */
-        });
-    } else if (activeOverlay === 'interface-diff' && diffSha) {
-      fetchDiff(diffSha)
-        .then((data) => {
-          if (!cancelled)
-            setOverlayData({
-              diffChanges: (data.changes ?? []) as OverlayExtraData['diffChanges'],
-            });
-        })
-        .catch(() => {
-          /* overlay data is optional */
-        });
-    } else {
-      setOverlayData({});
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeOverlay, diffSha]);
-
-  // Sync hook data into React Flow's controlled state once loaded.
-  useEffect(() => {
-    if (initialNodes.length > 0) {
-      setNodes(initialNodes);
-    }
-  }, [initialNodes, setNodes]);
-
-  // Apply overlay styles to nodes
-  const overlayNodes = useMemo(
-    () => applyOverlay(nodes, activeOverlay, overlayData),
-    [nodes, activeOverlay, overlayData],
-  );
-
-  // Filter nodes by drill-down state (Issue 6)
-  const visibleNodes = useMemo(
-    () => getVisibleNodes(overlayNodes, drillPath),
-    [overlayNodes, drillPath],
-  );
-
-  // Run the appropriate layout after visible nodes change
-  useEffect(() => {
-    if (visibleNodes.length > 0) {
-      if (isModuleView) {
-        runForceLayout();
-      } else {
-        runElkLayout();
-      }
-    }
-  }, [visibleNodes.length, isModuleView]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Recompute edges reactively based on visible nodes + raw relations.
-  // This ensures drill-down creates proper file-level / entity-level edges.
-  const computedEdges = useMemo(() => {
-    if (!rawRelations || rawRelations.length === 0) return [];
-    const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
-    return transformRelationsToEdges(rawRelations, visibleNodeIds, entities);
-  }, [visibleNodes, rawRelations, entities]);
-
-  // Filter edges by visible relation types
-  const filteredEdges = useMemo(() => {
-    return computedEdges.filter((e) => {
-      const data = e.data as Record<string, unknown> | undefined;
-      // Entity-level edges have a relation object with a type
-      const relation = data?.relation as { type?: string } | undefined;
-      if (relation?.type) return visibleTypes.has(relation.type);
-      // Aggregated edges have a types array
-      const types = data?.types as string[] | undefined;
-      if (types && types.length > 0) {
-        return types.some((t) => visibleTypes.has(t));
-      }
-      return true;
-    });
-  }, [computedEdges, visibleTypes]);
-
-  // Drill-down on double-click
-  const handleNodeDoubleClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      drillInto(node.id);
+  const onExport = useCallback(
+    (format: ExportFormat) => {
+      setExporting(true);
+      exportCanvas(format, view.layoutNodes)
+        .catch((err) => console.error('[flowlens] export failed', err))
+        .finally(() => setExporting(false));
     },
-    [drillInto],
+    [view.layoutNodes],
   );
 
-  // Select node on single-click
-  const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      selectNode(node.id);
-      // When embedded in a VS Code WebView (or any parent window that
-      // listens), post an entity-click message so the host can open the
-      // file. No-op in a normal browser — window.parent === window.
-      if (window.parent && window.parent !== window) {
-        const data = node.data as {
-          entity?: { file?: string; location?: { line_start?: number; column_start?: number } };
-        };
-        const entity = data.entity;
-        if (entity?.file) {
-          window.parent.postMessage(
-            {
-              type: 'flowlens:entity-click',
-              file: entity.file,
-              line: entity.location?.line_start,
-              column: entity.location?.column_start,
-            },
-            '*',
-          );
-        }
-      }
-    },
-    [selectNode],
-  );
-
-  // Deselect when clicking on the pane
-  const handlePaneClick = useCallback(() => {
-    selectNode(null);
-  }, [selectNode]);
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-        }}
-      >
-        <p>Loading graph data...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          color: 'red',
-        }}
-      >
-        <p>Error: {error}</p>
-      </div>
-    );
-  }
+  if (graph.loading) return <Centered>Loading graph…</Centered>;
+  if (graph.error) return <Centered tone="error">Could not load the graph: {graph.error}</Centered>;
+  if (graph.entities.length === 0) return <Centered>No symbols indexed yet. Run “flowlens index” and reload.</Centered>;
 
   return (
-    <>
-      <Toolbar
-        onExportSVG={exportToSVG}
-        onExportPNG={exportToPNG}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: COLORS.canvas }}>
+      <CanvasHeader
+        graphVersion={graph.version}
+        showFilter={showFilter}
+        showRules={showRules}
         onToggleFilter={() => setShowFilter((v) => !v)}
-        onToggleArchEditor={() => setShowArchEditor((v) => !v)}
+        onToggleRules={() => setShowRules((v) => !v)}
+        onExport={onExport}
+        exporting={exporting}
       />
-      <BreadcrumbBar />
-      {showFilter && <FilterPanel />}
-      <SearchPanel entities={entities} />
-      <DetailPanel entities={entities} />
-      <ArchitectureEditor
-        open={showArchEditor}
-        onClose={() => setShowArchEditor(false)}
-      />
-      <OverlayLegend />
-      <ReactFlow
-        nodes={visibleNodes}
-        edges={filteredEdges}
-        onNodesChange={onNodesChange}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodeDoubleClick={handleNodeDoubleClick}
-        onNodeClick={handleNodeClick}
-        onPaneClick={handlePaneClick}
-        fitView
-        fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
-        minZoom={0.05}
-        maxZoom={4}
-        panOnScroll
-        panOnScrollMode={PanOnScrollMode.Free}
-        zoomOnScroll={false}
-        zoomOnPinch
-      >
-        {/* SVG arrow marker defs for each relation type */}
-        <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-          <defs>
-            {Object.entries(TYPE_COLORS).map(([type, color]) => (
-              <marker
-                key={type}
-                id={`arrow-${type}`}
-                viewBox="0 0 10 10"
-                refX="8"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
-              </marker>
-            ))}
-          </defs>
-        </svg>
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-        <Controls />
-        <MiniMap
-          nodeStrokeWidth={3}
-          zoomable
-          pannable
-          style={{ width: 150, height: 100 }}
-        />
-      </ReactFlow>
-    </>
+      <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        <ReactFlow
+          nodes={view.displayNodes}
+          edges={view.displayEdges}
+          onNodesChange={onNodesChange}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodeClick={handlers.onNodeClick}
+          onNodeDoubleClick={handlers.onNodeDoubleClick}
+          onPaneClick={handlers.onPaneClick}
+          minZoom={0.05}
+          maxZoom={4}
+          zoomOnScroll
+          zoomOnPinch
+          zoomOnDoubleClick={false}
+          panOnScroll={shiftHeld}
+          panOnScrollMode={PanOnScrollMode.Free}
+          onlyRenderVisibleElements
+          nodesConnectable={false}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#cbd5e1" />
+          <Controls showInteractive={false} />
+          <MiniMap nodeColor={minimapColor} nodeStrokeWidth={2} zoomable pannable style={{ width: 150, height: 100 }} />
+        </ReactFlow>
+        {showFilter && <FilterPanel />}
+        {showRules && <ArchitectureEditor onClose={() => setShowRules(false)} />}
+        <OverlayLegend nodes={view.displayNodes} />
+        <DetailPanel entityById={graph.index.entityById} />
+      </div>
+      <SearchPanel entities={graph.entities} />
+    </div>
   );
 }
 

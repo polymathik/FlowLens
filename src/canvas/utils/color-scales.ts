@@ -1,31 +1,49 @@
 /**
- * Color scale utilities for overlay visualizations.
+ * Colour scale utilities for overlays and metric badges.
  *
- * - qualityColor: maps a 0-100 quality score to a traffic-light color
- * - churnColor:   maps a churn rate (relative to max) to a blue-to-red gradient
- * - hotspotSize:  maps a hotspot score to a node size multiplier
+ * - qualityColor: 0-100 quality score → traffic-light colour
+ * - churnColor:   churn rate relative to the max → blue-to-red gradient (hex)
+ * - hotspotSize:  hotspot score relative to the max → node scale factor
+ * - withAlpha:    hex colour + alpha → 8-digit hex (for soft fills)
  */
 
-/** Traffic-light color for quality scores (green = good, red = critical). */
+export const QUALITY_BANDS = [
+  { min: 80, color: '#16a34a', label: '80–100 · healthy' },
+  { min: 50, color: '#ca8a04', label: '50–79 · fair' },
+  { min: 25, color: '#ea580c', label: '25–49 · needs care' },
+  { min: 0, color: '#dc2626', label: '0–24 · hard to change' },
+] as const;
+
+/** Traffic-light colour for quality scores (green = good, red = critical). */
 export function qualityColor(score: number): string {
-  if (score >= 80) return '#22c55e';
-  if (score >= 50) return '#eab308';
-  if (score >= 25) return '#f97316';
-  return '#ef4444';
+  for (const band of QUALITY_BANDS) {
+    if (score >= band.min) return band.color;
+  }
+  return QUALITY_BANDS[QUALITY_BANDS.length - 1].color;
 }
 
-/** Blue-to-red gradient based on churn rate relative to the maximum. */
+const LOW = [59, 130, 246]; // blue-500
+const HIGH = [220, 38, 38]; // red-600
+
+function hex(n: number): string {
+  return Math.round(n).toString(16).padStart(2, '0');
+}
+
+/** Blue-to-red gradient based on `rate / maxRate`. */
 export function churnColor(rate: number, maxRate: number): string {
-  if (maxRate === 0) return '#93c5fd';
-  const ratio = Math.min(rate / maxRate, 1);
-  const r = Math.round(59 + ratio * 196); // 59 -> 255
-  const g = Math.round(130 - ratio * 60); // 130 -> 70
-  const b = Math.round(253 - ratio * 185); // 253 -> 68
-  return `rgb(${r}, ${g}, ${b})`;
+  const ratio = maxRate > 0 ? Math.min(Math.max(rate / maxRate, 0), 1) : 0;
+  const c = LOW.map((lo, i) => lo + (HIGH[i] - lo) * ratio);
+  return `#${c.map(hex).join('')}`;
 }
 
-/** Scale factor for hotspot node sizing (0.8x to 2.3x). */
+/** Scale factor for hotspot node sizing (1.0x to 1.6x). */
 export function hotspotSize(score: number, maxScore: number): number {
-  if (maxScore === 0) return 1;
-  return 0.8 + (score / maxScore) * 1.5;
+  if (maxScore <= 0 || score <= 0) return 1;
+  return 1 + Math.min(score / maxScore, 1) * 0.6;
+}
+
+/** Append an alpha channel (0–1) to a #rrggbb colour. */
+export function withAlpha(color: string, alpha: number): string {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
+  return `${color}${hex(Math.min(Math.max(alpha, 0), 1) * 255)}`;
 }

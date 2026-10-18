@@ -1,86 +1,87 @@
 /**
- * React hook that fetches graph data from the API and transforms it into
- * React Flow nodes + edges. Returns loading/error states for the UI.
- *
- * Also fetches annotations and attaches them to entity node data.
+ * Fetches entities, relations and annotations from the graph API and
+ * builds the full (all-levels) node list plus a GraphIndex. Re-fetches when
+ * watch mode pushes a `graph-updated` event.
  */
-import { useState, useEffect } from 'react';
-import type { Node, Edge } from '@xyflow/react';
+import { useEffect, useMemo, useState } from 'react';
+import type { Node } from '@xyflow/react';
 import {
+  fetchAnnotations,
   fetchEntities,
   fetchRelations,
-  fetchAnnotations,
+  openEventStream,
   type Entity,
   type Relation,
 } from '../api/graph-client';
 import { transformEntitiesToNodes } from '../utils/node-transformer';
-import { transformRelationsToEdges } from '../utils/edge-transformer';
+import { buildGraphIndex, type GraphIndex } from '../utils/graph-index';
 
 export interface GraphData {
   nodes: Node[];
-  edges: Edge[];
   entities: Entity[];
   relations: Relation[];
+  index: GraphIndex;
   loading: boolean;
   error: string | null;
+  /** Increments on every successful (re)load. */
+  version: number;
 }
 
 export function useGraphData(): GraphData {
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
-  const [entities, setEntities] = useState<Entity[]>([]);
-  const [relations, setRelations] = useState<Relation[]>([]);
+  const [state, setState] = useState<{
+    entities: Entity[];
+    relations: Relation[];
+    annotations: unknown[];
+    version: number;
+  }>({ entities: [], relations: [], annotations: [], version: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
     async function load() {
       try {
-        const [rawEntities, relations, annotations] = await Promise.all([
+        const [entities, relations, annotations] = await Promise.all([
           fetchEntities(),
           fetchRelations(),
-          fetchAnnotations(),
+          fetchAnnotations().catch(() => [] as unknown[]),
         ]);
-
         if (cancelled) return;
-
-        const rfNodes = transformEntitiesToNodes(rawEntities, annotations);
-        const nodeIds = new Set(rfNodes.map((n) => n.id));
-        const rfEdges = transformRelationsToEdges(relations, nodeIds, rawEntities);
-
-        setEntities(rawEntities);
-        setRelations(relations);
-        setNodes(rfNodes);
-        setEdges(rfEdges);
+        setState((s) => ({ entities, relations, annotations, version: s.version + 1 }));
+        setError(null);
       } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load graph');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load graph');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-
     load();
 
-    // Subscribe to the watch-mode SSE stream. When the server pushes a
-    // graph-updated event, re-fetch everything. EventSource is resilient
-    // to reconnects; if the endpoint doesn't exist (no-watch mode), the
-    // browser silently retries and we don't error the UI.
-    const events = new EventSource('/flowlens-api/events');
+    // Watch mode pushes graph-updated; without watch the browser just retries quietly.
+    const events = openEventStream();
     events.addEventListener('graph-updated', () => {
       if (!cancelled) load();
     });
-    events.onerror = () => {
-      // Let the browser auto-reconnect; don't surface to UI.
-    };
-
+    events.onerror = () => {};
     return () => {
       cancelled = true;
       events.close();
     };
   }, []);
 
-  return { nodes, edges, entities, relations, loading, error };
+  const nodes = useMemo(
+    () => transformEntitiesToNodes(state.entities, state.annotations),
+    [state.entities, state.annotations],
+  );
+  const index = useMemo(() => buildGraphIndex(state.entities), [state.entities]);
+
+  return {
+    nodes,
+    entities: state.entities,
+    relations: state.relations,
+    index,
+    loading,
+    error,
+    version: state.version,
+  };
 }

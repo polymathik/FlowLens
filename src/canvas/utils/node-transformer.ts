@@ -3,83 +3,77 @@
  *
  * Flat node strategy (no compound nesting) with 4 hierarchy levels:
  *   1. System nodes — top-level directories (src, test) and root files
- *   2. Module nodes — subdirectories within a system (src/parser, src/graph, etc.)
- *   3. File nodes — individual files within a module
- *   4. Entity nodes — classes/functions within a file
+ *   2. Module nodes — second-level directories (src/parser, src/graph, …)
+ *   3. File nodes — individual files
+ *   4. Entity nodes — classes/functions within a file ("symbols" in the UI)
  *
- * Each zoom/drill level shows a flat set of appropriately-sized nodes.
- * Drill-down filtering in Canvas.tsx uses parent references stored in node data:
- *   data.parentSystem (module/file nodes) and data.parentModule (file nodes)
- *   and data.parentFile (entity nodes).
+ * Drill-down filtering (`visible-nodes.ts`) uses the parent references in
+ * node data (contract: `src/contracts/canvas/data.ts`).
  *
- * Skips parameter, enum_member, and decorator entities (too granular).
+ * Container metrics: quality = mean over contained symbols; churn and
+ * hotspot = max over contained symbols (so a single hot file lights up its
+ * module and system).
  */
 import type { Node } from '@xyflow/react';
-import type { Entity, EntityKind } from '../api/graph-client';
-import type { SystemNodeData } from '../components/nodes/SystemNode';
-import type { ModuleNodeData } from '../components/nodes/ModuleNode';
-import type { FileNodeData } from '../components/nodes/FileNode';
-import type { EntityNodeData } from '../components/nodes/EntityNode';
+import type { Entity, EntityKind } from '../../contracts/entities.js';
+import type {
+  CanvasAnnotation,
+  EntityNodeData,
+  FileNodeData,
+  ModuleNodeData,
+  SystemNodeData,
+} from '../../contracts/canvas/index.js';
+import { ancestryForFile, fileName, getModulePath, topDir } from './hierarchy';
 
-/** Annotation shape expected from the API. */
-export interface NodeAnnotation {
-  id: string;
-  text: string;
-  category: string;
-  author: string;
-}
-
-const SKIP_KINDS: Set<EntityKind> = new Set([
+export const SKIP_KINDS: ReadonlySet<EntityKind> = new Set([
   'parameter',
   'enum_member',
   'decorator',
 ]);
 
-/** Extract the top-level directory from a file path, or 'root' for bare files. */
-function topDir(filePath: string): string {
-  return filePath.split('/')[0] || 'root';
-}
+/** Node box sizes used for layout before React Flow has measured them. */
+export const NODE_SIZES = {
+  system: { width: 190, height: 64 },
+  module: { width: 180, height: 60 },
+  file: { width: 170, height: 52 },
+  entity: { width: 160, height: 44 },
+} as const;
 
-/** Extract just the filename from a path. */
-function fileName(filePath: string): string {
-  return filePath.split('/').pop() || filePath;
-}
+type AnnotationMap = Map<string, CanvasAnnotation[]>;
 
-/**
- * Derive the module path (first two directory segments) from a file path.
- * Returns null if the file is directly inside the top-level dir (no subdirectory).
- *
- * Examples:
- *   'src/parser/ast-grep-parser.ts'      → 'src/parser'
- *   'src/parser/extractors/foo.ts'        → 'src/parser'
- *   'src/index.ts'                        → null  (no subdirectory)
- *   'package.json'                        → null  (root file)
- */
-function getModulePath(filePath: string): string | null {
-  const parts = filePath.split('/');
-  // Need at least dir/subdir/file.ts for a module level
-  if (parts.length < 3) return null;
-  // Module = first two segments: src/parser, src/graph, test/unit, etc.
-  return parts.slice(0, 2).join('/');
-}
-
-/** Compute average quality score for a group of entities. */
-function avgQuality(entities: Entity[]): number | undefined {
-  const scores = entities
-    .map((e) => e.metrics?.quality_score)
-    .filter((s): s is number => s !== undefined);
-  if (scores.length === 0) return undefined;
-  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-}
-
-/** Map of entity-id to annotations, built from API data. */
-type AnnotationMap = Map<string, NodeAnnotation[]>;
-
-/** All initial positions are (0,0); ELK computes the real layout. */
 const ORIGIN = { x: 0, y: 0 };
 
+interface Aggregate {
+  qualityScore?: number;
+  churnRate?: number;
+  hotspotScore?: number;
+}
+
+/** Aggregate container metrics over a group of entities. */
+export function aggregateMetrics(entities: Entity[]): Aggregate {
+  let qSum = 0;
+  let qCount = 0;
+  let churn: number | undefined;
+  let hotspot: number | undefined;
+  for (const e of entities) {
+    const m = e.metrics;
+    if (!m) continue;
+    if (m.quality_score !== undefined) {
+      qSum += m.quality_score;
+      qCount++;
+    }
+    if (m.churn_rate !== undefined) churn = Math.max(churn ?? 0, m.churn_rate);
+    if (m.hotspot_score !== undefined) hotspot = Math.max(hotspot ?? 0, m.hotspot_score);
+  }
+  return {
+    qualityScore: qCount > 0 ? Math.round(qSum / qCount) : undefined,
+    churnRate: churn,
+    hotspotScore: hotspot,
+  };
+}
+
 /** Build the annotation lookup map from raw API annotation data. */
-function buildAnnotationMap(annotations?: unknown[]): AnnotationMap {
+export function buildAnnotationMap(annotations?: unknown[]): AnnotationMap {
   const annMap: AnnotationMap = new Map();
   if (!annotations) return annMap;
   for (const ann of annotations) {
@@ -97,131 +91,20 @@ function buildAnnotationMap(annotations?: unknown[]): AnnotationMap {
   return annMap;
 }
 
-/** Create system-level nodes from grouped entities. */
-function createSystemNodes(
-  dirs: Map<string, Entity[]>,
-): Node[] {
-  const nodes: Node[] = [];
-  for (const [dir, dirEntities] of dirs) {
-    const systemData: SystemNodeData = {
-      label: dir,
-      entityCount: dirEntities.length,
-      qualityScore: avgQuality(dirEntities),
-    };
-    nodes.push({
-      id: `system:${dir}`,
-      type: 'system',
-      position: ORIGIN,
-      data: systemData,
-      style: { width: 180, height: 60 },
-    });
+function groupBy<K>(items: Entity[], key: (e: Entity) => K | null): Map<K, Entity[]> {
+  const map = new Map<K, Entity[]>();
+  for (const item of items) {
+    const k = key(item);
+    if (k === null) continue;
+    const list = map.get(k);
+    if (list) list.push(item);
+    else map.set(k, [item]);
   }
-  return nodes;
+  return map;
 }
 
-/** Create module-level nodes by grouping entities by subdirectory. */
-function createModuleNodes(
-  dirs: Map<string, Entity[]>,
-): { nodes: Node[]; moduleEntities: Map<string, Entity[]> } {
-  const nodes: Node[] = [];
-  const moduleEntities = new Map<string, Entity[]>();
-
-  for (const [dir, dirEntities] of dirs) {
-    const systemId = `system:${dir}`;
-    // Group non-file entities by their module path
-    const modules = new Map<string, Entity[]>();
-    for (const e of dirEntities) {
-      if (e.kind === 'file') continue;
-      const modulePath = getModulePath(e.file);
-      if (!modulePath) continue;
-      if (!modules.has(modulePath)) modules.set(modulePath, []);
-      modules.get(modulePath)!.push(e);
-    }
-
-    for (const [modPath, modEntities] of modules) {
-      const moduleLabel = modPath.split('/').pop() || modPath;
-      const moduleData: ModuleNodeData = {
-        label: moduleLabel,
-        entityCount: modEntities.length,
-        qualityScore: avgQuality(modEntities),
-        parentSystem: systemId,
-      };
-      const moduleId = `module:${modPath}`;
-      nodes.push({
-        id: moduleId,
-        type: 'module',
-        position: ORIGIN,
-        data: moduleData,
-        style: { width: 180, height: 60 },
-      });
-      moduleEntities.set(modPath, modEntities);
-    }
-  }
-  return { nodes, moduleEntities };
-}
-
-/** Create file-level and entity-level nodes. */
-function createFileAndEntityNodes(
-  dirs: Map<string, Entity[]>,
-  annMap: AnnotationMap,
-): Node[] {
-  const nodes: Node[] = [];
-
-  for (const [dir, dirEntities] of dirs) {
-    const systemId = `system:${dir}`;
-
-    // Group non-file entities by their file path
-    const files = new Map<string, Entity[]>();
-    for (const e of dirEntities) {
-      if (e.kind === 'file') continue;
-      if (!files.has(e.file)) files.set(e.file, []);
-      files.get(e.file)!.push(e);
-    }
-
-    for (const [filePath, fileEntities] of files) {
-      const fileId = `file:${filePath}`;
-      const modulePath = getModulePath(filePath);
-      const parentModule = modulePath ? `module:${modulePath}` : undefined;
-
-      const fileData: FileNodeData = {
-        label: fileName(filePath),
-        entityCount: fileEntities.length,
-        filePath,
-        qualityScore: avgQuality(fileEntities),
-        parentSystem: systemId,
-        parentModule,
-      };
-      nodes.push({
-        id: fileId,
-        type: 'file',
-        position: ORIGIN,
-        data: fileData,
-        style: { width: 160, height: 50 },
-      });
-
-      // Entity-level nodes
-      for (const entity of fileEntities) {
-        const entityData: EntityNodeData = {
-          label: entity.name,
-          kind: entity.kind,
-          qualityScore: entity.metrics?.quality_score,
-          cognitiveComplexity: entity.metrics?.cognitive_complexity,
-          visibility: entity.visibility,
-          annotations: annMap.get(entity.id),
-          parentFile: fileId,
-        };
-        nodes.push({
-          id: entity.id,
-          type: 'entity',
-          position: ORIGIN,
-          data: entityData,
-          style: { width: 150, height: 40 },
-        });
-      }
-    }
-  }
-
-  return nodes;
+function sized(level: keyof typeof NODE_SIZES) {
+  return { ...NODE_SIZES[level] };
 }
 
 export function transformEntitiesToNodes(
@@ -229,20 +112,68 @@ export function transformEntitiesToNodes(
   annotations?: unknown[],
 ): Node[] {
   const annMap = buildAnnotationMap(annotations);
+  // Symbols that become nodes (file/module pseudo-entities are containers).
+  const symbols = entities.filter(
+    (e) => !SKIP_KINDS.has(e.kind) && e.kind !== 'file' && e.kind !== 'module' && e.file,
+  );
+  const nodes: Node[] = [];
 
-  // Group entities by top-level directory, filtering out noisy kinds.
-  const dirs = new Map<string, Entity[]>();
-  for (const e of entities) {
-    if (SKIP_KINDS.has(e.kind)) continue;
-    const dir = topDir(e.file);
-    if (!dirs.has(dir)) dirs.set(dir, []);
-    dirs.get(dir)!.push(e);
+  for (const [dir, group] of groupBy(symbols, (e) => topDir(e.file))) {
+    const data: SystemNodeData = {
+      level: 'system',
+      label: dir,
+      path: dir,
+      entityCount: group.length,
+      ...aggregateMetrics(group),
+    };
+    nodes.push({ id: `system:${dir}`, type: 'system', position: ORIGIN, data, style: sized('system') });
   }
 
-  // Build all four levels of nodes
-  const systemNodes = createSystemNodes(dirs);
-  const { nodes: moduleNodes } = createModuleNodes(dirs);
-  const fileAndEntityNodes = createFileAndEntityNodes(dirs, annMap);
+  for (const [modPath, group] of groupBy(symbols, (e) => getModulePath(e.file))) {
+    const data: ModuleNodeData = {
+      level: 'module',
+      label: modPath.split('/').pop() || modPath,
+      path: modPath,
+      entityCount: group.length,
+      parentSystem: `system:${topDir(modPath)}`,
+      ...aggregateMetrics(group),
+    };
+    nodes.push({ id: `module:${modPath}`, type: 'module', position: ORIGIN, data, style: sized('module') });
+  }
 
-  return [...systemNodes, ...moduleNodes, ...fileAndEntityNodes];
+  for (const [filePath, group] of groupBy(symbols, (e) => e.file)) {
+    const a = ancestryForFile(filePath);
+    const fileData: FileNodeData = {
+      level: 'file',
+      label: fileName(filePath),
+      filePath,
+      entityCount: group.length,
+      parentSystem: a.systemId,
+      parentModule: a.moduleId,
+      ...aggregateMetrics(group),
+    };
+    nodes.push({ id: a.fileId, type: 'file', position: ORIGIN, data: fileData, style: sized('file') });
+
+    for (const entity of group) {
+      const m = entity.metrics;
+      const data: EntityNodeData = {
+        level: 'entity',
+        label: entity.name,
+        entityKind: entity.kind,
+        visibility: entity.visibility,
+        filePath,
+        qualityScore: m?.quality_score,
+        cognitiveComplexity: m?.cognitive_complexity,
+        churnRate: m?.churn_rate,
+        hotspotScore: m?.hotspot_score,
+        annotations: annMap.get(entity.id),
+        parentFile: a.fileId,
+        parentSystem: a.systemId,
+        parentModule: a.moduleId,
+      };
+      nodes.push({ id: entity.id, type: 'entity', position: ORIGIN, data, style: sized('entity') });
+    }
+  }
+
+  return nodes;
 }

@@ -1,28 +1,24 @@
 /**
- * Colored badge that displays a quality score.
- * Color ranges: green (80+), yellow (50+), orange (25+), red (<25).
+ * Coloured badge that displays a 0–100 quality score (bands from
+ * `color-scales.ts`, shared with the complexity overlay).
  */
 import React from 'react';
-
-function getColor(score: number): string {
-  if (score >= 80) return '#22c55e'; // green
-  if (score >= 50) return '#eab308'; // yellow
-  if (score >= 25) return '#f97316'; // orange
-  return '#ef4444'; // red
-}
+import { qualityColor } from '../../utils/color-scales';
 
 export function MetricsBadge({ score }: { score?: number }) {
   if (score === undefined) return null;
   return (
     <span
+      title="Quality score (0–100, higher is easier to change)"
       style={{
         display: 'inline-block',
-        padding: '1px 6px',
+        padding: '0 6px',
         borderRadius: 8,
         fontSize: 10,
+        lineHeight: '15px',
         fontWeight: 600,
         color: 'white',
-        backgroundColor: getColor(score),
+        backgroundColor: qualityColor(score),
       }}
     >
       {Math.round(score)}

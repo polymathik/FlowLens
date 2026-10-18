@@ -1,61 +1,36 @@
 /**
- * Zustand store for canvas state management.
- *
- * Manages zoom level, node selection, relation-type filters, overlay mode,
- * search query, and drill-down navigation state.
+ * Zustand store for canvas state — implements the `CanvasState` contract
+ * (`src/contracts/canvas/state.ts`) exactly.
  */
 import { create } from 'zustand';
 import type {
+  CanvasState,
   ZoomLevel as ContractZoomLevel,
   OverlayType as ContractOverlayType,
 } from '../../contracts/canvas/index.js';
+import { DEFAULT_VISIBLE_RELATION_TYPES } from '../utils/relation-colors';
 
-// Re-export the contract types so existing imports keep working.
 export type ZoomLevel = ContractZoomLevel;
-/** Local variant: store uses `null` to indicate no overlay active. */
+/** Store variant: `null` means no overlay is active. */
 export type OverlayType = ContractOverlayType | null;
 
-interface CanvasState {
-  // Zoom
-  currentZoomLevel: ZoomLevel;
-  setZoomLevel: (level: ZoomLevel) => void;
-
-  // Selection
-  selectedNodeId: string | null;
-  selectNode: (id: string | null) => void;
-
-  // Filters
-  visibleRelationTypes: Set<string>;
-  toggleRelationType: (type: string) => void;
-
-  // Overlays
-  activeOverlay: OverlayType;
-  setOverlay: (overlay: OverlayType) => void;
-
-  // Interface diff
-  diffSha: string;
-  setDiffSha: (sha: string) => void;
-
-  // Search
-  searchQuery: string;
-  setSearch: (query: string) => void;
-
-  // Drill-down
-  drillPath: string[];
-  expandedNodes: Set<string>;
-  drillInto: (nodeId: string) => void;
-  drillUp: () => void;
-  toggleExpand: (nodeId: string) => void;
-}
+let focusSeq = 0;
 
 export const useCanvasStore = create<CanvasState>((set) => ({
   currentZoomLevel: 'system',
-  setZoomLevel: (level) => set({ currentZoomLevel: level }),
-
   selectedNodeId: null,
-  selectNode: (id) => set({ selectedNodeId: id }),
+  focusRequest: null,
+  visibleRelationTypes: new Set<string>(DEFAULT_VISIBLE_RELATION_TYPES),
+  activeOverlay: null,
+  searchQuery: '',
+  searchOpen: false,
+  diffSha: '',
+  previewViolations: null,
+  drillPath: [],
 
-  visibleRelationTypes: new Set(['import', 'call', 'extend', 'implement']),
+  setZoomLevel: (level) =>
+    set((s) => (s.currentZoomLevel === level ? s : { currentZoomLevel: level })),
+  selectNode: (id) => set({ selectedNodeId: id }),
   toggleRelationType: (type) =>
     set((state) => {
       const next = new Set(state.visibleRelationTypes);
@@ -63,36 +38,20 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       else next.add(type);
       return { visibleRelationTypes: next };
     }),
-
-  activeOverlay: null,
   setOverlay: (overlay) => set({ activeOverlay: overlay }),
-
-  diffSha: '',
-  setDiffSha: (sha) => set({ diffSha: sha }),
-
-  searchQuery: '',
   setSearch: (query) => set({ searchQuery: query }),
-
-  drillPath: [],
-  expandedNodes: new Set(),
-  drillInto: (nodeId) =>
-    set((state) => ({
-      drillPath: [...state.drillPath, nodeId],
-      expandedNodes: new Set([...state.expandedNodes, nodeId]),
+  setSearchOpen: (open) => set(open ? { searchOpen: true } : { searchOpen: false, searchQuery: '' }),
+  setDiffSha: (sha) => set({ diffSha: sha }),
+  setPreviewViolations: (violations) => set({ previewViolations: violations }),
+  setDrillPath: (path) => set({ drillPath: [...path] }),
+  drillUp: () => set((s) => ({ drillPath: s.drillPath.slice(0, -1) })),
+  drillToLevel: (index) => set((s) => ({ drillPath: s.drillPath.slice(0, Math.max(0, index + 1)) })),
+  navigateTo: (target) =>
+    set((s) => ({
+      drillPath: [...target.drillPath],
+      selectedNodeId: target.nodeId,
+      focusRequest: { nodeId: target.nodeId, seq: ++focusSeq },
+      activeOverlay: target.overlay === undefined ? s.activeOverlay : target.overlay,
     })),
-  drillUp: () =>
-    set((state) => {
-      const path = [...state.drillPath];
-      const removed = path.pop();
-      const expanded = new Set(state.expandedNodes);
-      if (removed) expanded.delete(removed);
-      return { drillPath: path, expandedNodes: expanded };
-    }),
-  toggleExpand: (nodeId) =>
-    set((state) => {
-      const expanded = new Set(state.expandedNodes);
-      if (expanded.has(nodeId)) expanded.delete(nodeId);
-      else expanded.add(nodeId);
-      return { expandedNodes: expanded };
-    }),
+  clearFocusRequest: () => set({ focusRequest: null }),
 }));

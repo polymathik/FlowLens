@@ -1,76 +1,50 @@
 /**
- * Detail panel for the currently selected entity.
- * Shows name, kind, file location, visibility, metrics, and annotation data.
+ * Details for the selected symbol: name, location, metrics in plain words.
  */
 import React from 'react';
+import type { Entity } from '../../api/graph-client';
 import { useCanvasStore } from '../../store/canvas-store';
 import { EntityIcon } from '../shared/EntityIcon';
 import { MetricsBadge } from '../shared/MetricsBadge';
-import type { Entity } from '../../api/graph-client';
+import { COLORS, floatingPanel, linkButton } from '../shared/ui';
 
-export function DetailPanel({ entities }: { entities: Entity[] }) {
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '1px 0' }}>
+      <span style={{ color: COLORS.muted }}>{label}</span>
+      <span style={{ textAlign: 'right', wordBreak: 'break-all' }}>{value}</span>
+    </div>
+  );
+}
+
+const round = (n: number) => (Math.round(n * 100) / 100).toString();
+
+export function DetailPanel({ entityById }: { entityById: Map<string, Entity> }) {
   const selectedId = useCanvasStore((s) => s.selectedNodeId);
-  const entity = entities.find((e) => e.id === selectedId);
-
+  const selectNode = useCanvasStore((s) => s.selectNode);
+  const entity = selectedId ? entityById.get(selectedId) : undefined;
   if (!entity) return null;
+  const m = entity.metrics;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        bottom: 16,
-        left: 16,
-        zIndex: 10,
-        padding: '12px 16px',
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        borderRadius: 8,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        fontSize: 12,
-        width: 280,
-        maxHeight: '50vh',
-        overflowY: 'auto',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          marginBottom: 8,
-        }}
-      >
+    <div data-testid="detail-panel" style={{ ...floatingPanel, bottom: 16, left: 16, padding: '12px 16px', width: 300, maxHeight: '50vh', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
         <EntityIcon kind={entity.kind} />
-        <span style={{ fontWeight: 700, fontSize: 14 }}>{entity.name}</span>
-        <MetricsBadge score={entity.metrics?.quality_score} />
+        <span style={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{entity.name}</span>
+        <MetricsBadge score={m?.quality_score} />
+        <button aria-label="Close details" style={{ ...linkButton, color: COLORS.faint }} onClick={() => selectNode(null)}>
+          ×
+        </button>
       </div>
-      <div style={{ color: '#64748b', marginBottom: 8 }}>
-        {entity.qualified_name}
-      </div>
-      <div style={{ fontSize: 11 }}>
-        <div>Kind: {entity.kind}</div>
-        <div>File: {entity.file}</div>
-        <div>
-          Lines: {entity.location?.line_start}&ndash;
-          {entity.location?.line_end}
-        </div>
-        <div>Visibility: {entity.visibility}</div>
-        <div>Language: {entity.language}</div>
-        {entity.metrics && (
-          <>
-            <div style={{ fontWeight: 600, marginTop: 8, marginBottom: 4 }}>
-              Metrics
-            </div>
-            {entity.metrics.cognitive_complexity !== undefined && (
-              <div>
-                Cognitive Complexity: {entity.metrics.cognitive_complexity}
-              </div>
-            )}
-            {entity.metrics.line_count !== undefined && (
-              <div>Line Count: {entity.metrics.line_count}</div>
-            )}
-          </>
-        )}
-      </div>
+      <div style={{ color: COLORS.muted, marginBottom: 8, fontSize: 11, wordBreak: 'break-all' }}>{entity.qualified_name}</div>
+      <Row label="Kind" value={entity.kind} />
+      <Row label="File" value={entity.file} />
+      <Row label="Lines" value={`${entity.location?.line_start}–${entity.location?.line_end}`} />
+      <Row label="Visibility" value={entity.visibility} />
+      {m?.cognitive_complexity !== undefined && <Row label="Complexity (how hard to follow)" value={m.cognitive_complexity} />}
+      {m?.line_count !== undefined && <Row label="Line count" value={m.line_count} />}
+      {m?.churn_rate !== undefined && <Row label="Changes per day (90 d)" value={round(m.churn_rate)} />}
+      {m?.hotspot_score !== undefined && <Row label="Hotspot score" value={round(m.hotspot_score)} />}
     </div>
   );
 }

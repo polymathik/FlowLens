@@ -1,3 +1,7 @@
+/**
+ * Graph API server for the canvas (Express, routes under /flowlens-api).
+ * Request/response shapes: `src/contracts/canvas/api.ts`.
+ */
 import express, { type Response } from 'express';
 import cors from 'cors';
 import { join } from 'node:path';
@@ -8,7 +12,13 @@ import { detectCycles } from '../../analysis/cycle-detector.js';
 import { validateArchitecture } from '../../analysis/architecture-validator.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { computeDiff } from '../../analysis/diff-computer.js';
-import type { ArchitectureConfig } from '../../contracts/architecture.js';
+import type {
+  ArchitecturePreviewResponse,
+  ArchitectureSaveResponse,
+  ConfigValidationError,
+} from '../../contracts/canvas/index.js';
+import { parseArchitectureConfig } from './architecture-schema.js';
+import { computeHotspotList, computeSummary, loadSavedArchitecture } from './canvas-queries.js';
 
 /**
  * Handle returned by startGraphServer. `broadcast` pushes a named event to
@@ -18,139 +28,118 @@ import type { ArchitectureConfig } from '../../contracts/architecture.js';
 export interface GraphServer {
   close: () => void;
   broadcast: (type: string, payload: unknown) => void;
+  /** Port actually bound (useful when 0 was requested). */
+  port: number;
 }
 
-export async function startGraphServer(
-  flowlensDir: string,
-  port = 3001,
-): Promise<GraphServer> {
+type Handler = (req: express.Request, res: Response) => Promise<unknown>;
+
+/** Wrap an async route so failures become JSON 500s. */
+const route = (fn: Handler) => (req: express.Request, res: Response) => {
+  fn(req, res).catch((err) => {
+    if (!res.headersSent) res.status(500).json({ error: String(err) });
+  });
+};
+
+export async function startGraphServer(flowlensDir: string, port = 3001): Promise<GraphServer> {
   const app = express();
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '2mb' }));
 
   const graphStore = new LevelGraphStore();
   await graphStore.open(join(flowlensDir, 'graph'));
-
+  const archPath = join(flowlensDir, 'architecture.json');
   const sseClients = new Set<Response>();
 
-  // GET /flowlens-api/entities — all entities
-  app.get('/flowlens-api/entities', async (_req, res) => {
-    try {
-      const entities = await graphStore.getAllNodes();
-      res.json(entities);
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
+  app.get('/flowlens-api/entities', route(async (_req, res) => res.json(await graphStore.getAllNodes())));
+  app.get('/flowlens-api/relations', route(async (_req, res) => res.json(await graphStore.getAllEdges())));
+  app.get('/flowlens-api/summary', route(async (_req, res) => res.json(await computeSummary(graphStore, flowlensDir))));
 
-  // GET /flowlens-api/relations — all relations
-  app.get('/flowlens-api/relations', async (_req, res) => {
-    try {
-      const relations = await graphStore.getAllEdges();
-      res.json(relations);
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
+  // GET /flowlens-api/hotspots?limit=50 — from stored entity metrics
+  app.get(
+    '/flowlens-api/hotspots',
+    route(async (req, res) => {
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '50'), 10) || 50, 1), 1000);
+      res.json(await computeHotspotList(graphStore, limit));
+    }),
+  );
 
-  // GET /flowlens-api/summary — entity/relation counts
-  app.get('/flowlens-api/summary', async (_req, res) => {
-    try {
-      const entities = await graphStore.getAllNodes();
-      const relations = await graphStore.getAllEdges();
-      const entities_by_kind: Record<string, number> = {};
-      for (const e of entities) {
-        entities_by_kind[e.kind] = (entities_by_kind[e.kind] ?? 0) + 1;
-      }
-      const relations_by_type: Record<string, number> = {};
-      for (const r of relations) {
-        relations_by_type[r.type] = (relations_by_type[r.type] ?? 0) + 1;
-      }
-      res.json({
-        entity_count: entities.length,
-        relation_count: relations.length,
-        entities_by_kind,
-        relations_by_type,
-      });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
+  // GET /flowlens-api/architecture — saved rules ({ layers: [] } when none)
+  app.get(
+    '/flowlens-api/architecture',
+    route(async (_req, res) => {
+      if (!existsSync(archPath)) return res.json({ layers: [] });
+      res.json(JSON.parse(await readFile(archPath, 'utf-8')));
+    }),
+  );
 
-  // GET /flowlens-api/architecture — architecture.json
-  app.get('/flowlens-api/architecture', async (_req, res) => {
-    const archPath = join(flowlensDir, 'architecture.json');
-    if (!existsSync(archPath)) return res.json({ layers: [] });
-    const content = await readFile(archPath, 'utf-8');
-    res.json(JSON.parse(content));
-  });
+  const invalid = (res: Response, issues: ConfigValidationError['issues']) =>
+    res.status(400).json({ error: 'invalid_architecture_config', issues } satisfies ConfigValidationError);
 
-  // POST /flowlens-api/architecture — save architecture.json
-  app.post('/flowlens-api/architecture', async (req, res) => {
-    const archPath = join(flowlensDir, 'architecture.json');
-    await writeFile(archPath, JSON.stringify(req.body, null, 2));
-    res.json({ ok: true });
-  });
+  // POST /flowlens-api/architecture — validate (400 on error) then save
+  app.post(
+    '/flowlens-api/architecture',
+    route(async (req, res) => {
+      const parsed = parseArchitectureConfig(req.body);
+      if (!parsed.ok) return invalid(res, parsed.issues);
+      await writeFile(archPath, JSON.stringify(parsed.config, null, 2) + '\n');
+      const violations = await validateArchitecture(graphStore, parsed.config);
+      res.json({ ok: true, violation_count: violations.length } satisfies ArchitectureSaveResponse);
+    }),
+  );
 
-  // GET /flowlens-api/annotations — annotations.json
-  app.get('/flowlens-api/annotations', async (_req, res) => {
-    const annPath = join(flowlensDir, 'annotations.json');
-    if (!existsSync(annPath)) return res.json({ annotations: [] });
-    const content = await readFile(annPath, 'utf-8');
-    res.json(JSON.parse(content));
-  });
+  // POST /flowlens-api/architecture/preview — validate + compute violations, never save
+  app.post(
+    '/flowlens-api/architecture/preview',
+    route(async (req, res) => {
+      const parsed = parseArchitectureConfig(req.body);
+      if (!parsed.ok) return invalid(res, parsed.issues);
+      const violations = await validateArchitecture(graphStore, parsed.config);
+      res.json({ violations, count: violations.length } satisfies ArchitecturePreviewResponse);
+    }),
+  );
 
-  // GET /flowlens-api/cycles — cycle detection
-  app.get('/flowlens-api/cycles', async (_req, res) => {
-    try {
-      const cycles = await detectCycles(graphStore, { granularity: 'file' });
-      res.json(cycles);
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
+  app.get(
+    '/flowlens-api/annotations',
+    route(async (_req, res) => {
+      const annPath = join(flowlensDir, 'annotations.json');
+      if (!existsSync(annPath)) return res.json({ annotations: [] });
+      res.json(JSON.parse(await readFile(annPath, 'utf-8')));
+    }),
+  );
 
-  // GET /flowlens-api/violations — architecture violations
-  app.get('/flowlens-api/violations', async (_req, res) => {
-    try {
-      const archPath = join(flowlensDir, 'architecture.json');
-      if (!existsSync(archPath)) return res.json([]);
-      const config: ArchitectureConfig = JSON.parse(await readFile(archPath, 'utf-8'));
-      const violations = await validateArchitecture(graphStore, config);
-      res.json(violations);
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
+  app.get('/flowlens-api/cycles', route(async (_req, res) => res.json(await detectCycles(graphStore, { granularity: 'file' }))));
+
+  app.get(
+    '/flowlens-api/violations',
+    route(async (_req, res) => {
+      const config = await loadSavedArchitecture(flowlensDir);
+      res.json(config ? await validateArchitecture(graphStore, config) : []);
+    }),
+  );
 
   // GET /flowlens-api/events — SSE stream for push updates (watch mode)
-  app.get('/flowlens-api/events', (_req, res) => {
+  app.get('/flowlens-api/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
-    // Emit a hello so the client sees the stream is live.
     res.write(`event: hello\ndata: {}\n\n`);
     sseClients.add(res);
-    _req.on('close', () => {
-      sseClients.delete(res);
-    });
+    req.on('close', () => sseClients.delete(res));
   });
 
   // GET /flowlens-api/diff?sha=<sha> — interface diff against a snapshot
-  app.get('/flowlens-api/diff', async (req, res) => {
-    try {
+  app.get(
+    '/flowlens-api/diff',
+    route(async (req, res) => {
       const sha = req.query.sha as string;
       if (!sha) return res.status(400).json({ error: 'sha required' });
-      const snapshotMgr = new SnapshotManager(join(flowlensDir, 'snapshots'));
-      const snapshot = await snapshotMgr.loadSnapshot(sha);
+      const snapshot = await new SnapshotManager(join(flowlensDir, 'snapshots')).loadSnapshot(sha);
       if (!snapshot) return res.status(404).json({ error: 'Snapshot not found' });
-      const diff = await computeDiff(graphStore, snapshot);
-      res.json(diff);
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
+      res.json(await computeDiff(graphStore, snapshot));
+    }),
+  );
 
   function broadcast(type: string, payload: unknown): void {
     const line = `event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`;
@@ -163,9 +152,11 @@ export async function startGraphServer(
     }
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = app.listen(port, () => {
+      const address = server.address();
       resolve({
+        port: typeof address === 'object' && address ? address.port : port,
         close: () => {
           for (const client of sseClients) client.end();
           sseClients.clear();
@@ -174,6 +165,10 @@ export async function startGraphServer(
         },
         broadcast,
       });
+    });
+    server.on('error', async (err) => {
+      await graphStore.close();
+      reject(err);
     });
   });
 }
