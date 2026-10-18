@@ -9,17 +9,15 @@
  */
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
-import { ChokidarFileWatcher } from '../../watch/file-watcher.js';
-import { applyWatchEvents } from '../../watch/incremental-updater.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
+import { startWatching } from '../../service/watch-session.js';
 import { printHeader, printError, printSuccess } from '../output.js';
-import type { FlowLensConfig } from '../../contracts/config.js';
 
 export const watchCommand = new Command('watch')
   .description('Watch for file changes and incrementally re-index')
   .option('--debounce <ms>', 'Debounce window in milliseconds', '300')
+  .option('--no-daemon', 'Watch in-process instead of via the FlowLens daemon')
   .action(async (opts) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
@@ -32,23 +30,12 @@ export const watchCommand = new Command('watch')
     try {
       printHeader('FlowLens Watch');
 
-      const config: FlowLensConfig = JSON.parse(
-        await readFile(join(flowlensDir, 'config.json'), 'utf-8'),
-      );
-
-      const graph = new LevelGraphStore();
-      await graph.open(join(flowlensDir, 'graph'));
-
-      const watcher = new ChokidarFileWatcher();
-      watcher.onChanges(async (events) => {
-        const result = await applyWatchEvents(events, { rootDir, graph });
-        console.log(
-          `[${new Date().toISOString()}] ${result.filesReparsed} reparsed / ${result.filesDeleted} deleted / ${result.errors.length} errors in ${result.durationMs}ms`,
-        );
-      });
-      watcher.start(rootDir, {
+      const graph = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'watch' });
+      const stopWatching = await startWatching(graph, rootDir, {
         debounceMs: parseInt(opts.debounce, 10),
-        ignore: config.exclude,
+        onUpdate: (result) => console.log(
+          `[${new Date().toISOString()}] ${result.filesReparsed} reparsed / ${result.filesDeleted} deleted / ${result.errors.length} errors in ${result.durationMs}ms`,
+        ),
       });
 
       printSuccess(`Watching ${rootDir} (debounce ${opts.debounce}ms)`);
@@ -56,7 +43,7 @@ export const watchCommand = new Command('watch')
 
       // Keep process alive
       const cleanup = async () => {
-        await watcher.stop();
+        await stopWatching();
         await graph.close();
         process.exit(0);
       };

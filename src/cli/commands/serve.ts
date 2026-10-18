@@ -6,37 +6,30 @@
  */
 
 import { Command } from 'commander';
-import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
+import { autoInit } from '../../service/project-setup.js';
+import { startWatching } from '../../service/watch-session.js';
 import { AnnotationStore } from '../../mcp/annotation-store.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { createFlowLensServer } from '../../mcp/server.js';
 import { printError } from '../output.js';
-import { ChokidarFileWatcher } from '../../watch/file-watcher.js';
-import { applyWatchEvents } from '../../watch/incremental-updater.js';
-import { readFile } from 'node:fs/promises';
-import type { FlowLensConfig } from '../../contracts/config.js';
 
 export const serveCommand = new Command('serve')
   .description('Start the MCP server for AI assistant integration')
   .option('--transport <type>', 'Transport: stdio (default)', 'stdio')
   .option('--port <port>', 'HTTP port (default 3333, only with --transport http)', '3333')
   .option('--watch', 'Re-index on file changes while serving')
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
   .action(async (opts) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
 
-    if (!existsSync(flowlensDir)) {
-      printError('.flowlens/ not found. Run "flowlens init" first.');
-      process.exit(1);
-    }
-
     try {
-      // Open graph store
-      const graph = new LevelGraphStore();
-      await graph.open(join(flowlensDir, 'graph'));
+      // Index on first use instead of exiting, then open via the graph service.
+      await autoInit(rootDir, { daemon: opts.daemon });
+      const graph = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'serve' });
 
       // Load annotations
       const annotationStore = new AnnotationStore(join(flowlensDir, 'annotations.json'));
@@ -55,19 +48,14 @@ export const serveCommand = new Command('serve')
         fileIndexPath: join(flowlensDir, 'file_index.json'),
       });
 
-      // --watch: incrementally re-index on file changes while serving.
+      // --watch: the daemon's per-project watcher keeps the graph fresh.
       if (opts.watch) {
-        const config: FlowLensConfig = JSON.parse(
-          await readFile(join(flowlensDir, 'config.json'), 'utf-8'),
-        );
-        const watcher = new ChokidarFileWatcher();
-        watcher.onChanges(async (events) => {
-          const result = await applyWatchEvents(events, { rootDir, graph });
-          process.stderr.write(
-            `[watch] ${result.filesReparsed} reparsed / ${result.filesDeleted} deleted / ${result.errors.length} errors in ${result.durationMs}ms\n`,
-          );
+        await startWatching(graph, rootDir, {
+          debounceMs: 300,
+          onUpdate: (r) => process.stderr.write(
+            `[watch] ${r.filesReparsed} reparsed / ${r.filesDeleted} deleted / ${r.errors.length} errors in ${r.durationMs}ms\n`,
+          ),
         });
-        watcher.start(rootDir, { debounceMs: 300, ignore: config.exclude });
         process.stderr.write('[watch] file watcher started\n');
       }
 
@@ -76,6 +64,8 @@ export const serveCommand = new Command('serve')
         process.stderr.write('FlowLens MCP server starting (stdio)...\n');
         const transport = new StdioServerTransport();
         await server.connect(transport);
+        // Release the daemon lease promptly when the client disconnects.
+        process.stdin.once('end', () => void graph.close());
         process.stderr.write('FlowLens MCP server running. Waiting for tool calls...\n');
       } else {
         printError(`Unsupported transport: ${opts.transport}. Use 'stdio'.`);

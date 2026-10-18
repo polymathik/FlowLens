@@ -11,10 +11,11 @@
 
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
+import { resetFlowlensDir } from '../../service/project-setup.js';
 import { runIndex } from '../../indexer/indexer.js';
 import { inferArchitecture } from '../../architecture/heuristic-inference.js';
 import { runInference } from '../../ai/ai-integration.js';
@@ -87,7 +88,8 @@ export const initCommand = new Command('init')
   .option('--ai', 'Use an AI provider to infer architecture layers')
   .option('--provider <provider>', 'AI provider: anthropic, openai, ollama', 'anthropic')
   .option('--model <model>', 'Override the default model for the chosen provider')
-  .action(async (opts: { force?: boolean; ai?: boolean; provider?: string; model?: string }) => {
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
+  .action(async (opts: { force?: boolean; ai?: boolean; provider?: string; model?: string; daemon?: boolean }) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
 
@@ -101,7 +103,7 @@ export const initCommand = new Command('init')
 
       // Remove old directory if --force
       if (existsSync(flowlensDir)) {
-        await rm(flowlensDir, { recursive: true });
+        await resetFlowlensDir(rootDir, { daemon: opts.daemon }); // evicts from daemon, keeps project id
       }
 
       // Create directory structure
@@ -129,8 +131,7 @@ export const initCommand = new Command('init')
       );
 
       // Open graph store and run full index
-      const graphStore = new LevelGraphStore();
-      await graphStore.open(join(flowlensDir, 'graph'));
+      const graphStore = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'init' });
 
       const result = await runIndex({
         rootDir,

@@ -9,7 +9,7 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
 import { runCheck } from '../../analysis/check-runner.js';
 import { printHeader, printError, printSuccess } from '../output.js';
 import { CYCLE_SEVERITIES, type CycleSeverity } from '../../contracts/analysis/cycles.js';
@@ -22,6 +22,7 @@ export const checkCommand = new Command('check')
   .option('--architecture', 'Run architecture validation (only, unless --cycles is also given)')
   .option('--severity <level>', 'Minimum cycle severity: low, medium, high', 'low')
   .option('--scope <path>', 'Limit check to a subtree')
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
   .action(async (opts) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
@@ -41,8 +42,7 @@ export const checkCommand = new Command('check')
     const both = !opts.cycles && !opts.architecture;
 
     try {
-      const graphStore = new LevelGraphStore();
-      await graphStore.open(join(flowlensDir, 'graph'));
+      const graphStore = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'check' });
 
       const { report, exitCode, problems } = await runCheck(graphStore, {
         flowlensDir,

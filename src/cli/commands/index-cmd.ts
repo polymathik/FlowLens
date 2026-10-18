@@ -13,14 +13,15 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
+import { openGraphStore } from '../../service/open-graph-store.js';
 import { runIndex } from '../../indexer/indexer.js';
 import { printHeader, printSuccess, printError, printSummary } from '../output.js';
 import type { FlowLensConfig } from '../../contracts/config.js';
 
 export const indexCommand = new Command('index')
   .description('Re-index the codebase (incremental)')
-  .action(async () => {
+  .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
+  .action(async (opts: { daemon?: boolean }) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
 
@@ -39,8 +40,7 @@ export const indexCommand = new Command('index')
       ) as FlowLensConfig;
 
       // Open graph store
-      const graphStore = new LevelGraphStore();
-      await graphStore.open(join(flowlensDir, 'graph'));
+      const graphStore = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'index' });
 
       const result = await runIndex({
         rootDir,

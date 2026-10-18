@@ -11,6 +11,8 @@ import { exportCommand } from './commands/export.js';
 import { watchCommand } from './commands/watch.js';
 import { snapshotCommand } from './commands/snapshot.js';
 import { reportCommand } from './commands/report.js';
+import { daemonCommand } from './commands/daemon.js';
+import { projectsCommand } from './commands/projects.js';
 
 const program = new Command();
 
@@ -29,5 +31,7 @@ program.addCommand(exportCommand);
 program.addCommand(watchCommand);
 program.addCommand(snapshotCommand);
 program.addCommand(reportCommand);
+program.addCommand(daemonCommand);
+program.addCommand(projectsCommand);
 
 program.parse();
