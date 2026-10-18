@@ -11,10 +11,11 @@ import type { SgNode } from '@ast-grep/napi';
 import type { Entity } from '../../contracts/entities.js';
 import type { Relation } from '../../contracts/relations.js';
 import type { ScopeFrame, TsRelationContext } from './ts-context.js';
-import { refText, sameNode } from './ts-context.js';
+import { ownerOptions, refText, sameNode } from './ts-context.js';
+import { handleReferenceIdentifier } from './reference-relations.js';
 import { generateRelationId } from '../../utils/id.js';
 
-const CONTAINER_KINDS = new Set(['class', 'namespace', 'interface', 'enum']);
+const CONTAINER_KINDS = new Set(['class', 'namespace', 'interface', 'enum', 'variable']); // a variable holds the function members of an object literal
 const MEMBER_KINDS = new Set(['field', 'method', 'enum_member']);
 
 /** Containment edges for one file (members are direct children by qualified name). */
@@ -48,7 +49,7 @@ export function handleNew(node: SgNode, frame: ScopeFrame, ctx: TsRelationContex
   const ctor = node.children().find((c) => c.kind() !== 'new');
   const name = ctor ? refText(ctor) : null;
   if (!name) return;
-  ctx.emitter.link(frame.entity, frame.inThrow ? 'throw' : 'create', name, node);
+  ctx.emitter.link(frame.entity, frame.inThrow ? 'throw' : 'create', name, node, ownerOptions(frame, ctx));
 }
 
 /** Identifier contexts that are declarations, call/new targets or keys — not reads. */
@@ -69,6 +70,12 @@ export function handleIdentifierUse(node: SgNode, frame: ScopeFrame, ctx: TsRela
   if (!frame.entity) return;
   const name = node.text();
   if (!ctx.emitter.isLocal(name) && !ctx.emitter.isImported(name)) return;
+  // Hand-off positions (call arguments, route tables, JSX attributes) are references to
+  // functions / classes too, also at module scope (reference-relations.ts).
+  if (handleReferenceIdentifier(node, name, frame, ctx)) return;
+  // Plain module-scope reads (`const x = CONFIG`) stay unrecorded: only calls, `new` and
+  // hand-off references are attributed to the file entity.
+  if (ctx.ownerIsFile && frame.entity.id === ctx.rootOwner.id) return;
   const parent = node.parent();
   if (!parent) return;
   const pk = String(parent.kind());

@@ -6,7 +6,8 @@ import type { ImportBinding } from '../../contracts/symbols.js';
 import { resolveModuleSpecifier } from './ts-module-resolver.js';
 import { resolvePythonModule } from './python-module-resolver.js';
 
-const TS_FAMILY = new Set(['typescript', 'tsx', 'javascript', 'jsx']);
+// Single-file components script in the TS family (their bindings are resolved by the same resolver).
+const TS_FAMILY = new Set(['typescript', 'tsx', 'javascript', 'jsx', 'svelte', 'vue']);
 
 export function recheckBinding(b: ImportBinding, fromFile: string, language: string, rootDir: string): string | null {
   if (TS_FAMILY.has(language)) return resolveModuleSpecifier(b.specifier, fromFile, rootDir).file;

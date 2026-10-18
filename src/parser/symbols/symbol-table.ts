@@ -18,7 +18,13 @@ import type {
 } from '../../contracts/symbols.js';
 import { preferByKind } from './target-kinds.js';
 
-type Target = { kind: 'entity'; entity: SymbolEntity } | { kind: 'module'; file: string };
+type ParentRef = { file: string; to?: string; target_name?: string };
+
+type Target =
+  | { kind: 'entity'; entity: SymbolEntity }
+  | { kind: 'module'; file: string }
+  /** The member may live in a base class outside the project: a miss is not an error. */
+  | { kind: 'opaque' };
 
 const MAX_DEPTH = 12;
 
@@ -29,7 +35,8 @@ export class ProjectSymbolTable implements SymbolTable {
   private fileIds = new Map<string, string>();
   private packages = new Map<string, string[]>();
   private bindings = new Map<string, Map<string, ImportBinding>>();
-  private parents = new Map<string, { file: string; to?: string; target_name?: string }>();
+  /** Base classes / interfaces per entity, in declaration order (a marker without target = an unresolvable base). */
+  private parents = new Map<string, ParentRef[]>();
 
   constructor(records: Map<string, FileSymbolRecord>) {
     this.records = records;
@@ -48,7 +55,10 @@ export class ProjectSymbolTable implements SymbolTable {
       const local = new Map<string, ImportBinding>();
       for (const b of rec.symbols.imports) if (b.local && b.local !== '*' && !local.has(b.local)) local.set(b.local, b);
       this.bindings.set(file, local);
-      for (const ext of rec.extends) if (!this.parents.has(ext.from)) this.parents.set(ext.from, { file, ...ext });
+      for (const ext of rec.extends) {
+        const list = this.parents.get(ext.from);
+        if (list) list.push({ file, ...ext }); else this.parents.set(ext.from, [{ file, ...ext }]);
+      }
     }
   }
 
@@ -102,10 +112,11 @@ export class ProjectSymbolTable implements SymbolTable {
   /** Turn raw targets into an outcome; `internal` = the reference was expected to resolve. */
   private finish(targets: Target[] | 'external', kinds: EntityKind[] | undefined, internal: boolean): ResolutionOutcome {
     if (targets === 'external') return { status: 'external' };
-    const entities = dedupe(targets.filter((t) => t.kind === 'entity').map((t) => t.entity));
+    const entities = dedupe(targets.filter((t): t is Extract<Target, { kind: 'entity' }> => t.kind === 'entity').map((t) => t.entity));
     const preferred = preferByKind(entities, kinds);
     if (preferred.length === 1) return { status: 'resolved', id: preferred[0].id };
     if (preferred.length > 1) return { status: 'ambiguous', candidates: preferred.map((e) => e.id) };
+    if (targets.some((t) => t.kind === 'opaque')) return { status: 'external' };
     return internal ? { status: 'unresolved' } : { status: 'external' };
   }
 
@@ -178,6 +189,7 @@ export class ProjectSymbolTable implements SymbolTable {
     if (rest.length === 0) return targets;
     const out: Target[] = [];
     for (const t of targets) {
+      if (t.kind === 'opaque') { out.push(t); continue; }
       if (t.kind === 'module') {
         out.push(...this.members(this.exported(t.file, rest[0], depth + 1), rest.slice(1), depth + 1));
         continue;
@@ -192,15 +204,40 @@ export class ProjectSymbolTable implements SymbolTable {
     if (child.length > 0) {
       return this.members(child.map((entity) => ({ kind: 'entity' as const, entity })), rest.slice(1), level);
     }
+    if (owner.kind === 'type') return [{ kind: 'opaque' }]; // an alias (`type Db = ExternalDb`): its shape is not indexed
     if (level >= 5) return [];
-    const parent = this.parentOf(owner);
-    return parent ? this.memberOf(parent, rest, level + 1) : [];
+    const typed = this.typedMember(owner, rest, level);
+    if (typed) return typed;
+    // A variable's members come from whatever its initializer built (`z.object(…)`, `create(…)`, an
+    // object literal): unless its declared type led to a class above, a miss says nothing.
+    if (owner.kind === 'variable') return [{ kind: 'opaque' }];
+    const refs = this.parents.get(owner.id);
+    if (!refs) return [];
+    const found: Target[] = [];
+    let unknownBase = false;
+    for (const ref of refs) {
+      const parent = this.resolveParent(ref);
+      if (parent) found.push(...this.memberOf(parent, rest, level + 1));
+      else unknownBase = true;
+    }
+    return found.length > 0 || !unknownBase ? found : [{ kind: 'opaque' }];
+  }
+
+  /** `store.get` where `store` is a variable declared as an instance of a class: look in that class. */
+  private typedMember(owner: SymbolEntity, rest: string[], level: number): Target[] | null {
+    if (!owner.type_ref || owner.kind !== 'variable') return null;
+    const r = this.resolve(owner.file, owner.type_ref, ['class', 'interface']);
+    const cls = r.status === 'resolved' ? this.byId.get(r.id) : undefined;
+    return cls ? this.memberOf(cls, rest, level + 1) : null;
   }
 
   /** Resolve the parent class of a class entity (direct id or symbolic). */
   parentOf(cls: SymbolEntity): SymbolEntity | undefined {
-    const p = this.parents.get(cls.id);
-    if (!p) return undefined;
+    const ref = this.parents.get(cls.id)?.[0];
+    return ref ? this.resolveParent(ref) : undefined;
+  }
+
+  private resolveParent(p: ParentRef): SymbolEntity | undefined {
     if (p.to) return this.byId.get(p.to);
     if (!p.target_name) return undefined;
     const r = this.resolve(p.file, p.target_name, ['class', 'interface']);

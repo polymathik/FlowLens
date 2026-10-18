@@ -35,7 +35,67 @@ export interface RelationMeta {
    * a re-export (barrel), not a consuming import (Map M0, additive).
    */
   reexport?: boolean;
+  /**
+   * Every occurrence of an aggregated `call` / `create` / `use` / `throw` edge
+   * (Parser truth 2, additive), sorted by position, capped at
+   * `MAX_RELATION_SITES`. Present only when the edge aggregates more than one
+   * occurrence (a single occurrence is `Relation.location`); use
+   * `relationSites()` (src/graph/sites.ts) to read either form. All sites are
+   * in `location.file`. `Relation.location` stays the first *emitted*
+   * occurrence (it feeds the stable relation id), so `sites[0]` can precede it.
+   */
+  sites?: RelationSite[];
+  /**
+   * Owner of module-level code (Parser truth 2, additive): the edge starts at
+   * the file entity (or, in a single-file component, at the component) because
+   * the call/create/throw sits in a module-scope statement or inside an
+   * anonymous function (callback, IIFE, default export) that has no named
+   * enclosing function. Anonymous callbacks inside a *named* function belong to
+   * that function and are not marked.
+   */
+  owner?: 'module';
+  /**
+   * How the target of a member call (`recv.method()`) was inferred, as written
+   * in the source (`discovery`, `this.store`, `new Foo`); absent on plain calls.
+   */
+  receiver?: string;
+  /** Total number of occurrences when `sites` was capped (equals `weight` of the edge). */
+  sites_total?: number;
+  /**
+   * How a `use` / `create` edge to a function, class or component was written
+   * when it is a reference rather than a read or a call (Parser truth 2, additive):
+   *  - `argument` — passed to a call: `app.get('/x', handler)`, `xs.map(fn)`,
+   *                 `emitter.on('e', this.onEvent)`; `ref_via` is the callee as written.
+   *  - `table`    — a value in an object / array literal that is exported, assigned
+   *                 or passed on: `export default { save }`, `[{ handler: run }]`.
+   *  - `binding`  — a markup attribute or directive: JSX `onClick={fn}`, Svelte
+   *                 `onclick={fn}` / `on:click={fn}` / `use:action` / `bind:value={x}`,
+   *                 Vue `@click="fn"` / `v-model="x"`; `ref_via` is the attribute as written.
+   * An aggregated edge keeps the `ref` of its first occurrence.
+   */
+  ref?: 'argument' | 'table' | 'binding';
+  /** The callee (`ref: 'argument'`) or attribute / directive (`ref: 'binding'`) the reference sits in. */
+  ref_via?: string;
+  /**
+   * Route a handler is registered for (Parser truth 2, additive): `VERB /path` as written, for a
+   * `ref: 'argument'` edge whose call has a path literal first (`app.get('/x', handler)` →
+   * `GET /x`; verbs get / post / put / patch / delete / head / options / all / use / route).
+   * Lets entry-point detection read the graph instead of the source line.
+   */
+  route?: string;
 }
+
+/** One occurrence of a relation in its file (1-based line and column). */
+export interface RelationSite {
+  line: number;
+  column: number;
+}
+
+/** Relation types whose individual occurrences are kept in `meta.sites`. */
+export const SITED_RELATION_TYPES: readonly RelationType[] = ['call', 'create', 'use', 'throw'];
+
+/** Cap of `meta.sites` per aggregated edge. */
+export const MAX_RELATION_SITES = 20;
 
 /**
  * Relation types that only express type annotations (Phase 12). In TS/JS they

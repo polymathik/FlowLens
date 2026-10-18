@@ -31,6 +31,9 @@ export const EXPECTED: Record<string, GoldenExpectation> = {
       `override ${S}/Service.run -> ${L}/base.ts/Base.run`,
       `override ${S}/Service.describe -> ${L}/base.ts/Base.describe`,
       `call ${S}/Service.run -> ${S}/Service.describe`,
+      // typed receivers (`const s = new Service(); s.run()`): resolved since parser-truth-2 (PARSER_VERSION 8.2.0)
+      `call ${S}/Service.run -> src/models/user.ts/User.run`,
+      `call src/main.ts/main -> ${S}/Service.run`,
       `call ${S}/Service.run -> ${L}/util.ts/helper`,
       `call ${S}/Service.describe -> ${L}/util.ts/format`,
       `call ${S}/Other.run -> ${S}/Other.describe`,

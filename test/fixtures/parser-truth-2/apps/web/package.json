@@ -1,0 +1,11 @@
+{
+  "name": "web",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#lib": "./src/lib/index.js",
+    "#lib/*": "./src/lib/*",
+    "#built/*": { "types": "./dist/*.d.ts", "default": "./dist/*.js" }
+  },
+  "dependencies": { "@pt/core": "workspace:*" }
+}

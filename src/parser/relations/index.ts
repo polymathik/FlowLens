@@ -18,11 +18,14 @@ import {
 } from './ts-context.js';
 import { handleImportStatement, handleReExport, handleRequireOrDynamicImport } from './import-relations.js';
 import { handleCall } from './call-relations.js';
-import { handleClassHeritage } from './inheritance-relations.js';
+import { handleClassHeritage, handleInterfaceHeritage } from './inheritance-relations.js';
 import { handleFunctionTypes } from './type-relations.js';
 import { containRelations, handleNew, handleIdentifierUse } from './data-relations.js';
 import { handleDecorator } from './decorate-relations.js';
+import { handleJsxElement, handleShorthandReference, handleThisReferences } from './reference-relations.js';
 import { aggregateRelations } from '../../graph/aggregate.js';
+import { boundNames, buildFunctionScope, declareDeclarator } from './scope-build.js';
+import { objectLiteralOf } from '../object-literal.js';
 
 /**
  * Extract all relations from a parsed TS/JS AST.
@@ -39,10 +42,10 @@ export function extractRelations(
   rootEntity?: Entity,
 ): Relation[] {
   const sym = symbols ?? extractTsSymbols(root, filePath, rootDir, entities[0]?.language ?? 'typescript');
-  const ctx = createTsContext(filePath, rootDir, entities, sym);
+  const ctx = createTsContext(root, filePath, rootDir, entities, sym, rootEntity);
   const methodsByClass = groupMethods(entities, filePath);
 
-  walkWithContext<ScopeFrame>(root, rootFrame(rootEntity), (node, frame) => visit(node, frame, ctx, methodsByClass));
+  walkWithContext<ScopeFrame>(root, rootFrame(ctx.rootOwner, ctx.moduleScope), (node, frame) => visit(node, frame, ctx, methodsByClass));
 
   return aggregateRelations([...containRelations(entities, filePath), ...ctx.emitter.relations]);
 }
@@ -64,6 +67,23 @@ function visit(
     case 'new_expression':
       handleNew(node, frame, ctx);
       return frame;
+    case 'variable_declarator': {
+      const topLevel = ctx.moduleDeclared.has(node.range().start.index);
+      if (!topLevel) declareDeclarator(node, frame.scope);
+      // `const api = { run() {…}, stop: () => … }`: the members are entities `api.run`, `api.stop`
+      const object = topLevel && frame.path.length === 0 && !frame.cls ? objectOwner(node, ctx) : null;
+      return object ? { ...frame, path: [object] } : frame;
+    }
+    case 'for_in_statement':
+    case 'catch_clause':
+      declareLoopOrCatchNames(node, frame);
+      return frame;
+    case 'interface_declaration': {
+      const name = declName(node);
+      const iface = name ? ctx.emitter.entityAt([...frame.path, name], ['interface']) : undefined;
+      if (iface) handleInterfaceHeritage(node, iface, ctx);
+      return frame; // the body is still walked: `import('./x.js').T` types inside it are import edges
+    }
     case 'throw_statement':
       return { ...frame, inThrow: true };
     case 'decorator':
@@ -72,6 +92,16 @@ function visit(
     case 'identifier':
       handleIdentifierUse(node, frame, ctx);
       return null;
+    case 'shorthand_property_identifier':
+      handleShorthandReference(node, frame, ctx);
+      return null;
+    case 'arguments':
+      if (frame.cls) handleThisReferences(node, frame, ctx);
+      return frame;
+    case 'jsx_opening_element':
+    case 'jsx_self_closing_element':
+      handleJsxElement(node, frame, ctx);
+      return frame;
     case 'internal_module': {
       const name = declName(node);
       return name ? { ...frame, path: [...frame.path, name] } : frame;
@@ -85,14 +115,47 @@ function visit(
   if (CLASS_KINDS.has(kind)) return enterClass(node, frame, ctx, methodsByClass);
   if (FUNCTION_KINDS.has(kind)) {
     const name = declName(node);
-    return name ? enterFunction(node, [...frame.path, name], 'function', frame, ctx) : frame;
+    if (!name) return enterAnonymous(node, frame, ctx);
+    if (frame.scope.parent) frame.scope.declare(name, null); // a nested function shadows outer names
+    return enterFunction(node, [...frame.path, name], 'function', frame, ctx);
   }
   if (ANON_FUNCTION_KINDS.has(kind)) {
     const name = assignedName(node);
-    if (!name) return { ...frame, inThrow: false };
+    if (!name) {
+      const member = objectMemberName(node, frame, ctx);
+      return member ? enterFunction(node, [...frame.path, member], 'method', frame, ctx) : enterAnonymous(node, frame, ctx);
+    }
     return enterFunction(node, [...frame.path, name], 'function', frame, ctx);
   }
   return frame;
+}
+
+/** Name of a module-level object literal whose function members are entities (object-literal.ts). */
+function objectOwner(declarator: SgNode, ctx: TsRelationContext): string | null {
+  if (!objectLiteralOf(declarator)) return null;
+  const name = declarator.children()[0].text();
+  return ctx.emitter.entityAt([name], ['variable']) ? name : null;
+}
+
+/** `{ key: () => … }` directly inside a tracked object literal: the member's name when it is an entity. */
+function objectMemberName(fn: SgNode, frame: ScopeFrame, ctx: TsRelationContext): string | null {
+  if (frame.path.length !== 1 || frame.cls || frame.entity?.id !== ctx.rootOwner.id) return null;
+  const pair = fn.parent();
+  if (!pair || pair.kind() !== 'pair') return null;
+  const key = pair.children()[0];
+  if (key.kind() !== 'property_identifier') return null;
+  return ctx.emitter.entityAt([...frame.path, key.text()], ['method']) ? key.text() : null;
+}
+
+/** A callback / default-exported function: keeps the enclosing owner, gets its own parameter scope. */
+function enterAnonymous(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): ScopeFrame {
+  return { ...frame, inThrow: false, scope: buildFunctionScope(node, frame.scope, ctx.types) };
+}
+
+/** `for (const k of xs)` / `catch (err)`: locals of unknown type that shadow outer names. */
+function declareLoopOrCatchNames(node: SgNode, frame: ScopeFrame): void {
+  const target = node.children().find((c) => ['identifier', 'object_pattern', 'array_pattern'].includes(String(c.kind())));
+  if (target) for (const name of boundNames(target)) frame.scope.declare(name, null);
 }
 
 function enterFunction(
@@ -100,7 +163,10 @@ function enterFunction(
 ): ScopeFrame {
   const entity = ctx.emitter.entityAt(path, [kind]);
   if (entity) handleFunctionTypes(node, entity, ctx);
-  return { path, entity: entity ?? frame.entity, cls: frame.cls, inThrow: false };
+  return {
+    path, entity: entity ?? frame.entity, cls: frame.cls, inThrow: false,
+    scope: buildFunctionScope(node, frame.scope, ctx.types),
+  };
 }
 
 function enterClass(
@@ -112,7 +178,7 @@ function enterClass(
   const entity = ctx.emitter.entityAt(path, ['class']);
   if (!entity) return { ...frame, path };
   const cls = handleClassHeritage(node, entity, ctx, methodsByClass.get(entity.qualified_name) ?? []);
-  return { path, entity, cls, inThrow: false };
+  return { path, entity, cls, inThrow: false, scope: frame.scope };
 }
 
 function groupMethods(entities: Entity[], filePath: string): Map<string, Entity[]> {

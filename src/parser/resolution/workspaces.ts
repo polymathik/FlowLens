@@ -215,7 +215,7 @@ function conditionRank(c: string): number {
   return i < 0 ? CONDITION_ORDER.length : i;
 }
 
-function conditionTargets(value: unknown): string[] {
+export function conditionTargets(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   if (Array.isArray(value)) return value.flatMap(conditionTargets);
   if (!value || typeof value !== 'object') return [];

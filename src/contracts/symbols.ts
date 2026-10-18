@@ -139,7 +139,14 @@ export interface ResolutionResult {
 }
 
 /** The slice of an entity the symbol table needs. */
-export type SymbolEntity = Pick<Entity, 'id' | 'name' | 'qualified_name' | 'kind' | 'file' | 'language'>;
+export type SymbolEntity = Pick<Entity, 'id' | 'name' | 'qualified_name' | 'kind' | 'file' | 'language'> & {
+  /**
+   * Declared type of a module-level variable (`annotations.type_ref`, Parser truth 2, additive):
+   * the class / interface name as written in the variable's own file. Lets pass 2 follow
+   * `import { store } from './store'; store.get()` to `Store.get`.
+   */
+  type_ref?: string;
+};
 
 /**
  * Per-file input to the symbol table. The indexer persists one record per

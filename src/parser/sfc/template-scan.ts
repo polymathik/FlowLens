@@ -6,14 +6,21 @@
  *  - calls inside template expressions: `{format(x)}`, `onclick={() => save()}`
  *    (Svelte `{…}`), `{{ format(x) }}` and `:prop="f(x)"` / `@click="go()"` / `v-if="ok()"` (Vue)
  *
+ *  - bare handler / action / bind references (`onclick={save}`, `use:tip`, `@click="save"`)
+ *
  * Purely lexical and conservative: string literals inside expressions are
  * blanked first, only identifiers directly followed by `(` count as calls,
- * and the caller drops every name that is not an import or a local entity.
+ * names the markup declares itself (`{#each xs as item}`, `v-for`, slot props)
+ * are never reported, and the caller drops every name that is not an import
+ * or a local entity.
  */
 import { blankMatches, type SfcFlavor } from './blocks.js';
+import { scanBindings, templateLocals, type BindingKind } from './template-bindings.js';
 
 export interface TemplateRef { name: string; line: number; column: number }
-export interface TemplateScan { tags: TemplateRef[]; calls: TemplateRef[] }
+/** A script name handed to the markup without being called (template-bindings.ts). */
+export interface TemplateBinding extends TemplateRef { via: string; kind: BindingKind }
+export interface TemplateScan { tags: TemplateRef[]; calls: TemplateRef[]; bindings: TemplateBinding[] }
 
 const NON_CODE_BLOCKS = [
   /<!--[\s\S]*?-->/g,
@@ -103,12 +110,13 @@ export function scanTemplate(content: string, flavor: SfcFlavor): TemplateScan {
     if (isComponentTag(m[1], flavor)) tags.push({ name: m[1], ...position(starts, m.index! + 1) });
   }
 
+  const locals = templateLocals(markup, flavor);
   const regions = flavor === 'svelte' ? svelteExpressions(markup) : vueExpressions(markup);
   const seen = new Set<string>();
   for (const [from, to] of regions) {
     const expr = blankStrings(markup.slice(from, to));
     for (const m of expr.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(/g)) {
-      if (RESERVED.has(m[1])) continue;
+      if (RESERVED.has(m[1]) || locals.has(m[1].split('.')[0])) continue;
       const pos = position(starts, from + m.index!);
       const key = `${m[1]}@${pos.line}`;
       if (seen.has(key)) continue;
@@ -116,5 +124,8 @@ export function scanTemplate(content: string, flavor: SfcFlavor): TemplateScan {
       calls.push({ name: m[1], ...pos });
     }
   }
-  return { tags, calls };
+  const bindings = scanBindings(markup, flavor)
+    .filter((b) => !locals.has(b.name))
+    .map((b) => ({ name: b.name, via: b.via, kind: b.kind, ...position(starts, b.offset) }));
+  return { tags, calls, bindings };
 }

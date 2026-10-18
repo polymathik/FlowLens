@@ -23,8 +23,15 @@ export interface GraphQuality {
   dangling_edges: number;
   /** dangling_edges / edge_count (0 when there are no edges). Target < 1%. */
   dangling_ratio: number;
+  /** Unresolved references, member-call leaves (`meta.receiver`) excluded. */
   unresolved_count: number;
   ambiguous_count: number;
+  /**
+   * Member calls (`recv.method()`) whose method could not be found on a project
+   * receiver — kept as unresolved leaves for Flow, but not parse failures, so they
+   * are counted apart (Parser truth 2, additive; absent in older manifests).
+   */
+  member_unresolved_count?: number;
   /** Unresolved + ambiguous counts per relation type. */
   unresolved_by_type: Partial<Record<RelationType, number>>;
   /** Unresolved + ambiguous counts per language of the source file. */

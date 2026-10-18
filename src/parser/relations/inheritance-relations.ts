@@ -43,6 +43,16 @@ export function handleClassHeritage(node: SgNode, cls: Entity, ctx: TsRelationCo
   return { entity: cls, parentRef };
 }
 
+/** `interface A extends B, C<T>` → an `extend` edge to every base (an interface may extend an object type alias too). */
+export function handleInterfaceHeritage(node: SgNode, iface: Entity, ctx: TsRelationContext): void {
+  const clause = findChild(node, 'extends_type_clause');
+  if (!clause) return;
+  for (const t of clause.children()) {
+    const name = t.kind() === 'extends' ? null : refText(t);
+    if (name) ctx.emitter.link(iface, 'extend', name, t, { kinds: ['interface', 'class', 'type'] });
+  }
+}
+
 function handleExtends(children: SgNode[], cls: Entity, ctx: TsRelationContext): string | null {
   for (const child of children) {
     const k = child.kind();
