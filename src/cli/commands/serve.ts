@@ -2,7 +2,8 @@
  * flowlens serve — starts the MCP server for AI assistant integration.
  *
  * Currently supports stdio transport only. The server exposes all 12
- * FlowLens tools over the Model Context Protocol.
+ * FlowLens tools plus agent/health resources over the Model Context
+ * Protocol. stdout carries only MCP JSON-RPC; every log line goes to stderr.
  */
 
 import { Command } from 'commander';
@@ -11,6 +12,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { openGraphStore } from '../../service/open-graph-store.js';
 import { autoInit } from '../../service/project-setup.js';
 import { startWatching } from '../../service/watch-session.js';
+import { RemoteGraphStore } from '../../service/remote-graph-store.js';
+import { invalidateGraphView } from '../../mcp/graph-view.js';
 import { AnnotationStore } from '../../mcp/annotation-store.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { createFlowLensServer } from '../../mcp/server.js';
@@ -46,15 +49,27 @@ export const serveCommand = new Command('serve')
         flowlensDir,
         rootDir,
         fileIndexPath: join(flowlensDir, 'file_index.json'),
+        // Cache invalidation stays on the LevelDB stat fingerprint (immediate
+        // for every writer on this machine); graph-changed events below only
+        // drop the cached view early. An event counter as `graphVersion`
+        // would lag RPC writes by the daemon's event debounce.
+        graphPath: join(flowlensDir, 'graph'),
       });
+
+      // Any writer through the daemon (its watcher, hooks' re-index, index)
+      // invalidates this server's cached graph view.
+      if (graph instanceof RemoteGraphStore) graph.subscribe(() => invalidateGraphView(graph));
 
       // --watch: the daemon's per-project watcher keeps the graph fresh.
       if (opts.watch) {
         await startWatching(graph, rootDir, {
           debounceMs: 300,
-          onUpdate: (r) => process.stderr.write(
-            `[watch] ${r.filesReparsed} reparsed / ${r.filesDeleted} deleted / ${r.errors.length} errors in ${r.durationMs}ms\n`,
-          ),
+          onUpdate: (r) => {
+            invalidateGraphView(graph);
+            process.stderr.write(
+              `[watch] ${r.filesReparsed} reparsed / ${r.filesDeleted} deleted / ${r.errors.length} errors in ${r.durationMs}ms\n`,
+            );
+          },
         });
         process.stderr.write('[watch] file watcher started\n');
       }
