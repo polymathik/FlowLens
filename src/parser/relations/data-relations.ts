@@ -68,14 +68,14 @@ const FIRST_IS_DECL = new Set(['variable_declarator', 'arrow_function', 'for_in_
 
 export function handleIdentifierUse(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): void {
   if (!frame.entity) return;
+  const name = node.text();
+  if (!ctx.emitter.isLocal(name) && !ctx.emitter.isImported(name)) return;
   // Hand-off positions (call arguments, route tables, JSX attributes) are references to
   // functions / classes too, also at module scope (reference-relations.ts).
-  if (handleReferenceIdentifier(node, frame, ctx)) return;
+  if (handleReferenceIdentifier(node, name, frame, ctx)) return;
   // Plain module-scope reads (`const x = CONFIG`) stay unrecorded: only calls, `new` and
   // hand-off references are attributed to the file entity.
   if (ctx.ownerIsFile && frame.entity.id === ctx.rootOwner.id) return;
-  const name = node.text();
-  if (!ctx.emitter.isLocal(name) && !ctx.emitter.isImported(name)) return;
   const parent = node.parent();
   if (!parent) return;
   const pk = String(parent.kind());

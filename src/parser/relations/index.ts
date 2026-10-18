@@ -22,7 +22,7 @@ import { handleClassHeritage } from './inheritance-relations.js';
 import { handleFunctionTypes } from './type-relations.js';
 import { containRelations, handleNew, handleIdentifierUse } from './data-relations.js';
 import { handleDecorator } from './decorate-relations.js';
-import { handleJsxElement, handleReferenceIdentifier, handleThisReference } from './reference-relations.js';
+import { handleJsxElement, handleShorthandReference, handleThisReferences } from './reference-relations.js';
 import { aggregateRelations } from '../../graph/aggregate.js';
 import { boundNames, buildFunctionScope, declareDeclarator } from './scope-build.js';
 
@@ -82,10 +82,10 @@ function visit(
       handleIdentifierUse(node, frame, ctx);
       return null;
     case 'shorthand_property_identifier':
-      handleReferenceIdentifier(node, frame, ctx);
+      handleShorthandReference(node, frame, ctx);
       return null;
-    case 'member_expression':
-      handleThisReference(node, frame, ctx);
+    case 'arguments':
+      if (frame.cls) handleThisReferences(node, frame, ctx);
       return frame;
     case 'jsx_opening_element':
     case 'jsx_self_closing_element':

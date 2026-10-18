@@ -124,15 +124,13 @@ function shadowed(name: string, frame: ScopeFrame): boolean {
  * consumed (emitted or deliberately skipped) so the plain-read path must not
  * see it again.
  */
-export function handleReferenceIdentifier(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): boolean {
+export function handleReferenceIdentifier(node: SgNode, name: string, frame: ScopeFrame, ctx: TsRelationContext): boolean {
   const parent = node.parent();
   if (!parent) return false;
   const pk = String(parent.kind());
   if (JSX_TAGS.has(pk) || (pk === 'member_expression' && JSX_TAGS.has(String(parent.parent()?.kind())))) return true; // tag name: handleJsxElement
   const rc = referenceContext(node);
   if (!rc || !frame.entity) return false;
-  const name = node.text();
-  if (!ctx.emitter.isLocal(name) && !ctx.emitter.isImported(name)) return true;
   if (shadowed(name, frame)) return true;
   ctx.emitter.link(frame.entity, 'use', name, node, {
     optional: true, kinds: kindsFor(rc, moduleOwned(frame, ctx)), meta: metaFor(rc, frame, ctx),
@@ -140,20 +138,45 @@ export function handleReferenceIdentifier(node: SgNode, frame: ScopeFrame, ctx: 
   return true;
 }
 
-/** `this.method` passed as an argument / registered in a table (`el.addEventListener('x', this.onX)`). */
-export function handleThisReference(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): void {
-  const kids = node.children();
-  if (kids.length !== 3 || kids[0].kind() !== 'this' || kids[2].kind() !== 'property_identifier') return;
+/**
+ * `this.method` handed over in an argument list (`el.addEventListener('x', this.onX)`,
+ * `[this.a, this.b]`, `{ cb: this.c }`). Driven from the `arguments` node so that the
+ * thousands of other member expressions are never inspected.
+ */
+export function handleThisReferences(args: SgNode, frame: ScopeFrame, ctx: TsRelationContext): void {
   if (!frame.cls || !frame.entity) return;
-  const rc = referenceContext(node);
-  if (!rc) return;
-  const name = kids[2].text();
+  let rc: RefContext | null = null;
+  const visit = (node: SgNode, depth: number): void => {
+    const kind = String(node.kind());
+    if (kind === 'member_expression') {
+      const kids = node.children();
+      if (kids.length !== 3 || kids[0].kind() !== 'this' || kids[2].kind() !== 'property_identifier') return;
+      const call = args.parent();
+      rc ??= { ref: 'argument', via: call ? calleeText(call) : null };
+      emitThisReference(node, kids[2].text(), rc, frame, ctx);
+    } else if (depth < 2 && (kind === 'array' || kind === 'object' || kind === 'pair')) {
+      for (const sub of node.children()) visit(sub, depth + 1);
+    }
+  };
+  for (const child of args.children()) visit(child, 0);
+}
+
+function emitThisReference(node: SgNode, name: string, rc: RefContext, frame: ScopeFrame, ctx: TsRelationContext): void {
+  if (!frame.cls || !frame.entity) return;
   const meta = metaFor(rc, frame, ctx);
   const own = ctx.emitter.member(frame.cls.entity, name, ['method']);
   if (own) ctx.emitter.direct(frame.entity, own, 'use', node, { meta });
   else if (frame.cls.parentRef) {
     ctx.emitter.link(frame.entity, 'use', `${frame.cls.parentRef}.${name}`, node, { optional: true, kinds: ['method'], meta });
   }
+}
+
+/** `{ handler }` shorthand in a hand-off position. */
+export function handleShorthandReference(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): void {
+  if (!frame.entity) return;
+  const name = node.text();
+  if (!ctx.emitter.isLocal(name) && !ctx.emitter.isImported(name)) return;
+  handleReferenceIdentifier(node, name, frame, ctx);
 }
 
 /** `<Comp />` / `<ns.Comp>`: a `create` edge to the component (lower-case tags are DOM elements). */
