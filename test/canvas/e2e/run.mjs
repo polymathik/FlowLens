@@ -26,9 +26,10 @@ import { scenarios as canvasScenarios } from './scenarios.mjs';
 import { explorerScenarios } from './explorer-scenarios.mjs';
 import { mapScenarios } from './map-scenarios.mjs';
 import { zoneScenarios } from './zone-scenarios.mjs';
+import { layersScenarios } from './layers-scenarios.mjs';
 import { configureExplorer } from './canvas-page.mjs';
 
-const scenarios = [...canvasScenarios, ...explorerScenarios, ...mapScenarios, ...zoneScenarios];
+const scenarios = [...canvasScenarios, ...explorerScenarios, ...mapScenarios, ...zoneScenarios, ...layersScenarios];
 
 const ROOT = resolve(import.meta.dirname, '../../..');
 const args = process.argv.slice(2);
