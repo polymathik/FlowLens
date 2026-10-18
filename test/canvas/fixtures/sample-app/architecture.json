@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "inferred_by": "manual",
+  "inferred_at": "2026-10-18T00:00:00.000Z",
+  "layers": [
+    { "name": "ui", "include": { "patterns": ["src/ui/**"] } },
+    { "name": "api", "include": { "patterns": ["src/api/**"] }, "must_not_access": ["ui"] },
+    { "name": "core", "include": { "patterns": ["src/core/**"] } }
+  ]
+}
