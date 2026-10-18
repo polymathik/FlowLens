@@ -63,6 +63,12 @@ export interface IndexOptions {
   incremental: boolean;
   /** `.flowlens/` directory (default: the directory of `fileIndexPath`). */
   flowlensDir?: string;
+  /**
+   * Watch-mode hint: only these root-relative paths may have changed or been
+   * deleted, so only they are hashed. Dependents are still re-resolved.
+   * Ignored on full runs and when there is no symbol snapshot yet.
+   */
+  paths?: string[];
 }
 
 export async function runIndex(options: IndexOptions): Promise<IndexResult> {
@@ -88,8 +94,9 @@ export async function runIndex(options: IndexOptions): Promise<IndexResult> {
 
   // 1–2. discover + change detection
   const { discovered, languageCounts } = await discoverProjectFiles(rootDir, config);
-  const { changed, deleted, previousIndex } = await detectChanges(discovered, fileIndexPath, incremental);
   const previous = incremental ? await loadSymbolSnapshot(snapshotPath) : new Map<string, FileSymbolRecord>();
+  const hint = options.paths && previous.size > 0 ? new Set(options.paths) : undefined;
+  const { changed, deleted, previousIndex } = await detectChanges(discovered, fileIndexPath, incremental, hint);
   const records = new Map(previous);
   for (const d of deleted) records.delete(d);
 
@@ -149,7 +156,10 @@ export async function runIndex(options: IndexOptions): Promise<IndexResult> {
   const newIndex = updateFileIndex(previousIndex, parsed, failures, deleted);
   await new FileIndexManager().save(fileIndexPath, newIndex);
   await saveSymbolSnapshot(snapshotPath, records);
-  if (git.head || existsSync(join(rootDir, '.git'))) await enrichWithChurnMetrics(rootDir, store);
+  if (git.head || existsSync(join(rootDir, '.git'))) {
+    // Watch batches only re-stamp churn on the entities they just replaced.
+    await enrichWithChurnMetrics(rootDir, store, hint ? new Set(parsed.map((p) => p.path)) : undefined);
+  }
 
   // 8. quality + manifest
   const quality = await computeGraphQuality(store, { records, idCollisions: collisions.count });

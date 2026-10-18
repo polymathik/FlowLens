@@ -1,16 +1,17 @@
 /**
- * Watch-mode contract. The watcher reports filesystem events; an
- * incremental updater applies them to the graph in three levels:
+ * Watch-mode contract. The watcher reports debounced, batched filesystem
+ * events; the incremental updater (`watch/incremental-updater.ts`) applies
+ * a batch through the incremental indexer (`runIndex` with
+ * `incremental: true` and the batch's paths as a hint), so watch mode gets
+ * the same two-pass, cross-file resolution as `flowlens index`:
  *
- *   L1 — re-parse the changed files (reuses `parseChunk` from
- *        parallel-parser.ts so the same parsing code powers both the
- *        full index and watch mode).
- *   L2 — write the new entities + relations for each file, deleting
- *        the old ones first (same pattern as `parseAndStore` in the
- *        indexer).
- *   L3 — recompute metrics for affected entities. "Affected" is the
- *        graph neighborhood of the change (entities that gained or
- *        lost an incoming edge), not the whole graph.
+ *   - changed/added files are re-parsed; unchanged dependents (importers,
+ *     barrels, package scope, owners of edges into removed entities) are
+ *     re-parsed too and their cross-file edges re-resolved;
+ *   - deleted files leave no dangling edges (importers keep explicit
+ *     unresolved records instead);
+ *   - file index, symbols snapshot, module nodes, churn, quality and the
+ *     manifest stay consistent with a full index.
  */
 
 export type WatchEventType = 'add' | 'change' | 'unlink';

@@ -1,32 +1,37 @@
 /**
- * Incremental graph updater — applies a batch of WatchEvents to the
- * existing graph in three levels:
+ * Incremental graph updater — applies a batch of WatchEvents to the graph
+ * through the same incremental indexer as `flowlens index` (Phase 8
+ * two-pass pipeline), so watch mode keeps cross-file truth:
  *
- *   L1 Re-parse:
- *     For each add/change event, read + parse the file via parseChunk
- *     (reusing the same code path as the full indexer).
+ *   1. Collect the batch's supported paths (latest event per path is
+ *      irrelevant: the indexer checks what is on disk now).
+ *   2. `runIndex({ incremental: true, paths })` hashes only those paths,
+ *      re-parses the changed ones, re-parses unchanged dependents (files
+ *      importing an added/changed/deleted file, barrels, package scope,
+ *      owners of edges into removed entities), rebuilds the project symbol
+ *      table and resolves pending relations (pass 2). Deleted files leave
+ *      no dangling edges; their importers get explicit unresolved records.
+ *   3. File index, symbols snapshot, module nodes, churn, quality and the
+ *      manifest are kept up to date exactly as after `flowlens index`.
  *
- *   L2 Apply:
- *     For each parsed file, delete the file's existing nodes/edges,
- *     then write the fresh nodes/edges. For unlink events, just
- *     delete. This is the same pattern as indexer.ts parseAndStore.
- *
- *   L3 Metric refresh (neighborhood-scoped):
- *     Track which entities had an incoming-edge set change. For each,
- *     recompute coupling metrics. Cognitive complexity + hotspot
- *     score come from the fresh parse (already in L2), so only
- *     coupling/instability need recomputing here.
+ * Debouncing/batching stay in the watcher (`file-watcher.ts`); callers run
+ * this inside their write queue.
  */
-import type { DiscoveredFile } from '../contracts/discovery.js';
+import { mkdirSync } from 'node:fs';
+import { extname, join, resolve } from 'node:path';
+import type { FlowLensConfig } from '../contracts/config.js';
 import type { GraphStore } from '../contracts/graph.js';
 import type { WatchEvent } from '../contracts/watch.js';
-import { parseChunk } from '../indexer/parallel-parser.js';
-import { computeCouplingMetrics } from '../metrics/coupling.js';
-import { LANGUAGE_EXTENSIONS } from '../utils/paths.js';
-import { extname } from 'node:path';
+import { runIndex } from '../indexer/indexer.js';
+import { loadProjectConfig } from '../projects/config.js';
+import { LANGUAGE_EXTENSIONS, normalizeRelativePath } from '../utils/paths.js';
 
 export interface UpdateResult {
+  /** Files from the batch that were re-parsed (changed or added). */
   filesReparsed: number;
+  /** Unchanged files re-parsed because a file they depend on changed. */
+  filesReresolved: number;
+  /** Indexed files removed from the graph. */
   filesDeleted: number;
   entitiesUpdated: number;
   relationsUpdated: number;
@@ -38,6 +43,10 @@ export interface UpdateResult {
 export interface UpdateOptions {
   rootDir: string;
   graph: GraphStore;
+  /** Project config (default: `<root>/.flowlens/config.json`). */
+  config?: FlowLensConfig;
+  /** File index path (default: `<root>/.flowlens/file_index.json`). */
+  fileIndexPath?: string;
 }
 
 export async function applyWatchEvents(
@@ -45,85 +54,38 @@ export async function applyWatchEvents(
   options: UpdateOptions,
 ): Promise<UpdateResult> {
   const start = Date.now();
-  const errors: Array<{ path: string; message: string }> = [];
-
-  // Split events: deletions handled directly, changes/adds go through
-  // the re-parse pipeline. Dedupe by path (same file touched twice in
-  // one batch resolves to the latest event type).
-  const finalByPath = new Map<string, WatchEvent['type']>();
-  for (const ev of events) {
-    if (isSupportedPath(ev.path)) finalByPath.set(ev.path, ev.type);
+  const paths = [...new Set(events.map((e) => normalizeRelativePath(e.path)).filter(isSupportedPath))];
+  if (paths.length === 0) {
+    return {
+      filesReparsed: 0, filesReresolved: 0, filesDeleted: 0, entitiesUpdated: 0, relationsUpdated: 0,
+      errors: [], durationMs: Date.now() - start,
+    };
   }
 
-  let filesDeleted = 0;
-  const toReparse: DiscoveredFile[] = [];
-  for (const [path, type] of finalByPath) {
-    if (type === 'unlink') {
-      await options.graph.deleteEdgesByFile(path);
-      await options.graph.deleteNodesByFile(path);
-      filesDeleted++;
-    } else {
-      toReparse.push({
-        path,
-        absolutePath: `${options.rootDir}/${path}`,
-        extension: extname(path),
-        language: LANGUAGE_EXTENSIONS[extname(path)] ?? 'unknown',
-      });
-    }
-  }
-
-  // L1: re-parse
-  const { parsed, failures } = await parseChunk({
-    files: toReparse,
-    rootDir: options.rootDir,
+  const rootDir = resolve(options.rootDir);
+  const flowlensDir = join(rootDir, '.flowlens');
+  mkdirSync(flowlensDir, { recursive: true });
+  const result = await runIndex({
+    rootDir,
+    graphStore: options.graph,
+    config: options.config ?? loadProjectConfig(rootDir),
+    fileIndexPath: options.fileIndexPath ?? join(flowlensDir, 'file_index.json'),
+    flowlensDir,
+    incremental: true,
+    paths,
   });
-  for (const f of failures) errors.push({ path: f.path, message: f.message });
-
-  // L2: apply changes. Track which entity-ids had edge-set changes
-  // for L3 metric refresh.
-  const entitiesToRefresh = new Set<string>();
-  let entitiesUpdated = 0;
-  let relationsUpdated = 0;
-  for (const file of parsed) {
-    // Before overwriting, collect the targets of outbound edges owned by
-    // entities in this file — those entities' coupling will change once
-    // we rewrite the file's relations.
-    const fileEntities = await options.graph.getNodesByFile(file.path);
-    for (const entity of fileEntities) {
-      const out = await options.graph.getEdgesFrom(entity.id);
-      for (const edge of out) entitiesToRefresh.add(edge.to);
-    }
-
-    await options.graph.deleteEdgesByFile(file.path);
-    await options.graph.deleteNodesByFile(file.path);
-    await options.graph.putNodes(file.entities);
-    await options.graph.putEdges(file.relations);
-
-    for (const rel of file.relations) entitiesToRefresh.add(rel.to);
-    entitiesUpdated += file.entities.length;
-    relationsUpdated += file.relations.length;
-  }
-
-  // L3: coupling metrics for affected entities only
-  for (const entityId of entitiesToRefresh) {
-    const entity = await options.graph.getNode(entityId);
-    if (!entity || !entity.metrics) continue;
-    const coupling = await computeCouplingMetrics(entityId, options.graph);
-    entity.metrics = { ...entity.metrics, ...coupling };
-    await options.graph.putNode(entity);
-  }
 
   return {
-    filesReparsed: parsed.length,
-    filesDeleted,
-    entitiesUpdated,
-    relationsUpdated,
-    errors,
+    filesReparsed: result.filesIndexed - result.filesReresolved,
+    filesReresolved: result.filesReresolved,
+    filesDeleted: result.filesDeleted,
+    entitiesUpdated: result.entitiesCreated,
+    relationsUpdated: result.relationsCreated,
+    errors: result.errors.map((e) => ({ path: e.file, message: e.message })),
     durationMs: Date.now() - start,
   };
 }
 
 function isSupportedPath(path: string): boolean {
-  const ext = extname(path);
-  return ext in LANGUAGE_EXTENSIONS;
+  return extname(path) in LANGUAGE_EXTENSIONS;
 }

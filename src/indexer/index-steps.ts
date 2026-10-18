@@ -36,11 +36,17 @@ export async function detectChanges(
   discovered: DiscoveredFile[],
   fileIndexPath: string,
   incremental: boolean,
+  /** Only these paths may have changed (watch mode): hash just them. */
+  hint?: Set<string>,
 ): Promise<{ changed: DiscoveredFile[]; deleted: string[]; previousIndex: Record<string, FileIndexEntry> }> {
   if (!incremental) return { changed: discovered, deleted: [], previousIndex: {} };
   const manager = new FileIndexManager();
   const previousIndex = await manager.load(fileIndexPath);
-  const { changed, deleted } = await manager.getChangedFiles(discovered, previousIndex);
+  const candidates = hint ? discovered.filter((f) => hint.has(f.path)) : discovered;
+  const known = hint
+    ? Object.fromEntries(Object.entries(previousIndex).filter(([p]) => hint.has(p)))
+    : previousIndex;
+  const { changed, deleted } = await manager.getChangedFiles(candidates, known);
   return { changed, deleted, previousIndex };
 }
 
@@ -110,11 +116,17 @@ export async function syncModuleEntities(store: GraphStore, files: string[]): Pr
   return { created: missing.length, deleted };
 }
 
-/** churn_rate and hotspot_score on entities of files git reports activity for. */
-export async function enrichWithChurnMetrics(rootDir: string, store: GraphStore): Promise<void> {
+/**
+ * churn_rate and hotspot_score on entities of files git reports activity for.
+ * `onlyFiles` limits the writes to files whose entities were just replaced
+ * (watch batches); other files keep the churn stored by the last full run.
+ */
+export async function enrichWithChurnMetrics(rootDir: string, store: GraphStore, onlyFiles?: Set<string>): Promise<void> {
+  if (onlyFiles && onlyFiles.size === 0) return;
   const churnData = await computeChurn(rootDir, { period_days: 90 });
   if (churnData.size === 0) return;
   for (const [filePath, churnInfo] of churnData) {
+    if (onlyFiles && !onlyFiles.has(filePath)) continue;
     const fileEntities = await store.getNodesByFile(filePath);
     const updated: Entity[] = [];
     for (const entity of fileEntities) {
