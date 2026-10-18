@@ -15,6 +15,9 @@ import { MetricsBadge } from '../shared/MetricsBadge';
 import { useZoneActions } from './zone-actions';
 
 const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
+/** Communities only: where the zone comes from and how self-contained it is (never "the architecture"). */
+const cohesionNote = (d: ZoneNodeData): string =>
+  d.cohesion === undefined ? '' : ` — detected from dependencies: ${Math.round(d.cohesion * 100)}% of their weight stays inside this zone`;
 const hidden: React.CSSProperties = { opacity: 0, pointerEvents: 'none' };
 
 interface ZoneBoxProps extends NodeProps<Node<ZoneNodeData, 'zone'>> {}
@@ -59,7 +62,7 @@ export const ZoneNode = React.memo(({ id, data, selected, width, height }: ZoneB
         data-testid="zone-chip"
         aria-label={chipLabel}
         aria-expanded={data.expanded}
-        title={`${data.label}${data.customized ? ' (customised)' : ''} — click to ${data.expanded ? 'collapse' : 'expand'}, double-click to open, right-click for options`}
+        title={`${data.label}${data.customized ? ' (customised)' : ''}${cohesionNote(data)} — click to ${data.expanded ? 'collapse' : 'expand'}, double-click to open, right-click for options`}
         style={{ transform: summary ? `translate(-50%, -50%) scale(${scale})` : `scale(${scale})` }}
         onClick={(e) => {
           e.stopPropagation();

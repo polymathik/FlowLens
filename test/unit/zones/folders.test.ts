@@ -135,7 +135,7 @@ describe('folders mode', () => {
   it('falls back to folders for modes without a strategy and says so', () => {
     const { h } = treeOf(PATHS, PKG);
     const base = computeZones({ mode: 'folders', hierarchy: h });
-    for (const mode of ['communities', 'layers'] as const) {
+    for (const mode of ['layers'] as const) {
       const zs = computeZones({ mode, hierarchy: h });
       expect(zs.fallbackFrom).toBe(mode);
       expect(zs.mode).toBe('folders');

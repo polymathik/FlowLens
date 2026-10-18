@@ -35,6 +35,7 @@ import { useCanvasLayout } from '../hooks/useCanvasLayout';
 import { useSemanticZoom } from '../hooks/useSemanticZoom';
 import { useNodeInteractions } from '../hooks/useNodeInteractions';
 import { useZoneOverridesLoader } from '../hooks/useZoneOverrides';
+import { useCommunityStateLoader, useCommunitySync } from '../hooks/useCommunityState';
 import { useCanvasStoreApi } from '../store/canvas-store';
 import { expansionKey } from '../utils/zone-cut';
 import { useHashRoute } from '../router/useHashRoute';
@@ -83,9 +84,11 @@ function CanvasInner() {
   const colorMode = useColorMode();
 
   useZoneOverridesLoader();
+  useCommunityStateLoader();
   const overlayData = useOverlayData(graph.version);
   const model = useMapModel(graph);
   const containerId = model.view.containerId;
+  useCommunitySync(model.view, graph.hierarchy);
   const zoneActions = useMemo<ZoneActions>(
     () => ({
       toggle: (itemId, expanded) => store.getState().setZoneExpansion({ [expansionKey(containerId, itemId)]: expanded }),

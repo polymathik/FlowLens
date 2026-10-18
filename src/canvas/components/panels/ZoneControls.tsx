@@ -12,7 +12,7 @@ import { expansionKey, zoneItemIds } from '../../utils/zone-cut';
 import { COLORS, button, buttonActive } from '../shared/ui';
 
 const LABELS: Record<ZoningMode, string> = { packages: 'Packages', folders: 'Folders', communities: 'Communities', layers: 'Layers' };
-const AVAILABLE: ReadonlySet<ZoningMode> = new Set(['packages', 'folders']);
+const AVAILABLE: ReadonlySet<ZoningMode> = new Set(['packages', 'folders', 'communities']);
 const SOON = 'Coming in a later step';
 
 export function ZoneControls({ view, hierarchy }: { view: MapView; hierarchy: Hierarchy }) {

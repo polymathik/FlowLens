@@ -15,7 +15,8 @@ import { mountGraphRoutes } from './routes-graph.js';
 import { mountProjectRoutes } from './routes-projects.js';
 import { mountReindexRoute } from './routes-reindex.js';
 import { zonesBodyParser } from './routes-zones.js';
-import { ZONES_ROUTE } from '../contracts/zones.js';
+import { zoneStateBodyParser } from './routes-zone-state.js';
+import { ZONES_ROUTE, ZONE_STATE_ROUTE } from '../contracts/zones.js';
 
 export type { MountRoutes, ServiceDeps } from '../contracts/service-deps.js';
 
@@ -42,6 +43,7 @@ export function createServiceApp(deps: ServiceDeps, mount?: MountRoutes): Expres
   const app = express();
   app.disable('x-powered-by');
   app.use('/api', requireAuth(deps));
+  app.use(ZONE_STATE_ROUTE, zoneStateBodyParser()); // 2 MB cap for the community state (before the zones parser)
   app.use(ZONES_ROUTE, zonesBodyParser()); // 256 KB cap for this route, before the daemon-wide parser
   app.use('/api', express.json({ limit: '512mb' }));
 

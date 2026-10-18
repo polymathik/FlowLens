@@ -19,6 +19,7 @@ import { parseZoneOverrides } from '../analysis/zones/overrides-schema.js';
 import { createZoneOverridesStore } from '../analysis/zones/overrides-store.js';
 import { projectFlowlensDir } from '../projects/paths.js';
 import { projectParam, route } from './routes-projects.js';
+import { mountZoneStateRoutes } from './routes-zone-state.js';
 
 /** JSON parser limited to the zones body cap (mount before any larger parser). */
 export const zonesBodyParser = (): RequestHandler => express.json({ limit: ZONE_OVERRIDES_MAX_BYTES });
@@ -45,4 +46,6 @@ export function mountZonesRoutes(app: Express, deps: ServiceDeps, store: ZoneOve
     await store.write(dir, parsed.value);
     res.json(await store.read(dir));
   }));
+
+  mountZoneStateRoutes(app, deps); // `.../zones/state` (community assignment), next to the overrides
 }

@@ -25,7 +25,7 @@ import type {
   CanvasWorkspaceResponse,
 } from '../../contracts/canvas/index.js';
 import { ApiError, postJson, putJson, requestJson } from './http.js';
-import { EMPTY_ZONE_OVERRIDES, type ZoneOverrides } from '../../contracts/zones.js';
+import { EMPTY_ZONE_OVERRIDES, EMPTY_ZONE_STATE, type ZoneOverrides, type ZoneState } from '../../contracts/zones.js';
 
 export const LEGACY_API_BASE = '/flowlens-api';
 
@@ -53,6 +53,16 @@ export function createGraphClient(base: string) {
     },
     /** Validate and store the overrides; resolves with what the server stored. */
     putZoneOverrides: (overrides: ZoneOverrides) => putJson<ZoneOverrides>(`${base}/zones`, overrides),
+    /** The last community assignment (`.flowlens/zone-state.json`); a daemon without the route means "none". */
+    fetchZoneState: async (): Promise<ZoneState> => {
+      try {
+        return await get<ZoneState>('/zones/state');
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return EMPTY_ZONE_STATE;
+        throw err;
+      }
+    },
+    putZoneState: (state: ZoneState) => putJson<ZoneState>(`${base}/zones/state`, state),
     /** Runtime cycles; `includeTypeOnly` also counts type-only imports/annotations. */
     fetchCycles: (includeTypeOnly = false) =>
       get<DetectedCycle[]>(includeTypeOnly ? '/cycles?include_type_only=1' : '/cycles'),

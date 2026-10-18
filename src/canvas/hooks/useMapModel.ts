@@ -9,6 +9,7 @@ import { useEffect, useMemo } from 'react';
 import type { Edge, Node } from '@xyflow/react';
 import type { CanvasEdgeData, MapView, ZoneViewOptions } from '../../contracts/canvas/index.js';
 import { useCanvasStore, useCanvasStoreApi } from '../store/canvas-store';
+import { buildFileGraph } from '../../analysis/zones/index.js';
 import { computeMapView } from '../utils/map-view';
 import { buildAnnotationMap, buildViewNodes, NODE_SIZES } from '../utils/node-transformer';
 import { buildViewEdges } from '../utils/edge-transformer';
@@ -40,9 +41,18 @@ export function useMapModel(graph: Graph): MapModel {
   const focusNodeId = useCanvasStore((s) => s.focusRequest?.nodeId ?? null);
   const { hierarchy, relations, relationById, index, annotations, version } = graph;
 
+  // Communities: the file graph is built once per graph; the previous assignment warm-starts the search.
+  const communities = groupBy === 'communities';
+  const assignmentLoaded = useCanvasStore((s) => s.communityAssignment !== null);
+  const fileGraph = useMemo(() => (communities ? buildFileGraph(hierarchy, relations) : undefined), [communities, hierarchy, relations]);
   const zones = useMemo<ZoneViewOptions>(
-    () => ({ mode: groupBy, overrides, expansion, revealRefs: focusNodeId ? [focusNodeId] : [] }),
-    [groupBy, overrides, expansion, focusNodeId],
+    () => ({
+      mode: groupBy, overrides, expansion, revealRefs: focusNodeId ? [focusNodeId] : [],
+      ...(communities ? { fileGraph, previousAssignment: store.getState().communityAssignment ?? undefined } : {}),
+    }),
+    // `assignmentLoaded` re-runs the search once when the saved assignment arrives; later saves must not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groupBy, overrides, expansion, focusNodeId, communities, fileGraph, assignmentLoaded],
   );
   const view = useMemo(() => computeMapView(hierarchy, relations, drillPath, { showLockfiles, zones }), [hierarchy, relations, drillPath, showLockfiles, zones]);
   const annMap = useMemo(() => buildAnnotationMap(annotations), [annotations]);

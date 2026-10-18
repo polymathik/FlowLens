@@ -13,7 +13,7 @@
  */
 import type { RelationType } from '../relations.js';
 import type { HierarchyKind } from '../hierarchy.js';
-import type { ZoneOverrides, ZoneSet, ZoningMode } from '../zones.js';
+import type { ZoneOverrides, ZoneSet, ZoningFileGraph, ZoningMode } from '../zones.js';
 import type { MapCut } from './zones-view.js';
 
 export type TypeCounts = Partial<Record<RelationType, number>>;
@@ -107,4 +107,8 @@ export interface ZoneViewOptions {
   revealRefs?: string[];
   /** Mounted-node budget (default `ZONE_LAYOUT.nodeBudget`). */
   nodeBudget?: number;
+  /** Weighted file graph for `communities` (built once per graph by `buildFileGraph`). */
+  fileGraph?: ZoningFileGraph;
+  /** Last community assignment (file path → community key) for stable re-zoning. */
+  previousAssignment?: Record<string, string>;
 }
