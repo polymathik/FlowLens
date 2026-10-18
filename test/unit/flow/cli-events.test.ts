@@ -98,3 +98,24 @@ describe('manifest, main, UI and event entry points', () => {
     expect(eps.map((e) => `${e.kind}|${e.label}`)).toEqual(['test|test: a.test.ts']);
   });
 });
+
+describe('commander groups via addCommand(new Command(...))', () => {
+  it('prefixes sub-commands added inline to a group variable, nested through several groups', () => {
+    const text = [
+      "import { Command } from 'commander';",
+      "export const agentCommand = new Command('agent');",
+      "agentCommand.addCommand(new Command('context')",
+      '  .action(() => runContext()));',
+      "const installCommand = new Command('install');",
+      "installCommand.addCommand(new Command('claude-code')",
+      '  .action(() => runInstall()));',
+      'agentCommand.addCommand(installCommand);',
+      'function runContext() {}',
+      'function runInstall() {}',
+      '',
+    ].join('\n');
+    const b = buildGraph({ 'src/agent.ts': { text, symbols: [{ qn: 'runContext', line: 9 }, { qn: 'runInstall', line: 10 }] } });
+    const labels = detectEntryPoints(b.graph, b.source).filter((e) => e.kind === 'cli_command').map((e) => e.label).sort();
+    expect(labels).toEqual(['cli: agent context', 'cli: agent install claude-code']);
+  });
+});

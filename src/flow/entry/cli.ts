@@ -58,7 +58,15 @@ function commanderActions(src: SourceFile): ChainAction[] {
     if (close < 0) continue;
     const first = splitArgs(text, open, close)[0];
     const startName = first ? cleanName(stringLiteral(text.slice(first.start, first.end))) : '';
-    const bound = m[0].startsWith('new') ? declaredVar(text, m.index as number) : null;
+    let bound = m[0].startsWith('new') ? declaredVar(text, m.index as number) : null;
+    if (m[0].startsWith('new') && !bound) {
+      // `group.addCommand(new Command('sub')…)`: the sub-command is anonymous, its parent is the receiver
+      const receiver = text.slice(Math.max(0, (m.index as number) - 80), m.index as number).match(/([A-Za-z_$][\w$]*)\s*\.\s*addCommand\s*\(\s*$/)?.[1];
+      if (receiver) {
+        bound = `#inline:${m.index}`;
+        parentVar.set(bound, receiver);
+      }
+    }
     if (bound && startName) groups.set(bound, startName);
     let current = startName;
     walkChain(text, close + 1, (ident, o, end) => {
