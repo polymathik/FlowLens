@@ -116,21 +116,27 @@ indexes the project on first use if needed. Tools: `get_context`,
 **Hooks (optional).**
 
 ```bash
-npx flowlens agent install claude-code     # writes .claude/settings.json
-npx flowlens agent uninstall claude-code   # removes only FlowLens's entries
+npx flowlens agent install claude-code            # writes .claude/settings.local.json (personal)
+npx flowlens agent install claude-code --shared   # writes .claude/settings.json (team)
+npx flowlens agent uninstall claude-code          # removes only FlowLens's entries, from both files
 ```
 
 This adds three project hooks: `SessionStart` and `UserPromptSubmit` inject
-a compact map of the code relevant to the prompt; `PostToolUse` re-indexes
-edited files and reports new cycles or rule breaks (`--strict`: new ones
-block). The existing settings file is backed up first
-(`.claude/settings.json.flowlens-backup-*`).
+a compact map of the code relevant to the prompt (plus a one-line health
+headline); `PostToolUse` re-indexes edited files and reports new cycles or
+rule breaks (`--strict`: new ones block). Any settings file FlowLens changes
+is backed up first (`*.flowlens-backup-*`).
 
-> **Do not commit the installed hooks as-is.** The hook commands contain an
-> absolute path to this machine's FlowLens install, so they will not work on
-> other machines. Keep `.claude/settings.json` out of git, or pass a portable
-> command with `--command "npx flowlens"` once FlowLens is a dependency of the
-> project.
+`flowlens agent install claude-code` writes your personal
+`.claude/settings.local.json` (Claude Code applies it over
+`.claude/settings.json`; FlowLens adds it to `.git/info/exclude`), because the
+default hook command contains the absolute path of your FlowLens install —
+don't commit it. To share hooks with your team, add FlowLens as a
+devDependency (`npm install -D flowlens`) and run
+`flowlens agent install claude-code --shared`: the committed
+`.claude/settings.json` then uses `npx --no-install flowlens …`, which works on
+every machine. Re-running install refreshes the hooks after you move FlowLens;
+`flowlens agent uninstall claude-code` removes them from both files.
 
 ## The daemon
 
@@ -142,9 +148,11 @@ starts it automatically; it exits after an hour without use.
 - Listens on `127.0.0.1` only, port **4280** by default (set
   `FLOWLENS_DAEMON_PORT` to choose another; if the port is busy it picks a
   free one). Every request needs a random token or a browser session.
-- `flowlens daemon status` shows whether it runs and which project graphs
-  are open; `flowlens daemon stop` stops it; `flowlens daemon start` starts
-  it in the background.
+- `flowlens daemon status` lists running daemons (one per installed FlowLens
+  version, so different versions never stop each other) and which project
+  graphs are open; `flowlens daemon stop` stops this version's daemon
+  (`--all` also stops idle daemons from other versions); `flowlens daemon
+  start` starts it in the background.
 - `--no-daemon` (or `FLOWLENS_NO_DAEMON=1`) makes a command open the
   database directly, for CI or scripts. Only one such process can use a
   project at a time.
@@ -204,10 +212,13 @@ with same-file links only):
   - `.flowlens/` in each project: the graph, manifest, snapshots,
     architecture rules, caches. Add it to `.gitignore`.
   - `~/.flowlens/` (or `$FLOWLENS_HOME`): `projects.json` (the registry of
-    project paths), `daemon.json` (port, pid and token, mode 0600) and
-    `daemon.log`.
-  - Only if you install hooks: `.claude/settings.json` in the project, plus
-    a `.claude/settings.json.flowlens-backup-*` copy of the previous file.
+    project paths), `daemon-p<key>.json` per FlowLens version (port, pid
+    and token, mode 0600), its log, and short-lived 0600 browser sign-in
+    files under `run/`.
+  - Only if you install hooks: `.claude/settings.local.json` (or
+    `.claude/settings.json` with `--shared`), plus a
+    `*.flowlens-backup-*` copy of the previous file, and an entry in
+    `.git/info/exclude`.
 
 ## Troubleshooting
 
