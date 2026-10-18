@@ -18,6 +18,7 @@ import {
 } from '../../agent/options.js';
 import { DEFAULT_BUDGET_CHARS } from '../../agent/hook-output.js';
 
+const NO_DAEMON_HELP = 'Open the graph directly instead of via the FlowLens daemon (may then report "busy")';
 const ROOT_HELP = 'Project root (hooks pass "$CLAUDE_PROJECT_DIR"); defaults to hook cwd, then the current directory';
 
 export const agentCommand = new Command('agent')
@@ -34,6 +35,7 @@ agentCommand.addCommand(new Command('context')
   .option('--root <dir>', ROOT_HELP)
   .option('--hook', 'Read Claude Code hook JSON from stdin and print hook JSON')
   .option('--git', 'Use git changed files when --changed is not provided')
+  .option('--no-daemon', NO_DAEMON_HELP)
   .action((opts) => execute(async () => {
     const event = parseEvent(opts.event);
     const format = parseFormat(opts.format);
@@ -57,6 +59,7 @@ agentCommand.addCommand(new Command('context')
       hook: Boolean(opts.hook),
       hookEventName: hookInput.hook_event_name,
       budget,
+      daemon: opts.daemon,
     });
   })));
 
@@ -72,6 +75,7 @@ agentCommand.addCommand(new Command('guard')
   .option('--git', 'Use git changed files when hook/argument input is empty')
   .option('--reindex', 'Incrementally re-index changed files before guard analysis')
   .option('--strict', 'Block on NEW cycles/violations (exit 2, or decision:block in hook mode)')
+  .option('--no-daemon', NO_DAEMON_HELP)
   .action((opts) => execute(async () => {
     const format = parseFormat(opts.format);
     const maxItems = parseMaxItems(opts.maxItems);
@@ -90,6 +94,7 @@ agentCommand.addCommand(new Command('guard')
       format,
       minRisk,
       budget,
+      daemon: opts.daemon,
     });
   })));
 
@@ -98,10 +103,12 @@ agentCommand.addCommand(new Command('baseline')
   .option('--reset', 'Re-capture the baseline for the current git HEAD from the current graph')
   .option('--format <format>', 'Output format: markdown, json', 'markdown')
   .option('--root <dir>', ROOT_HELP)
+  .option('--no-daemon', NO_DAEMON_HELP)
   .action((opts) => execute(async () => runAgentBaseline({
     rootDir: resolveAgentRoot(opts.root, {}),
     reset: Boolean(opts.reset),
     format: parseFormat(opts.format),
+    daemon: opts.daemon,
   }))));
 
 const installCommand = new Command('install').description('Install agent integrations');

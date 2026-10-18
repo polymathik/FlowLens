@@ -23,6 +23,7 @@ import { registerGetSummary } from './tools/get-summary.js';
 import { registerGetHotspots } from './tools/get-hotspots.js';
 import { registerGetLayerMap } from './tools/get-layer-map.js';
 import { registerAgentPrompts, registerAgentResources } from './agent-resources.js';
+import { registerHealthResource } from './health-resource.js';
 
 export interface ServerDependencies {
   graph: GraphStore;
@@ -64,6 +65,9 @@ export function createFlowLensServer(deps: ServerDependencies): McpServer {
   // Phase 7: agent-native MCP resources and prompts
   registerAgentResources(server, deps);
   registerAgentPrompts(server, deps);
+
+  // Wave 2: Phase 11 health report as a resource
+  registerHealthResource(server, deps);
 
   return server;
 }

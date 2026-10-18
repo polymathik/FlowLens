@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LevelGraphStore } from '../../../src/graph/levelgraph-store.js';
 import type { ClaudeHookOutput, ClaudeSettings } from '../../../src/contracts/agent.js';
-import { git, runCli, runHookCommand, TSX_CLI_COMMAND } from './helpers.js';
+import { git, runCli, runHookCommand, stopTestDaemon, TSX_CLI_COMMAND } from './helpers.js';
 
 const E2E_TIMEOUT = 180000;
 
@@ -54,6 +54,7 @@ describe('agent hooks end to end', () => {
   }, E2E_TIMEOUT);
 
   afterAll(async () => {
+    stopTestDaemon();
     await rm(proj, { recursive: true, force: true });
     await rm(elsewhere, { recursive: true, force: true });
   });
@@ -109,7 +110,10 @@ describe('agent hooks end to end', () => {
     expect(run.stdout.trim()).toBe('');
   }, E2E_TIMEOUT);
 
-  it('says so explicitly when another process holds the graph lock', async () => {
+  it('says so explicitly when a process outside the daemon holds the graph lock', async () => {
+    // Make the daemon release its handle, then hold LevelDB in this process
+    // (what a `--no-daemon` command or an older FlowLens would do).
+    runCli(['daemon', 'stop'], { cwd: proj });
     const holder = new LevelGraphStore();
     await holder.open(join(proj, '.flowlens/graph'));
     try {

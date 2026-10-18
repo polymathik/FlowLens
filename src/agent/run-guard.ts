@@ -2,31 +2,40 @@
  * `flowlens agent guard` orchestration (CLI-independent, returns output).
  *
  * 1. Resolve changed files (argument → filtered hook input → filtered git fallback).
- * 2. Read the digest cache BEFORE opening the graph (fast path, see guard-graph.ts).
- * 3. Open the graph via openAgentGraph only when re-indexing or when no fresh
- *    digest exists (busy → explicit warning, never a silent pass).
- * 4. If no baseline exists for HEAD, capture it BEFORE re-indexing.
- * 5. Re-index, analyse once, attribute issues against the baseline.
- * 6. Persist the refreshed digest so the next hook stays on the fast path.
+ * 2. Read the digest cache BEFORE touching the graph (fast path, see guard-graph.ts).
+ * 3. Open the graph via openAgentGraph (the FlowLens daemon by default, so this
+ *    works while `serve --watch` runs) only when re-indexing or when no fresh
+ *    digest exists. Busy/failed → explicit warning, never a silent pass.
+ * 4. If no baseline exists for HEAD, capture it from a pre-edit source BEFORE
+ *    re-indexing (baseline-capture.ts).
+ * 5. Re-index through the same store (RemoteGraphStore writes via the daemon),
+ *    stamp the revision, analyse once, attribute issues against the baseline.
+ * 6. Persist the refreshed digest (with the re-indexed files "accounted") so
+ *    the next hook stays on the fast path even after the watcher re-applies
+ *    the same edit.
  */
 import type {
   AgentBaseline,
   AgentCommandResult,
+  AgentGraphUnavailable,
   AgentGuardReport,
   AgentOutputFormat,
   AgentRisk,
   ClaudeHookInput,
 } from '../contracts/agent.js';
 import type { GraphStore } from '../contracts/graph.js';
-import { loadBaseline, makeBaseline, saveBaseline } from './baseline.js';
+import { loadBaseline } from './baseline.js';
+import { ensureGuardBaseline } from './baseline-capture.js';
 import { getGitHead, resolveChangedFiles, type ResolvedChangedFiles } from './changed-files.js';
 import { computeGraphDigest, computeGraphIssues, type AgentGraphDigest, type IssueScope } from './digest.js';
-import { readFreshDigest, writeDigest } from './digest-cache.js';
+import { captureStamp, readDigest, readFreshDigest, writeDigest, type GraphStamp } from './digest-cache.js';
+import { accountFiles } from './digest-revalidate.js';
 import { buildChangedFileFilter } from './file-filter.js';
 import { formatGuardMarkdown } from './format.js';
 import { buildAgentGuardReport, shouldBlock } from './guard.js';
 import { changedFilesScope, graphFromDigest, patchChangedFiles } from './guard-graph.js';
-import { flowlensDirFor, openAgentGraph } from './graph-access.js';
+import { describeGraphFailure, flowlensDirFor, openAgentGraph } from './graph-access.js';
+import { computeHealthHeadline } from './health-headline.js';
 import { changedFilesFromHook } from './hook-input.js';
 import { blockOutput, contextOutput } from './hook-output.js';
 import { riskAtLeast } from './options.js';
@@ -45,6 +54,8 @@ export interface RunGuardOptions {
   /** Hook mode: minimum risk that produces additionalContext output. */
   minRisk: AgentRisk;
   budget?: number;
+  /** `false` = `--no-daemon`. */
+  daemon?: boolean;
 }
 
 export async function runAgentGuard(options: RunGuardOptions): Promise<AgentCommandResult> {
@@ -71,15 +82,19 @@ export async function runAgentGuard(options: RunGuardOptions): Promise<AgentComm
     return render(options, await analyse(graphFromDigest(digest), flowlensDir, options, changed, baseline));
   }
 
-  const handle = await openAgentGraph(rootDir);
-  if (!handle.ok) return unavailable(options, handle.message, handle.reason === 'busy');
+  const handle = await openAgentGraph(rootDir, { daemon: options.daemon });
+  if (!handle.ok) return unavailable(options, handle);
   let report: AgentGuardReport;
-  let refreshed: AgentGraphDigest | undefined;
+  let refreshed: AgentGraphDigest;
+  let stamp: GraphStamp | null;
   try {
-    const baseline = await ensureBaseline(flowlensDir, head, digest, handle.graph, reindex);
+    const baseline = await ensureGuardBaseline({
+      rootDir, flowlensDir, head, digest: digest ?? await readDigest(flowlensDir), graph: handle.graph, changedFiles: changed.files,
+    }, reindex);
     const reindexSummary = reindex
       ? await reindexAgentChangedFiles(rootDir, handle.graph, changed.files)
       : undefined;
+    stamp = captureStamp(flowlensDir); // after our writes, before our reads
     let view: GraphStore = handle.graph;
     let scope: IssueScope = {};
     if (digest) {
@@ -91,10 +106,14 @@ export async function runAgentGuard(options: RunGuardOptions): Promise<AgentComm
     const issues = await computeGraphIssues(view, flowlensDir, scope);
     report = await analyse(view, flowlensDir, options, changed, baseline, reindexSummary, issues);
     refreshed = await computeGraphDigest(view, flowlensDir, issues);
+    refreshed.health = digest ? digest.health ?? null : await computeHealthHeadline(rootDir, handle.graph);
+    refreshed.accounted = accountFiles(rootDir, digest?.accounted, changed.files, stamp?.read_at ?? Date.now());
+  } catch (err) {
+    return unavailable(options, describeGraphFailure(err, { daemon: options.daemon }));
   } finally {
-    await handle.close();
+    await handle.close().catch(() => undefined);
   }
-  if (refreshed) await writeDigest(flowlensDir, refreshed);
+  await writeDigest(flowlensDir, refreshed, stamp);
   return render(options, report);
 }
 
@@ -117,31 +136,6 @@ async function analyse(
   }, { flowlensDir, issues });
 }
 
-/** Baseline for HEAD; if missing and we are about to re-index, capture it first. */
-async function ensureBaseline(
-  flowlensDir: string,
-  head: string | null,
-  digest: AgentGraphDigest | null,
-  graph: GraphStore,
-  capture: boolean,
-): Promise<AgentBaseline | null> {
-  const existing = await loadBaseline(flowlensDir, head);
-  if (existing || !capture) return existing;
-  const keys = digest
-    ? { cycles: digest.cycle_keys, violations: digest.violation_ids }
-    : await computeGraphIssues(graph, flowlensDir).then((issues) => ({
-      cycles: issues.cycles.map((cycle) => cycle.entities),
-      violations: issues.violations.map((violation) => violation.id),
-    }));
-  const baseline = makeBaseline(head, 'guard', keys.cycles, keys.violations);
-  try {
-    await saveBaseline(flowlensDir, baseline);
-  } catch {
-    // still use it for this run
-  }
-  return baseline;
-}
-
 function render(options: RunGuardOptions, report: AgentGuardReport): AgentCommandResult {
   const markdown = formatGuardMarkdown(report);
   const block = options.strict && shouldBlock(report);
@@ -158,17 +152,18 @@ function render(options: RunGuardOptions, report: AgentGuardReport): AgentComman
   return ok(stdout);
 }
 
-function unavailable(options: RunGuardOptions, message: string, busy: boolean): AgentCommandResult {
-  const guardMessage = `${message} The FlowLens guard did NOT check this edit.`;
+function unavailable(options: RunGuardOptions, failure: AgentGraphUnavailable): AgentCommandResult {
+  const guardMessage = `${failure.message} The FlowLens guard did NOT check this edit.`;
   if (options.hook) {
-    const systemMessage = options.strict && busy
-      ? 'FlowLens strict guard skipped: the graph is locked by another FlowLens process.'
+    // Strict mode must never look like a clean pass: tell the user, not only the agent.
+    const systemMessage = options.strict
+      ? `FlowLens strict guard skipped: ${failure.reason === 'busy' ? 'the graph is locked by another process' : 'the graph could not be read'}.`
       : undefined;
     return ok(JSON.stringify(contextOutput('PostToolUse', guardMessage, { budget: options.budget, systemMessage })));
   }
   const exit_code = options.strict ? 1 : 0;
   if (options.format === 'json') {
-    return { exit_code, stdout: JSON.stringify({ available: false, checked: false, message: guardMessage }, null, 2), stderr: '' };
+    return { exit_code, stdout: JSON.stringify({ available: false, checked: false, reason: failure.reason, message: guardMessage }, null, 2), stderr: '' };
   }
   return { exit_code, stdout: '', stderr: guardMessage };
 }

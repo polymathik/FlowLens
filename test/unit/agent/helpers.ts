@@ -1,4 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Entity, EntityKind } from '../../../src/contracts/entities.js';
 import type { Relation } from '../../../src/contracts/relations.js';
@@ -11,12 +13,30 @@ const CLI = join(REPO_ROOT, 'src', 'cli', 'index.ts');
 /** Base command for hooks/E2E: runs the TypeScript CLI through tsx (no build needed). */
 export const TSX_CLI_COMMAND = `node "${TSX}" "${CLI}"`;
 
+/**
+ * Isolated $FLOWLENS_HOME per test file, so CLI runs auto-start their own
+ * FlowLens daemon instead of using (or leaving behind) the developer's.
+ * Call `stopTestDaemon()` in afterAll.
+ */
+let testHome: string | null = null;
+export function testEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  testHome ??= mkdtempSync(join(tmpdir(), 'flowlens-agent-home-'));
+  return { ...process.env, FLOWLENS_HOME: testHome, ...extra };
+}
+
+export function stopTestDaemon(): void {
+  if (!testHome) return;
+  spawnSync(process.execPath, [TSX, CLI, 'daemon', 'stop'], { env: testEnv(), encoding: 'utf-8', timeout: 30000 });
+  rmSync(testHome, { recursive: true, force: true });
+  testHome = null;
+}
+
 export function runCli(args: string[], options: { cwd: string; input?: string; env?: NodeJS.ProcessEnv }) {
   const result = spawnSync(process.execPath, [TSX, CLI, ...args], {
     cwd: options.cwd,
     input: options.input ?? '',
     encoding: 'utf-8',
-    env: { ...process.env, ...options.env },
+    env: testEnv(options.env),
     timeout: 60000,
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -28,7 +48,7 @@ export function runHookCommand(command: string, input: object, env: NodeJS.Proce
     cwd,
     input: JSON.stringify(input),
     encoding: 'utf-8',
-    env: { ...process.env, ...env },
+    env: testEnv(env),
     timeout: 60000,
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
