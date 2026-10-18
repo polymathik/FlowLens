@@ -36,9 +36,12 @@ describe('self-index', () => {
     const imports = fx.edges.filter((e) => e.from === indexer.id && e.type === 'import')
       .map((e) => fx.byId.get(e.to)?.qualified_name);
     expect(imports).toEqual(expect.arrayContaining(['src/indexer/pass2.ts', 'src/quality/graph-quality.ts']));
-    const runIndex = byQn.get('src/indexer/indexer.ts/runIndex')!;
-    const calls = fx.edges.filter((e) => e.from === runIndex.id && e.type === 'call')
+    // Phase 12: runIndex takes the index lock and delegates to runIndexLocked.
+    const callsOf = (qn: string) => fx.edges.filter((e) => e.from === byQn.get(qn)!.id && e.type === 'call')
       .map((e) => fx.byId.get(e.to)?.qualified_name);
-    expect(calls).toContain('src/indexer/pass2.ts/runPass2');
+    expect(callsOf('src/indexer/indexer.ts/runIndex')).toEqual(expect.arrayContaining([
+      'src/indexer/index-lock.ts/withIndexLock', 'src/indexer/indexer.ts/runIndexLocked',
+    ]));
+    expect(callsOf('src/indexer/indexer.ts/runIndexLocked')).toContain('src/indexer/pass2.ts/runPass2');
   }, 180_000);
 });
