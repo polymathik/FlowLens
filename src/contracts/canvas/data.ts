@@ -7,78 +7,108 @@
  * Transformers in `src/canvas/utils/node-transformer.ts` and
  * `src/canvas/utils/edge-transformer.ts` produce values satisfying
  * these types. Custom node components consume the discriminated
- * `CanvasNodeData` variants by switching on node `type`.
+ * `CanvasNodeData` variants by switching on `level`.
+ *
+ * Phase 10 (Lane C3) revised this contract to the shape the canvas really
+ * renders (it had drifted: components used `label`, the contract `name`).
+ * Breaking only for canvas-internal code — nothing outside `src/canvas/`
+ * imports these types.
  */
-import type { Entity, EntityMetrics } from '../entities.js';
-import type { Relation, RelationType } from '../relations.js';
+import type { EntityKind, Visibility } from '../entities.js';
+import type { RelationType, Relation } from '../relations.js';
 
 /** React Flow node type identifiers — discriminator for the data union. */
 export type CanvasNodeType =
-  | 'system'   // top-level directory (e.g. src, test)
-  | 'module'   // subdirectory within a system (e.g. src/parser)
+  | 'system'   // top-level directory (e.g. src, test) or a root-level file
+  | 'module'   // second-level directory within a system (e.g. src/parser)
   | 'file'     // individual source file
-  | 'entity';  // class / function / interface / method
+  | 'entity';  // class / function / interface / method ("symbol" in UI text)
+
+/**
+ * Visual overlay decoration computed by the overlay manager and rendered by
+ * node components (never by mutating the React Flow wrapper style, whose
+ * `transform` positions the node).
+ */
+export interface NodeOverlayStyle {
+  /** Background tint. */
+  fill?: string;
+  /** Border colour. */
+  stroke?: string;
+  strokeStyle?: 'solid' | 'dashed';
+  strokeWidth?: number;
+  /** Visual scale of the node body (hotspot overlay). */
+  scale?: number;
+  /** Short badge text (e.g. "cycle", "2 rule breaks"). */
+  badge?: string;
+  /** Stable marker used by tests and styling: overlay id that produced this. */
+  tag: string;
+  /** True when the overlay has nothing to say about this node (rendered subdued). */
+  muted?: boolean;
+}
+
+/** Fields shared by all node levels. */
+interface CanvasNodeBase {
+  label: string;
+  qualityScore?: number;
+  /** Git churn (changes/day), max over contained symbols. */
+  churnRate?: number;
+  /** churn × cognitive complexity, max over contained symbols. */
+  hotspotScore?: number;
+  overlay?: NodeOverlayStyle;
+  /** Index signature required by React Flow's `Node<Data>` constraint. */
+  [key: string]: unknown;
+}
 
 /** Data payload for a system-level node (top-level directory). */
-export interface SystemNodeData {
-  kind: 'system';
-  name: string;
+export interface SystemNodeData extends CanvasNodeBase {
+  level: 'system';
+  /** Directory (or root file) path. */
   path: string;
   entityCount: number;
-  qualityScore?: number;
-  /** For drill-down filtering — set on child nodes, not on system nodes. */
-  parentSystem?: undefined;
 }
 
 /** Data payload for a module-level node (subdirectory). */
-export interface ModuleNodeData {
-  kind: 'module';
-  name: string;
+export interface ModuleNodeData extends CanvasNodeBase {
+  level: 'module';
   path: string;
   entityCount: number;
-  qualityScore?: number;
   /** Parent system id (e.g. "system:src"). */
   parentSystem: string;
 }
 
 /** Data payload for a file-level node. */
-export interface FileNodeData {
-  kind: 'file';
-  name: string;
-  path: string;
+export interface FileNodeData extends CanvasNodeBase {
+  level: 'file';
+  filePath: string;
   entityCount: number;
-  qualityScore?: number;
-  /** Parent system id. */
   parentSystem: string;
   /** Parent module id (e.g. "module:src/parser"). Undefined for files at the system root. */
   parentModule?: string;
 }
 
 /** Data payload for an entity-level node (class, function, etc.). */
-export interface EntityNodeData {
-  kind: 'entity';
-  entity: Entity;
-  metrics?: EntityMetrics;
+export interface EntityNodeData extends CanvasNodeBase {
+  level: 'entity';
+  entityKind: EntityKind;
+  visibility: Visibility;
+  filePath: string;
+  cognitiveComplexity?: number;
   annotations?: CanvasAnnotation[];
   /** Parent file id (e.g. "file:src/parser/ast.ts"). */
   parentFile: string;
-  /** Parent system id (for breadcrumb context). */
   parentSystem: string;
-  /** Optional architecture layer label for overlay display. */
-  layer?: string;
+  parentModule?: string;
 }
 
 /** Minimal annotation shape used on the canvas. Mirrors backend annotation record. */
 export interface CanvasAnnotation {
-  id?: string;
-  entity_id?: string;
+  id: string;
   text: string;
-  author?: string;
-  category?: 'convention' | 'decision' | 'warning' | 'todo';
-  created_at?: string;
+  author: string;
+  category: string;
 }
 
-/** Discriminated union of all node-data shapes, keyed by `kind`. */
+/** Discriminated union of all node-data shapes, keyed by `level`. */
 export type CanvasNodeData =
   | SystemNodeData
   | ModuleNodeData
@@ -100,24 +130,25 @@ export interface CanvasNode {
 }
 
 /**
- * Edge data payload. An edge is either an entity-level edge (one underlying
- * Relation) or an aggregated edge collapsing multiple relations between
- * two parent nodes.
+ * Edge data payload. An edge is either an entity-level edge (exactly one
+ * underlying Relation between two visible symbols) or an aggregated edge
+ * collapsing several relations between two visible nodes. Both carry the
+ * full `types` list so relation filters can check every aggregated type.
  */
-export type CanvasEdgeData =
-  | {
-      kind: 'entity-edge';
-      relation: Relation;
-      is_violation?: boolean;
-      is_cycle?: boolean;
-    }
-  | {
-      kind: 'aggregated-edge';
-      types: RelationType[];
-      count: number;
-      is_violation?: boolean;
-      is_cycle?: boolean;
-    };
+export interface CanvasEdgeData {
+  kind: 'entity-edge' | 'aggregated-edge';
+  /** Every relation type collapsed into this edge, most frequent first. */
+  types: RelationType[];
+  /** Most frequent type — drives colour and arrow marker. */
+  dominantType: RelationType;
+  count: number;
+  /** Present on entity-level edges only. */
+  relation?: Relation;
+  is_violation?: boolean;
+  is_cycle?: boolean;
+  /** Index signature required by React Flow's `Edge<Data>` constraint. */
+  [key: string]: unknown;
+}
 
 /** React Flow-compatible canvas edge. */
 export interface CanvasEdge {
@@ -130,5 +161,6 @@ export interface CanvasEdge {
   animated?: boolean;
   style?: Record<string, string | number>;
   label?: string;
-  markerEnd?: string;
+  /** URL reference or a React Flow marker object ({ type: 'arrowclosed', color }). */
+  markerEnd?: string | { type: string; color?: string; width?: number; height?: number };
 }
