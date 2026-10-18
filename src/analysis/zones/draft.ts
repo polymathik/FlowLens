@@ -19,6 +19,12 @@ export interface ZoneDraft {
   nodeId?: string;
   /** Deeper folders were merged into this zone (depth cap): it starts collapsed. */
   absorbed?: boolean;
+  /** Display position among siblings (declaration order of layers); zones without one sort after, by label. */
+  order?: number;
+  /** Starts collapsed (the muted Unassigned bucket); an override still wins. */
+  startCollapsed?: boolean;
+  /** Tooltip text for the zone chip. */
+  detail?: string;
 }
 
 /** Insertion-ordered collection of drafts keyed by `ZoneDraft.key`. */

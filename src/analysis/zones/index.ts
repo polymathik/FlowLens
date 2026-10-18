@@ -11,3 +11,7 @@ export { finalizeZones, compareZones, type FinalizeInput } from './finalize.js';
 export type { ZoneDraft } from './draft.js';
 export { zoneId, hashKey, compareText } from './keys.js';
 export { assignColors } from './colors.js';
+
+// Built-in strategies that live in their own module register themselves on import.
+import './layers.js';
+export { layerRulesText } from './layers.js';

@@ -11,6 +11,9 @@ export interface WorkZone {
   nodeId?: string;
   absorbed: boolean;
   customized: boolean;
+  order?: number;
+  startCollapsed?: boolean;
+  detail?: string;
   /** Forced by an override. */
   color?: number;
   collapsed?: boolean;
@@ -24,6 +27,7 @@ export function toWork(drafts: ZoneDraft[]): WorkMap {
     map.set(d.key, {
       key: d.key, label: d.label, source: d.source, parentKey: d.parentKey, fileIds: [...d.fileIds],
       nodeId: d.nodeId, absorbed: d.absorbed === true, customized: false,
+      order: d.order, startCollapsed: d.startCollapsed, detail: d.detail,
     });
   }
   for (const z of map.values()) if (z.parentKey !== null && !map.has(z.parentKey)) z.parentKey = null;
