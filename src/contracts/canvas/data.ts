@@ -121,6 +121,12 @@ export interface FileNodeData extends CanvasNodeBase {
   rich?: boolean;
   /** Zone frame the card sits in (absent for loose cards). */
   zoneId?: string;
+  /** Layers view: architecture rules broken by this file's own relations. */
+  ruleBreaks?: number;
+  /** Focus mode: this card is (part of) the focus. */
+  focus?: boolean;
+  /** Focus mode: relations of the card that lead outside the neighbourhood (beyond the depth). */
+  beyond?: number;
 }
 
 /**
@@ -145,6 +151,12 @@ export interface ZoneNodeData extends CanvasNodeBase {
   customized?: boolean;
   /** Share (0..1) of the dependency weight of the zone's files that stays inside it (communities). */
   cohesion?: number;
+  /** Producer's tooltip text (a layer's access rules). */
+  detail?: string;
+  /** Layers view: rule breaks that start in this zone (recursive). */
+  ruleBreaks?: number;
+  /** Focus mode: the "+N more" stand-in for neighbours cut by the node cap, or the collapsed focus container. */
+  focusRole?: 'more' | 'focus';
 }
 
 /** Data payload for an entity-level node (class, function, etc.). */
@@ -239,15 +251,27 @@ export interface CanvasEdgeData {
    * Map v2 M2 edge layer: `sibling` — between two cards (or collapsed zones)
    * under the same frame; `bundle` — frame-level aggregate between zones;
    * `detail` — card-to-card edge across frames, dimmed until hovered/selected;
-   * `portal` — stub link.
+   * `portal` — stub link; `focus` — Focus mode: every link of the neighbourhood, drawn at full strength.
    */
-  layer?: 'sibling' | 'bundle' | 'detail' | 'portal';
+  layer?: 'sibling' | 'bundle' | 'detail' | 'portal' | 'focus';
   /** Touches the hovered / selected node (drawn at full strength while others dim). */
   hot?: boolean;
   /** Present on entity-level edges only. */
   relation?: Relation;
   is_violation?: boolean;
   is_cycle?: boolean;
+  /** Layers view: text of a rule-break edge ("2 rule breaks"), shown on the edge. */
+  breakLabel?: string;
+  /** Layers view: the rule that is broken, for the tooltip and the details panel. */
+  ruleText?: string;
+  /** Layers view: bezier curvature override, so a rule-break edge does not hide the normal edge between the same boxes. */
+  curve?: number;
+  /** Layers view: x (flow coordinates) the edge bulges out to on the right of the stack, so it passes around the layers between. */
+  bulgeX?: number;
+  /** Focus mode: relation ids behind the edge that lie on a path to the hovered card. */
+  onPath?: boolean;
+  /** Focus mode: many edges are drawn, so single-relation edges are labelled only when hovered. */
+  crowded?: boolean;
   /** Index signature required by React Flow's `Edge<Data>` constraint. */
   [key: string]: unknown;
 }

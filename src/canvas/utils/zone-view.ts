@@ -22,10 +22,10 @@ import { getZones } from './zones-adapter';
 type Slot = { t: 'inner'; id: string } | { t: 'hidden' } | { t: 'out'; chain: string[] };
 
 export function computeZoneView(h: Hierarchy, relations: Relation[], containerId: string, options: MapViewOptions, zo: ZoneViewOptions): MapView {
-  const files = visibleFiles(h, containerId, options.showLockfiles);
-  let mode = zo.mode;
-  let zoneSet = getZones({ mode, hierarchy: h, scopeId: containerId, overrides: zo.overrides, fileGraph: zo.fileGraph, previousAssignment: zo.previousAssignment });
-  if (zoneSet.zones.length === 0 && mode !== 'folders') {
+  const files = zo.fixed?.files ?? visibleFiles(h, containerId, options.showLockfiles);
+  let mode = zo.fixed?.zoneSet.mode ?? zo.mode;
+  let zoneSet = zo.fixed?.zoneSet ?? getZones({ mode, hierarchy: h, scopeId: containerId, overrides: zo.overrides, layers: zo.layers, fileGraph: zo.fileGraph, previousAssignment: zo.previousAssignment });
+  if (!zo.fixed && zoneSet.zones.length === 0 && mode !== 'folders') {
     // The requested grouping finds nothing here (e.g. no package boundary inside a package): group by folders.
     const byFolders = getZones({ mode: 'folders', hierarchy: h, scopeId: containerId, overrides: zo.overrides });
     if (byFolders.zones.length > 0) {

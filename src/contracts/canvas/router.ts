@@ -19,8 +19,18 @@
  *
  * `path` links are emitted only by the Map (never by MCP tools), so
  * `CanvasLinkKind` in `canvas-links.ts` is unchanged.
+ *
+ * Map v2 (lane M4) adds Focus mode — the neighbourhood of one node:
+ *
+ *   #/p/<projectId>/map/focus/<id>?depth=2&dir=both&types=import,call
+ *
+ * `<id>` is a hierarchy node id, entity id, file path or zone id, percent-encoded.
+ * `depth` 1..3 (default 2), `dir` in | out | both (default both), `types` a comma list (default: structural types), `lateral=1` also draws links between neighbours.
+ * It is a separate segment, not a target kind: a focus link never changes the drill path.
  */
 import type { CanvasLinkKind, CanvasOverlay } from '../canvas-links.js';
+import type { RelationType } from '../relations.js';
+import type { FocusDirection } from './focus.js';
 
 export type CanvasRouteTargetKind = CanvasLinkKind | 'path';
 
@@ -30,10 +40,21 @@ export interface CanvasRouteTarget {
   identifier: string;
 }
 
+/** Parsed `focus/<id>?…` link. Absent fields mean "the default". */
+export interface CanvasRouteFocus {
+  id: string;
+  depth?: number;
+  dir?: FocusDirection;
+  types?: RelationType[];
+  lateral?: boolean;
+}
+
 export interface CanvasRoute {
   /** Project id from an optional `p/<id>` prefix (wave 2). */
   projectId?: string;
   /** What to navigate to; absent for a bare `#/` or `#/p/<id>`. */
   target?: CanvasRouteTarget;
   overlay?: CanvasOverlay;
+  /** Map v2 M4: Focus mode link (`…/map/focus/<id>`). */
+  focus?: CanvasRouteFocus;
 }

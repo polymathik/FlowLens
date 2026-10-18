@@ -30,6 +30,8 @@ export interface CutLayoutInput {
   extras: Array<{ id: string; w: number; h: number; pin?: 'first' | 'last' }>;
   /** Symbol rows a rich card lists (0 = none). */
   rowsOf: (fileId: string) => number;
+  /** Layers view: stack the top level in the cut's own order, top to bottom, instead of laying it out by links. */
+  stack?: boolean;
 }
 
 const L = ZONE_LAYOUT;
@@ -109,12 +111,26 @@ function topLevelLinks(input: CutLayoutInput): LayoutLink[] {
   return out.sort((x, y) => (x.source + x.target < y.source + y.target ? -1 : 1));
 }
 
+/** Top-level boxes in one column, in the cut's order (layers read top to bottom); portals and extras go below. */
+export function stackTop(out: Map<string, BoxPos>, topIds: string[], extras: CutLayoutInput['extras']): void {
+  let y = 0;
+  const place = (id: string, h: number) => {
+    const b = out.get(id);
+    if (b) out.set(id, { ...b, x: 0, y });
+    y += h + STACK_GAP;
+  };
+  for (const id of topIds) place(id, out.get(id)?.h ?? 0);
+  for (const e of extras) out.set(e.id, { x: 0, y, w: e.w, h: e.h }), (y += e.h + STACK_GAP);
+}
+
+const STACK_GAP = 64;
+
 const cache = new Map<string, Map<string, BoxPos>>();
 const CACHE_LIMIT = 32;
 
 function signature(input: CutLayoutInput, rich: boolean, links: LayoutLink[]): string {
   const parts = input.cut.items.map((i) => `${i.id}|${i.expanded ? 1 : 0}|${i.parentId ?? ''}|${i.kind === 'file' && rich ? input.rowsOf(i.id) : ''}|${i.kind === 'zone' ? i.label.length : ''}`);
-  parts.push(rich ? 'rich' : 'compact');
+  parts.push(rich ? 'rich' : 'compact', input.stack ? 'stack' : 'graph');
   for (const e of input.extras) parts.push(`${e.id}|${e.w}|${e.h}|${e.pin ?? ''}`);
   for (const l of links) parts.push(`${l.source}>${l.target}`);
   let hash = 2166136261;
@@ -145,6 +161,11 @@ export async function layoutCut(input: CutLayoutInput): Promise<Map<string, BoxP
   const connected = ordered.filter((b) => touched.has(b.id));
   const loose = ordered.filter((b) => !touched.has(b.id));
 
+  if (input.stack) {
+    stackTop(out, input.cut.topIds, input.extras);
+    cache.set(key, out);
+    return new Map(out);
+  }
   let belowY = 0;
   let connectedW = 0;
   let pos: Awaited<ReturnType<typeof import('./elk-layout').computeElkPositions>> | null = null;

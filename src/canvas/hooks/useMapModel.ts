@@ -38,6 +38,8 @@ export function useMapModel(graph: Graph): MapModel {
   const groupBy = useCanvasStore((s) => s.groupBy);
   const expansion = useCanvasStore((s) => s.zoneExpansion);
   const overrides = useCanvasStore((s) => s.zoneOverrides);
+  const layers = useCanvasStore((s) => s.architectureLayers);
+  const focus = useCanvasStore((s) => s.focus);
   const focusNodeId = useCanvasStore((s) => s.focusRequest?.nodeId ?? null);
   const { hierarchy, relations, relationById, index, annotations, version } = graph;
 
@@ -47,20 +49,21 @@ export function useMapModel(graph: Graph): MapModel {
   const fileGraph = useMemo(() => (communities ? buildFileGraph(hierarchy, relations) : undefined), [communities, hierarchy, relations]);
   const zones = useMemo<ZoneViewOptions>(
     () => ({
-      mode: groupBy, overrides, expansion, revealRefs: focusNodeId ? [focusNodeId] : [],
+      mode: groupBy, overrides, expansion, revealRefs: focusNodeId ? [focusNodeId] : [], layers: layers ?? undefined,
       ...(communities ? { fileGraph, previousAssignment: store.getState().communityAssignment ?? undefined } : {}),
     }),
     // `assignmentLoaded` re-runs the search once when the saved assignment arrives; later saves must not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groupBy, overrides, expansion, focusNodeId, communities, fileGraph, assignmentLoaded],
+    [groupBy, overrides, expansion, focusNodeId, layers, communities, fileGraph, assignmentLoaded],
   );
-  const view = useMemo(() => computeMapView(hierarchy, relations, drillPath, { showLockfiles, zones }), [hierarchy, relations, drillPath, showLockfiles, zones]);
+  const view = useMemo(() => computeMapView(hierarchy, relations, drillPath, { showLockfiles, zones, focus: focus ?? undefined }), [hierarchy, relations, drillPath, showLockfiles, zones, focus]);
   const annMap = useMemo(() => buildAnnotationMap(annotations), [annotations]);
   const nodes = useMemo(() => buildViewNodes({ hierarchy, entityById: index.entityById, annotations: annMap }, view), [hierarchy, index, annMap, view]);
   const edges = useMemo(() => buildViewEdges(view, relationById), [view, relationById]);
 
   // A reveal (search hit, deep link) opens zones; remember them as the user's choices so they stay open.
   useEffect(() => {
+    if (view.focus) return; // Focus mode opens the frames of its cards for as long as it lasts, without changing the Map's own state
     const revealed = view.cut?.revealed ?? [];
     const missing = revealed.filter((id) => store.getState().zoneExpansion[expansionKey(view.containerId, id)] !== true);
     if (missing.length > 0) store.getState().setZoneExpansion(Object.fromEntries(missing.map((id) => [expansionKey(view.containerId, id), true])));
@@ -69,7 +72,9 @@ export function useMapModel(graph: Graph): MapModel {
   const key = useMemo(() => {
     const cut = view.cut ? view.cut.items.map((i) => `${i.id}${i.expanded ? '+' : '-'}${i.label}`).join('|') : nodes.map((n) => n.id).join('|');
     const portals = view.portals.map((p) => p.id).join(',');
-    return `${version}#${view.containerId}#${showLockfiles ? 'L' : ''}#${view.zoning?.mode ?? ''}#${cut}#${portals}#${view.scopeId ?? ''}`;
+    // Focus mode: the same cards can be linked differently (types, direction), so the links are part of the key.
+    const links = view.focus ? view.links.map((l) => `${l.source}>${l.target}:${l.count}`).join(',') : '';
+    return `${version}#${view.containerId}#${showLockfiles ? 'L' : ''}#${view.zoning?.mode ?? ''}#${cut}#${portals}#${view.scopeId ?? ''}#${links}`;
   }, [view, nodes, showLockfiles, version]);
 
   const layout = useMemo(
@@ -83,7 +88,7 @@ export function useMapModel(graph: Graph): MapModel {
           h: NODE_SIZES[n.type as 'portal' | 'scope'].height,
           pin: n.type === 'portal' ? ((n.data as { direction?: string }).direction === 'out' ? ('last' as const) : ('first' as const)) : undefined,
         }));
-      const boxes = await layoutCut({ cut: view.cut, links: edges, extras, rowsOf: (id) => rowsFor(symbolCountOf(hierarchy, id)) });
+      const boxes = await layoutCut({ cut: view.cut, links: edges, extras, rowsOf: (id) => rowsFor(symbolCountOf(hierarchy, id)), stack: view.zoning?.mode === 'layers' });
       return new Map([...boxes].map(([id, b]) => [id, { x: b.x, y: b.y, w: b.w, h: b.h }]));
     },
     // The model is rebuilt when `key` changes; nodes / edges are derived from the same inputs.

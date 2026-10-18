@@ -51,6 +51,8 @@ export interface Zone {
    * inside the zone; set by graph-based modes. Shown in the chip tooltip.
    */
   cohesion?: number;
+  /** Producer's tooltip text (a layer's access rules, a community's cohesion…); shown on the zone chip. */
+  detail?: string;
 }
 
 export interface ZoneSet {
@@ -92,6 +94,8 @@ export const ZONE_DEFAULT_MAX_DEPTH = 3;
 export const ZONE_DEFAULT_COLLAPSE_ABOVE = 60;
 /** Key of the muted zone that holds config files and lockfiles (`zone:<mode>:<config>`). */
 export const ZONE_CONFIG_KEY = '<config>';
+/** Key of the muted zone that holds files matching no architecture layer (`zone:layers:<unassigned>`). */
+export const ZONE_UNASSIGNED_KEY = '<unassigned>';
 
 /** Input to every zoning producer. */
 export interface ZoningInput {

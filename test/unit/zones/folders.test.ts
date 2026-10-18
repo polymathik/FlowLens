@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeZones, hashKey } from '../../../src/analysis/zones/index.js';
-import { ZONE_COLOR_SLOTS, ZONE_CONFIG_KEY } from '../../../src/contracts/zones.js';
+import { computeZones, hasZoning, hashKey } from '../../../src/analysis/zones/index.js';
+import { ZONE_COLOR_SLOTS, ZONE_CONFIG_KEY, ZONING_MODES } from '../../../src/contracts/zones.js';
 import { allFileIds, byKey, expectConsistent, outline, shuffled, symbolEntity, treeOf } from './helpers.js';
 
 const PATHS = [
@@ -135,7 +135,7 @@ describe('folders mode', () => {
   it('falls back to folders for modes without a strategy and says so', () => {
     const { h } = treeOf(PATHS, PKG);
     const base = computeZones({ mode: 'folders', hierarchy: h });
-    for (const mode of ['layers'] as const) {
+    for (const mode of ZONING_MODES.filter((m) => !hasZoning(m))) {
       const zs = computeZones({ mode, hierarchy: h });
       expect(zs.fallbackFrom).toBe(mode);
       expect(zs.mode).toBe('folders');

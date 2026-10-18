@@ -31,14 +31,15 @@ export function parseExplorerHash(hash: string): ExplorerRoute {
   const stripped = view ? hash.replace(new RegExp(`/(${view})(?=/|\\?|$)`), '') : hash;
   const route = parseCanvasHash(stripped);
 
-  if (seg[0] !== 'p' && !route.target) return { tab: 'home' };
+  if (seg[0] !== 'p' && !route.target && !route.focus) return { tab: 'home' };
   if (seg[0] === 'p' && !route.projectId) return { tab: 'home' };
   return {
     tab: 'project',
     projectId: route.projectId,
-    view: route.target ? 'map' : (view ?? 'health'),
+    view: route.target || route.focus ? 'map' : (view ?? 'health'),
     target: route.target,
     overlay: route.overlay,
+    ...(route.focus ? { focus: route.focus } : {}),
   };
 }
 
@@ -47,14 +48,16 @@ export function buildExplorerHash(route: ExplorerRoute): string {
   if (!route.projectId) return buildCanvasHash({ target: route.target, overlay: route.overlay });
   const id = encodeURIComponent(route.projectId);
   if (route.view === 'health') return `#/p/${id}/health`;
-  const rest = buildCanvasHash({ target: route.target, overlay: route.overlay }).replace(/^#\//, '');
+  const rest = buildCanvasHash({ target: route.target, overlay: route.overlay, focus: route.focus }).replace(/^#\//, '');
   return `#/p/${id}/map${rest ? `/${rest}`.replace(/\/\?/, '?') : ''}`;
 }
 
 /** Stable key of the part of a route the map acts on (target + overlay). */
 export function mapRouteKey(route: ExplorerRoute): string | null {
-  if (route.tab !== 'project' || route.view !== 'map' || (!route.target && !route.overlay)) return null;
-  return `${route.target?.kind ?? ''}:${route.target?.identifier ?? ''}?${route.overlay ?? ''}`;
+  if (route.tab !== 'project' || route.view !== 'map' || (!route.target && !route.overlay && !route.focus)) return null;
+  const f = route.focus;
+  const focus = f ? `#focus:${f.id}:${f.depth ?? ''}:${f.dir ?? ''}:${f.types?.join(',') ?? ''}:${f.lateral ? 'L' : ''}` : '';
+  return `${route.target?.kind ?? ''}:${route.target?.identifier ?? ''}?${route.overlay ?? ''}${focus}`;
 }
 
 /** Hash that opens a tab ('home' or a project id) on its last sub-view. */

@@ -10,12 +10,13 @@ import type { MapView } from '../../../contracts/canvas/index.js';
 import { useCanvasStore } from '../../store/canvas-store';
 import { expansionKey, zoneItemIds } from '../../utils/zone-cut';
 import { COLORS, button, buttonActive } from '../shared/ui';
+import { LayersEmptyState } from './LayersEmptyState';
 
 const LABELS: Record<ZoningMode, string> = { packages: 'Packages', folders: 'Folders', communities: 'Communities', layers: 'Layers' };
 const AVAILABLE: ReadonlySet<ZoningMode> = new Set(['packages', 'folders', 'communities']);
 const SOON = 'Coming in a later step';
 
-export function ZoneControls({ view, hierarchy }: { view: MapView; hierarchy: Hierarchy }) {
+export function ZoneControls({ view, hierarchy, onOpenRules }: { view: MapView; hierarchy: Hierarchy; onOpenRules?: () => void }) {
   const groupBy = useCanvasStore((s) => s.groupBy);
   const setGroupBy = useCanvasStore((s) => s.setGroupBy);
   const setZoneExpansion = useCanvasStore((s) => s.setZoneExpansion);
@@ -30,7 +31,7 @@ export function ZoneControls({ view, hierarchy }: { view: MapView; hierarchy: Hi
       <span>Group by</span>
       <div role="group" aria-label="Group by" style={{ display: 'inline-flex' }}>
         {ZONING_MODES.map((mode, i) => {
-          const enabled = AVAILABLE.has(mode);
+          const enabled = AVAILABLE.has(mode) || mode === 'layers';
           const active = groupBy === mode;
           return (
             <button
@@ -54,6 +55,7 @@ export function ZoneControls({ view, hierarchy }: { view: MapView; hierarchy: Hi
           );
         })}
       </div>
+      {onOpenRules && <LayersEmptyState onOpenRules={onOpenRules} />}
       {zoneSet && zoneSet.zones.length > 0 && (
         <>
           <button type="button" data-testid="expand-all" style={button} onClick={() => applyAll(true)} title="Open every zone (very large ones may stay collapsed for performance)">

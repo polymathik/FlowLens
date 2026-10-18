@@ -29,11 +29,16 @@ export interface FinalizeInput {
   options?: ZoningOptions;
 }
 
-/** Display order: label, then key (case-insensitive); the muted Config zone goes last. */
+/**
+ * Display order: an explicit `order` (layers: declaration order) first, then label and key
+ * (case-insensitive); the muted Config / Unassigned zone goes last.
+ */
 export function compareZones(a: WorkZone, b: WorkZone): number {
   const ca = a.source === 'config' ? 1 : 0;
   const cb = b.source === 'config' ? 1 : 0;
-  return ca - cb || compareText(a.label, b.label) || compareText(a.key, b.key);
+  const oa = a.order ?? Number.MAX_SAFE_INTEGER;
+  const ob = b.order ?? Number.MAX_SAFE_INTEGER;
+  return ca - cb || oa - ob || compareText(a.label, b.label) || compareText(a.key, b.key);
 }
 
 function sortFiles(h: Hierarchy, ids: string[]): string[] {
@@ -63,6 +68,7 @@ export function finalizeZones(input: FinalizeInput): ZoneSet {
     };
     if (z.nodeId) zone.nodeId = z.nodeId;
     if (z.customized) zone.customized = true;
+    if (z.detail) zone.detail = z.detail;
     out.set(id, zone);
     kids.forEach((k, i) => build(k, id, colors[i]));
     // stats: own files + children
@@ -72,7 +78,7 @@ export function finalizeZones(input: FinalizeInput): ZoneSet {
     for (const k of kids) mergeInto(acc, stats.get(zoneId(mode, k.key))!, k.nodeId);
     stats.set(id, acc);
     zone.stats = finishStats(acc);
-    zone.collapsed = z.collapsed ?? (z.absorbed || zone.stats.files > collapseAbove);
+    zone.collapsed = z.collapsed ?? (z.absorbed || z.startCollapsed === true || zone.stats.files > collapseAbove);
   };
 
   const roots = [...zones.values()].filter((z) => z.parentKey === null).sort(compareZones);

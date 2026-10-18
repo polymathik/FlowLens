@@ -13,11 +13,13 @@ import { useCanvasStore } from '../store/canvas-store';
 import { LINK_OVERLAY_TO_STORE, resolveRouteTarget } from '../utils/navigation';
 import { useProjectContext } from '../components/explorer/project-context';
 import { mapRouteKey } from './explorer-route';
+import { focusSpecOfRoute } from './useFocusUrl';
 import { markApplied, takePendingHighlight, wasApplied } from './map-intents';
 
 export function useHashRoute(entities: Entity[], hierarchy: Hierarchy, ready: boolean) {
   const navigateTo = useCanvasStore((s) => s.navigateTo);
   const setOverlay = useCanvasStore((s) => s.setOverlay);
+  const setFocus = useCanvasStore((s) => s.setFocus);
   const { projectId, route, routeStamp } = useProjectContext();
   const lookupRef = useRef({ entities, hierarchy });
   lookupRef.current = { entities, hierarchy };
@@ -33,5 +35,7 @@ export function useHashRoute(entities: Entity[], hierarchy: Hierarchy, ready: bo
     const highlight = takePendingHighlight(pid, key);
     if (target) navigateTo({ ...target, overlay, highlight: highlight?.filter((id) => lookupRef.current.hierarchy.nodes.has(id)) });
     else if (overlay) setOverlay(overlay);
-  }, [ready, route, routeStamp, projectId, navigateTo, setOverlay]);
+    // Focus mode is part of the route: a focus link enters it; any other map link leaves it (`navigateTo` does that).
+    if (route.focus) setFocus(focusSpecOfRoute(route.focus));
+  }, [ready, route, routeStamp, projectId, navigateTo, setOverlay, setFocus]);
 }

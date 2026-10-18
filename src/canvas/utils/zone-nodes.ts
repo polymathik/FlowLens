@@ -8,7 +8,7 @@
 import type { Node } from '@xyflow/react';
 import type { Hierarchy } from '../../contracts/hierarchy.js';
 import type { Zone } from '../../contracts/zones.js';
-import { ZONE_LAYOUT, type CutItem, type FileNodeData, type MapView, type ZoneNodeData } from '../../contracts/canvas/index.js';
+import { FOCUS_MORE_PREFIX, FOCUS_SELF_ZONE_ID, ZONE_LAYOUT, type CutItem, type FileNodeData, type MapView, type ZoneNodeData } from '../../contracts/canvas/index.js';
 import { fileWeight } from '../../analysis/hierarchy/stats.js';
 import type { BoxPos } from '../layout/cut-layout';
 import { isRichCut } from '../layout/cut-layout';
@@ -60,6 +60,7 @@ export function buildCutNodes(h: Hierarchy, view: MapView): Node[] {
   const cut = view.cut!;
   const zones = new Map((view.zoning?.zoneSet.zones ?? []).map((z) => [z.id, z]));
   const rich = isRichCut(cut);
+  const focus = view.focus;
   return cut.items.map((item) => {
     if (item.kind === 'zone') {
       const zone = zones.get(item.zoneId!);
@@ -80,6 +81,8 @@ export function buildCutNodes(h: Hierarchy, view: MapView): Node[] {
         hotspotScore: zone?.stats.hotspot,
         customized: item.customized,
         cohesion: zone?.cohesion,
+        detail: zone?.detail,
+        ...(item.id === FOCUS_SELF_ZONE_ID ? { focusRole: 'focus' as const } : item.id.startsWith(FOCUS_MORE_PREFIX) ? { focusRole: 'more' as const } : {}),
       };
       return box(item.id, 'zone', data, item);
     }
@@ -100,6 +103,7 @@ export function buildCutNodes(h: Hierarchy, view: MapView): Node[] {
       rich,
       ...(rich ? { symbols: rows, moreSymbols: more } : {}),
       ...(item.parentId ? { zoneId: item.parentId } : {}),
+      ...(focus ? { ...(focus.kind !== 'container' && focus.focusFiles.includes(item.id) ? { focus: true } : {}), ...(focus.beyond[item.id] ? { beyond: focus.beyond[item.id] } : {}) } : {}),
     };
     return box(item.id, 'file', data, item);
   });

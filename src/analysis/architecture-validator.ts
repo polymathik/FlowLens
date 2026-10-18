@@ -1,4 +1,3 @@
-import { Minimatch } from 'minimatch';
 import type { GraphStore } from '../contracts/graph.js';
 import type { Entity } from '../contracts/entities.js';
 import type { Relation } from '../contracts/relations.js';
@@ -8,6 +7,7 @@ import type {
 } from '../contracts/architecture.js';
 import type { ArchitectureViolation } from '../contracts/analysis/architecture.js';
 import { hashContent } from '../utils/hash.js';
+import { firstFileLayerIndex, matchesLayerEntity, matchesLayerFile } from './layer-match.js';
 
 /**
  * Resolve which architecture layer an entity belongs to.
@@ -24,32 +24,8 @@ export function resolveLayer(
   return null;
 }
 
-/** Compiled glob cache: compiling a Minimatch per entity dominated layer resolution time. */
-const patternCache = new Map<string, Minimatch>();
-function compiledPattern(pattern: string): Minimatch {
-  let mm = patternCache.get(pattern);
-  if (!mm) {
-    mm = new Minimatch(pattern);
-    patternCache.set(pattern, mm);
-  }
-  return mm;
-}
-
-function matchesFile(file: string, layer: ArchitectureLayer): boolean {
-  if (layer.include.patterns) {
-    for (const pattern of layer.include.patterns) {
-      if (compiledPattern(pattern).match(file)) return true;
-    }
-  }
-  return layer.include.files?.includes(file) ?? false;
-}
-
-function matchesEntityRule(entity: Entity, layer: ArchitectureLayer): boolean {
-  return layer.include.entities?.some((n) => entity.name === n || entity.qualified_name === n) ?? false;
-}
-
 function matchesLayer(entity: Entity, layer: ArchitectureLayer): boolean {
-  return matchesFile(entity.file, layer) || matchesEntityRule(entity, layer);
+  return matchesLayerFile(entity.file, layer) || matchesLayerEntity(entity, layer);
 }
 
 /**
@@ -70,14 +46,14 @@ export function buildLayerMap(
   for (const entity of entities) {
     let fi = firstFileLayer.get(entity.file);
     if (fi === undefined) {
-      fi = layers.findIndex((l) => matchesFile(entity.file, l));
+      fi = firstFileLayerIndex(entity.file, layers);
       if (fi < 0) fi = layers.length;
       firstFileLayer.set(entity.file, fi);
     }
     let idx = fi;
     for (const i of entityRuleIdx) {
       if (i >= idx) break;
-      if (matchesEntityRule(entity, layers[i])) { idx = i; break; }
+      if (matchesLayerEntity(entity, layers[i])) { idx = i; break; }
     }
     map.set(entity.id, idx < layers.length ? layers[idx].name : null);
   }

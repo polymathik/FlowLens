@@ -17,3 +17,7 @@ export { assignColors } from './colors.js';
 export { buildFileGraph } from './communities/index.js';
 
 registerZoning('communities', communitiesStrategy);
+
+// Built-in strategies that live in their own module register themselves on import.
+import './layers.js';
+export { layerRulesText } from './layers.js';

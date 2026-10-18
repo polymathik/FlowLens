@@ -46,6 +46,7 @@ export const ZoneNode = React.memo(({ id, data, selected, width, height }: ZoneB
       data-zone-id={data.zoneId}
       data-hue={data.colorIndex}
       data-source={data.source}
+      data-focus-role={data.focusRole ?? ''}
       data-collapsed={data.expanded ? 'false' : 'true'}
       data-selected={selected ? 'true' : 'false'}
       data-overlay={data.overlay ? `${data.overlay.tag}${data.overlay.muted ? ':muted' : ''}` : ''}
@@ -62,7 +63,7 @@ export const ZoneNode = React.memo(({ id, data, selected, width, height }: ZoneB
         data-testid="zone-chip"
         aria-label={chipLabel}
         aria-expanded={data.expanded}
-        title={`${data.label}${data.customized ? ' (customised)' : ''}${cohesionNote(data)} — click to ${data.expanded ? 'collapse' : 'expand'}, double-click to open, right-click for options`}
+        title={`${data.label}${data.customized ? ' (customised)' : ''}${cohesionNote(data)} — click to ${data.expanded ? 'collapse' : 'expand'}, double-click to open, right-click for options${data.detail ? `\n${data.detail}` : ''}`}
         style={{ transform: summary ? `translate(-50%, -50%) scale(${scale})` : `scale(${scale})` }}
         onClick={(e) => {
           e.stopPropagation();
@@ -75,6 +76,11 @@ export const ZoneNode = React.memo(({ id, data, selected, width, height }: ZoneB
           <span className="fl-zone-swatch" aria-hidden />
           <span className="fl-zone-name">{data.label}</span>
           {!summary && <span className="fl-zone-count">{data.fileCount}</span>}
+          {!!data.ruleBreaks && (
+            <span className="fl-zone-breaks" data-testid="zone-breaks" title={`${data.ruleBreaks} architecture rule break${data.ruleBreaks === 1 ? '' : 's'} start here`}>
+              ⚠ {data.ruleBreaks}
+            </span>
+          )}
           <span className="fl-zone-caret" aria-hidden>
             {data.expanded ? '▾' : '▸'}
           </span>

@@ -6,6 +6,8 @@
  */
 import React, { useState } from 'react';
 import type { Hierarchy } from '../../../contracts/hierarchy.js';
+import type { FocusInfo } from '../../../contracts/canvas/index.js';
+import { pathTo } from '../../../analysis/hierarchy/index.js';
 import { useCanvasStore } from '../../store/canvas-store';
 import { crumbsFor, layoutCrumbs, type Crumb } from '../../utils/breadcrumb';
 import { COLORS, floatingPanel, linkButton } from '../shared/ui';
@@ -34,16 +36,27 @@ function CrumbButton({ crumb, last, onOpen }: { crumb: Crumb; last: boolean; onO
   );
 }
 
-export function BreadcrumbBar({ hierarchy }: { hierarchy: Hierarchy }) {
+/**
+ * Focus mode: `Project / folder / … / Focus: parseSession`. The crumbs are the focused item's ancestors
+ * (each one leaves Focus mode and opens that container); the last crumb is the focus itself.
+ */
+export function BreadcrumbBar({ hierarchy, focusInfo }: { hierarchy: Hierarchy; focusInfo?: FocusInfo }) {
   const drillPath = useCanvasStore((s) => s.drillPath);
   const drillToLevel = useCanvasStore((s) => s.drillToLevel);
+  const setDrillPath = useCanvasStore((s) => s.setDrillPath);
+  const focus = useCanvasStore((s) => s.focus);
+  const setFocus = useCanvasStore((s) => s.setFocus);
   const [menuOpen, setMenuOpen] = useState(false);
-  const crumbs = crumbsFor(hierarchy, drillPath);
+  const focused = focus !== null;
+  const above = focusInfo && hierarchy.nodes.has(focusInfo.focusId) ? pathTo(hierarchy, focusInfo.focusId).slice(0, -1) : [];
+  const crumbs = crumbsFor(hierarchy, focused ? above : drillPath);
   const { head, hidden, tail } = layoutCrumbs(crumbs);
-  const lastId = crumbs[crumbs.length - 1].id;
+  const lastId = focused ? '' : crumbs[crumbs.length - 1].id;
   const open = (c: Crumb) => {
     setMenuOpen(false);
-    drillToLevel(c.level);
+    if (!focused) return drillToLevel(c.level);
+    setFocus(null);
+    setDrillPath(pathTo(hierarchy, c.id));
   };
   const sep = (key: string) => (
     <span key={key} aria-hidden style={{ color: COLORS.faint }}>
@@ -82,7 +95,15 @@ export function BreadcrumbBar({ hierarchy }: { hierarchy: Hierarchy }) {
           <CrumbButton crumb={c} last={c.id === lastId} onOpen={open} />
         </React.Fragment>
       ))}
-      {drillPath.length === 0 && <span style={{ color: COLORS.faint, marginLeft: 6 }}>Double-click a box to open it</span>}
+      {focused && (
+        <>
+          {sep('f')}
+          <span data-testid="crumb-focus" aria-current="page" title={`Focus mode: ${focusInfo?.label ?? focus?.id}`} style={{ fontWeight: 600, color: COLORS.text, padding: '2px 4px', whiteSpace: 'nowrap', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            Focus: {focusInfo?.label ?? focus?.id}
+          </span>
+        </>
+      )}
+      {!focused && drillPath.length === 0 && <span style={{ color: COLORS.faint, marginLeft: 6 }}>Double-click a box to open it</span>}
     </nav>
   );
 }
