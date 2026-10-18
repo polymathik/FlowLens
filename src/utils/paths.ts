@@ -19,6 +19,8 @@ export const LANGUAGE_EXTENSIONS: Record<string, string> = {
   '.hpp': 'cpp',
   '.cs': 'csharp',
   '.php': 'php',
+  '.svelte': 'svelte',
+  '.vue': 'vue',
   '.css': 'css',
   '.html': 'html',
   '.json': 'json',

@@ -86,7 +86,7 @@ export class RelationEmitter {
     return this.byQn.has(`${this.filePath}/${name}`);
   }
 
-  direct(from: Entity | string, to: Entity, type: RelationType, node: SgNode, opts: LinkOptions = {}): void {
+  direct(from: Entity | string, to: Entity, type: RelationType, node: NodeLike, opts: LinkOptions = {}): void {
     const fromId = typeof from === 'string' ? from : from.id;
     const actualType = type === 'call' && to.kind === 'class' ? 'create' : type;
     const { line, column } = loc(node);
@@ -104,7 +104,7 @@ export class RelationEmitter {
   }
 
   pending(
-    from: Entity | string, type: RelationType, targetName: string, node: SgNode,
+    from: Entity | string, type: RelationType, targetName: string, node: NodeLike,
     opts: LinkOptions & { resolve_to?: 'entity' | 'file' } = {},
   ): void {
     const fromId = typeof from === 'string' ? from : from.id;
@@ -131,7 +131,7 @@ export class RelationEmitter {
    * Link `from` to the entity named `targetName` (dotted path) as seen from
    * this file. Returns 'direct' | 'pending' | 'dropped'.
    */
-  link(from: Entity | string, type: RelationType, targetName: string, node: SgNode, opts: LinkOptions = {}): 'direct' | 'pending' | 'dropped' {
+  link(from: Entity | string, type: RelationType, targetName: string, node: NodeLike, opts: LinkOptions = {}): 'direct' | 'pending' | 'dropped' {
     const parts = targetName.split('.').filter(Boolean);
     if (parts.length === 0) return 'dropped';
     const kinds = opts.kinds ?? targetKinds(type);
@@ -166,7 +166,12 @@ export class RelationEmitter {
   }
 }
 
-export function loc(node: SgNode): { line: number; column: number } {
+/** A source position (1-based line and column) for references that have no AST node (e.g. template markup). */
+export interface SourcePos { line: number; column: number }
+export type NodeLike = SgNode | SourcePos;
+
+export function loc(node: NodeLike): SourcePos {
+  if (!('range' in node)) return { line: node.line, column: node.column };
   const r = node.range();
   return { line: r.start.line + 1, column: r.start.column + 1 };
 }

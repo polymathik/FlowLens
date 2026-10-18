@@ -17,6 +17,7 @@ import { populateEntityMetrics } from '../metrics/compute-entity-metrics.js';
 import { dedupeEntities } from './entity-dedupe.js';
 import { findSyntaxErrorLines } from './ast-walk.js';
 import { aggregateRelations } from '../graph/aggregate.js';
+import { isSfcLanguage, parseSfc } from './sfc/sfc-parser.js';
 
 export { createFileEntity } from './file-entity.js';
 
@@ -92,6 +93,7 @@ export class AstGrepParser implements Parser {
     const normalized = normalizeRelativePath(filePath);
     const language = extensionToLanguage(path.extname(normalized)) ?? 'unknown';
     const errors: ParseError[] = [];
+    if (isSfcLanguage(language)) return parseSfc(normalized, content, language, this.rootDir);
     const fileEntity = createFileEntity(normalized, language, countLines(content));
     const result: ParseResult = { file: normalized, language, entities: [fileEntity], relations: [], errors };
     const astGrepLang = LANG_TO_AST_GREP[language];
@@ -148,6 +150,6 @@ export class AstGrepParser implements Parser {
   }
 
   hasDeepExtractor(language: string): boolean {
-    return extractorRegistry.has(language);
+    return extractorRegistry.has(language) || isSfcLanguage(language);
   }
 }
