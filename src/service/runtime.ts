@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
@@ -26,8 +26,21 @@ export function cliLaunch(cliArgs: string[]): CliLaunch {
   const ts = fileURLToPath(new URL('../cli/index.ts', import.meta.url));
   const entry = override ?? (existsSync(js) ? js : ts);
   if (entry.endsWith('.ts')) {
-    const tsx = import.meta.resolve('tsx');
+    const tsx = resolveTsxLoader();
     return { command: process.execPath, args: ['--import', tsx, entry, ...cliArgs] };
   }
   return { command: process.execPath, args: [entry, ...cliArgs] };
+}
+
+/**
+ * URL of tsx's ESM loader for `node --import`. `import.meta.resolve` is not
+ * available under some module runners (e.g. vitest), so fall back to
+ * CommonJS resolution of the package's `exports["."]` target.
+ */
+function resolveTsxLoader(): string {
+  try {
+    return import.meta.resolve('tsx');
+  } catch {
+    return pathToFileURL(require.resolve('tsx')).href;
+  }
 }
