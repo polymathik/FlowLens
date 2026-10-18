@@ -10,18 +10,19 @@ import type { GraphStore } from '../contracts/graph.js';
 import type {
   AgentCycleReference,
   AgentEntityReference,
+  AgentHealthHeadline,
   AgentViolationReference,
 } from '../contracts/agent.js';
 import { detectCycles } from '../analysis/cycle-detector.js';
 import { validateArchitecture } from '../analysis/architecture-validator.js';
-import { loadArchitecture } from './architecture.js';
+import { loadAgentArchitecture } from './architecture.js';
 import { toCycleReference, toEntityReference, toViolationReference } from './reference.js';
 import { compactEntity, compactRelation, type CompactEntity, type CompactRelation } from './digest-codec.js';
 
 export type { CompactEntity, CompactRelation } from './digest-codec.js';
 export { expandEntity } from './digest-codec.js';
 
-export const DIGEST_VERSION = 2;
+export const DIGEST_VERSION = 3;
 const MAX_DIGEST_ISSUES = 500;
 const MAX_DIGEST_VIOLATIONS = 5000;
 const MAX_DIGEST_HOTSPOTS = 50;
@@ -43,6 +44,14 @@ export interface AgentGraphDigest {
   /** Every relation, compact — lets the guard analyse without a LevelDB scan. */
   edges: CompactRelation[];
   warnings: string[];
+  /** Base-file fingerprint at compute time (see digest-cache.ts). */
+  base_fingerprint?: string;
+  /** Epoch ms just before the graph was read. */
+  read_at?: number;
+  /** Files (and `dir/`) the guard re-indexed into this digest → their mtime. */
+  accounted?: Record<string, number>;
+  /** Health headline computed from the full graph; carried forward by the guard. */
+  health?: AgentHealthHeadline | null;
 }
 
 export interface GraphIssues {
@@ -72,7 +81,8 @@ export async function computeGraphIssues(
     warnings.push(`Cycle detection failed (${errorMessage(err)}); cycle checks skipped.`);
   }
   let violations: AgentViolationReference[] = [];
-  const architecture = await loadArchitecture(flowlensDir);
+  const { config: architecture, warning } = await loadAgentArchitecture(flowlensDir);
+  if (warning) warnings.push(warning);
   if (architecture) {
     try {
       const target = scope.violationsGraph ?? graph;

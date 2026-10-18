@@ -4,6 +4,7 @@ import type {
   AgentGuardReport,
   AgentViolationReference,
 } from '../contracts/agent.js';
+import { formatHealthHeadline } from './health-headline.js';
 
 const MAX_CYCLE_FILES = 8;
 
@@ -12,6 +13,7 @@ export function formatContextMarkdown(packet: AgentContextPacket): string {
   return [
     '## FlowLens Agent Context',
     `Event: ${packet.event} · Graph: ${packet.summary.entity_count} entities, ${packet.summary.relation_count} relations · Languages: ${formatCounts(packet.summary.languages)}`,
+    packet.health ? section('Health', formatHealthHeadline(packet.health)) : '',
     section('Relevant files', packet.relevant_files),
     section('Relevant entities', packet.relevant_entities.map(formatEntity)),
     section('Hotspots', packet.hotspots.map(formatEntity)),

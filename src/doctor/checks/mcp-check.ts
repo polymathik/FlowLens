@@ -9,11 +9,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { LevelGraphStore } from '../../graph/levelgraph-store.js';
 import { createFlowLensServer } from '../../mcp/server.js';
 import { AnnotationStore } from '../../mcp/annotation-store.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
-import type { DiagnosticCheck, DiagnosticRunner } from '../../contracts/doctor.js';
+import type { DiagnosticCheck, DiagnosticRunner, DoctorContext } from '../../contracts/doctor.js';
+import { isGraphLockedError } from '../../agent/graph-access.js';
+import { graphErrorMessage, lockedMessage, openDoctorGraph } from './open-graph.js';
 
 /** Tools every FlowLens MCP server must expose (Phase 4 contract). */
 export const EXPECTED_MCP_TOOLS = [
@@ -33,20 +34,16 @@ export const EXPECTED_MCP_TOOLS = [
 
 const BASE = { name: 'mcp-reachable', title: 'MCP server initializes' };
 
-export const mcpReachableCheck: DiagnosticRunner = async ({ rootDir, flowlensDir }) => {
+export const mcpReachableCheck: DiagnosticRunner = async (ctx) => {
+  const { rootDir, flowlensDir } = ctx;
   const graphPath = join(flowlensDir, 'graph');
   if (!existsSync(graphPath)) {
     return { ...BASE, status: 'error', message: 'cannot init MCP: graph missing' };
   }
 
-  // Graph-opening swap point for the graph service
-  // (`openGraphStore(rootDir, { client: 'doctor' })`) at merge time.
-  const graph = new LevelGraphStore();
-  try {
-    await graph.open(graphPath);
-  } catch (err) {
-    return openFailure(err);
-  }
+  const opened = await openDoctorGraph(ctx);
+  if (!opened.ok) return opened.locked ? lockedResult(ctx) : { ...BASE, status: 'error', message: `MCP init would fail: ${opened.message}` };
+  const graph = opened.graph;
 
   const client = new Client({ name: 'flowlens-doctor', version: '0.0.0' });
   try {
@@ -64,8 +61,16 @@ export const mcpReachableCheck: DiagnosticRunner = async ({ rootDir, flowlensDir
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     const { tools } = await client.listTools();
+    // Exercise one real tool so a graph that cannot be read is not a pass.
+    const probe = await client.callTool({ name: 'get_summary', arguments: {} });
+    if (probe.isError) {
+      const text = JSON.stringify(probe.content ?? '');
+      if (/graph_locked|lock/i.test(text)) return lockedResult(ctx);
+      return { ...BASE, status: 'error', message: 'MCP server started but get_summary failed', details: text.slice(0, 300) };
+    }
     return toolsResult(tools.map((t) => t.name));
   } catch (err) {
+    if (isGraphLockedError(err)) return lockedResult(ctx);
     return {
       ...BASE,
       status: 'error',
@@ -96,21 +101,10 @@ export function toolsResult(names: string[]): DiagnosticCheck {
   };
 }
 
-function openFailure(err: unknown): DiagnosticCheck {
-  const msg = errorMessage(err);
-  if (/lock/i.test(msg)) {
-    return {
-      ...BASE,
-      status: 'warning',
-      message: 'graph is in use by another FlowLens process (serve/canvas/watch?) — MCP not verified',
-      details: msg,
-    };
-  }
-  return { ...BASE, status: 'error', message: `MCP init would fail: ${msg}` };
+function lockedResult(ctx: DoctorContext): DiagnosticCheck {
+  return { ...BASE, status: 'warning', message: `${lockedMessage(ctx)} — MCP not verified` };
 }
 
 function errorMessage(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  const cause = (err as Error & { cause?: unknown }).cause;
-  return cause instanceof Error ? `${err.message} (${cause.message})` : err.message;
+  return graphErrorMessage(err);
 }

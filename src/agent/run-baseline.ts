@@ -9,12 +9,13 @@ export async function runAgentBaseline(options: {
   rootDir: string;
   reset: boolean;
   format: AgentOutputFormat;
+  daemon?: boolean;
 }): Promise<AgentCommandResult> {
   const flowlensDir = flowlensDirFor(options.rootDir);
   const head = getGitHead(options.rootDir);
   let baseline: AgentBaseline | null;
   if (options.reset) {
-    const resolution = await resolveDigest(options.rootDir);
+    const resolution = await resolveDigest(options.rootDir, { daemon: options.daemon });
     if (!resolution.ok) return { exit_code: 1, stdout: '', stderr: resolution.message };
     baseline = makeBaseline(head, 'manual', resolution.digest.cycle_keys, resolution.digest.violation_ids);
     await saveBaseline(flowlensDir, baseline);

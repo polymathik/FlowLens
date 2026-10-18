@@ -50,6 +50,7 @@ export function buildContextFromDigest(
     guidance: buildGuidance(request, relevantEntities.length, digest.cycle_count, digest.violation_count),
     digest: { source, computed_at: digest.computed_at },
     warnings: warnings.length > 0 ? warnings : undefined,
+    health: request.event === 'session_start' && digest.health ? digest.health : undefined,
   };
 }
 

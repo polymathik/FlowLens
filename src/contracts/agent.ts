@@ -1,6 +1,7 @@
 import type { EntityKind, Location } from './entities.js';
 import type { RelationType } from './relations.js';
 import type { CycleGranularity, CycleSeverity } from './analysis/cycles.js';
+import type { HealthConfidence, HealthGrade } from './health.js';
 
 export type AgentEvent =
   | 'session_start'
@@ -81,6 +82,32 @@ export interface AgentContextPacket {
   /** Where graph-wide facts came from: the persisted digest cache or a fresh scan. */
   digest?: { source: 'cache' | 'fresh' | 'stale-cache'; computed_at: string };
   warnings?: string[];
+  /** SessionStart only: 3-line plain-English health headline (wave 2). */
+  health?: AgentHealthHeadline;
+}
+
+/**
+ * Compact health signal for agent context, derived from the Phase 11
+ * `HealthSummary` (src/health). Full report: MCP `flowlens://health` or
+ * `flowlens report`.
+ */
+export interface AgentHealthHeadline {
+  grade: HealthGrade;
+  score: number;
+  confidence: HealthConfidence;
+  /** Title of the highest-ranked actionable finding, or null when none. */
+  top_risk: string | null;
+  findings: number;
+  critical_or_high: number;
+}
+
+/**
+ * How agent commands reach the graph (wave 2). Default: through the FlowLens
+ * daemon (works while `serve --watch` runs); `daemon: false` (`--no-daemon`)
+ * opens LevelDB directly and can then report `busy`.
+ */
+export interface AgentGraphOptions {
+  daemon?: boolean;
 }
 
 export interface AgentGuardRequest {
@@ -138,7 +165,8 @@ export interface AgentGuardReport {
 export interface AgentBaseline {
   git_head: string | null;
   created_at: string;
-  source: 'session_start' | 'guard' | 'manual';
+  /** `snapshot`: derived from the graph snapshot for HEAD (wave 2). */
+  source: 'session_start' | 'guard' | 'manual' | 'snapshot';
   /** Sorted file lists of every file-level cycle (cycle identity). */
   cycles: string[][];
   /** Violation ids (`violation:<from>:<to>:<rule>` hash). */

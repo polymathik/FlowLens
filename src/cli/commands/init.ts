@@ -19,9 +19,9 @@ import { resetFlowlensDir } from '../../service/project-setup.js';
 import { runIndex } from '../../indexer/indexer.js';
 import { formatQualitySummary } from '../../quality/graph-quality.js';
 import { inferArchitecture } from '../../architecture/heuristic-inference.js';
-import { runInference } from '../../ai/ai-integration.js';
+import { parseAIProvider, runInference } from '../../ai/ai-integration.js';
 import { buildTopology } from '../../ai/topology-builder.js';
-import type { AIProvider } from '../../contracts/ai-integration.js';
+import { AIConfigError, type AIProvider } from '../../contracts/ai-integration.js';
 import { printWarning } from '../output.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { printHeader, printSuccess, printError, printSummary } from '../output.js';
@@ -94,6 +94,18 @@ export const initCommand = new Command('init')
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
 
+    // Validate flags before touching anything (no indexing on a typo).
+    let provider: AIProvider = 'anthropic';
+    if (opts.ai) {
+      try {
+        provider = parseAIProvider(opts.provider ?? 'anthropic');
+      } catch (err) {
+        if (!(err instanceof AIConfigError)) throw err;
+        printError(err.message);
+        process.exit(2);
+      }
+    }
+
     if (existsSync(flowlensDir) && !opts.force) {
       printError('.flowlens/ already exists. Use --force to reinitialize.');
       process.exit(1);
@@ -162,14 +174,14 @@ export const initCommand = new Command('init')
         const topology = buildTopology(allEntities, allRelations);
         const outcome = await runInference(
           {
-            provider: (opts.provider as AIProvider) ?? 'anthropic',
+            provider,
             model: opts.model,
           },
           topology,
         );
         if (outcome.ok) {
           archConfig = outcome.config;
-          printSuccess(`AI inference (${opts.provider}) produced ${archConfig.layers.length} layers`);
+          printSuccess(`AI inference (${provider}) produced ${archConfig.layers.length} layers`);
         } else {
           printWarning(`AI inference failed: ${outcome.error}`);
           printWarning('Falling back to heuristic inference.');

@@ -1,14 +1,17 @@
 /**
  * `flowlens agent context` orchestration (CLI-independent, returns output).
  *
- * Digest resolution order: fresh cache (no graph open) → open graph and
- * compute (then persist) → if the graph is busy, stale cache with a warning →
- * explicit "unavailable" context. SessionStart also records the strict-mode
- * baseline for the current git HEAD if none exists yet.
+ * Digest resolution order: fresh (or revalidated) cache, no graph access →
+ * open the graph (through the daemon by default) and compute, then persist →
+ * if the graph is busy (only possible with --no-daemon or a non-daemon lock
+ * holder), stale cache with a warning → explicit "unavailable" context.
+ * SessionStart also records the strict-mode baseline for the current git HEAD
+ * if none exists yet, and carries a 3-line health headline.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
+  AgentGraphOptions,
   AgentCommandResult,
   AgentContextPacket,
   AgentEvent,
@@ -19,9 +22,10 @@ import { loadBaseline, makeBaseline, saveBaseline } from './baseline.js';
 import { getGitHead } from './changed-files.js';
 import { buildContextFromDigest } from './context-builder.js';
 import { computeGraphDigest, type AgentGraphDigest } from './digest.js';
-import { readDigest, readFreshDigest, writeDigest } from './digest-cache.js';
+import { captureStamp, readDigest, readFreshDigest, writeDigest } from './digest-cache.js';
 import { formatContextMarkdown } from './format.js';
-import { flowlensDirFor, openAgentGraph, SETUP_HINT } from './graph-access.js';
+import { describeGraphFailure, flowlensDirFor, openAgentGraph, SETUP_HINT } from './graph-access.js';
+import { computeHealthHeadline } from './health-headline.js';
 import { contextOutput, hookEventNameFor } from './hook-output.js';
 
 export interface RunContextOptions {
@@ -34,37 +38,46 @@ export interface RunContextOptions {
   hook: boolean;
   hookEventName?: string;
   budget?: number;
+  /** `false` = `--no-daemon`. */
+  daemon?: boolean;
 }
 
 export type DigestResolution =
   | { ok: true; digest: AgentGraphDigest; source: 'cache' | 'fresh' | 'stale-cache' }
   | { ok: false; message: string };
 
-/** Shared by context and the MCP-free fast path: cache → graph → stale cache. */
-export async function resolveDigest(rootDir: string): Promise<DigestResolution> {
+/** Shared by context, baseline and MCP-free fast paths: cache → graph → stale cache. */
+export async function resolveDigest(rootDir: string, graphOptions: AgentGraphOptions = {}): Promise<DigestResolution> {
   const flowlensDir = flowlensDirFor(rootDir);
   if (!existsSync(join(flowlensDir, 'graph'))) return { ok: false, message: SETUP_HINT };
   const cached = await readFreshDigest(flowlensDir);
   if (cached) return { ok: true, digest: cached, source: 'cache' };
 
-  const handle = await openAgentGraph(rootDir);
-  if (!handle.ok) {
-    const stale = handle.reason === 'busy' ? await readDigest(flowlensDir) : null;
-    return stale ? { ok: true, digest: stale, source: 'stale-cache' } : { ok: false, message: handle.message };
-  }
+  const handle = await openAgentGraph(rootDir, graphOptions);
+  if (!handle.ok) return staleOr(flowlensDir, handle.reason === 'busy', handle.message);
   let digest: AgentGraphDigest;
   try {
+    const stamp = captureStamp(flowlensDir);
     digest = await computeGraphDigest(handle.graph, flowlensDir);
+    digest.health = await computeHealthHeadline(rootDir, handle.graph);
+    await writeDigest(flowlensDir, digest, stamp);
+  } catch (err) {
+    const failure = describeGraphFailure(err, graphOptions);
+    return staleOr(flowlensDir, failure.reason === 'busy', failure.message);
   } finally {
-    await handle.close();
+    await handle.close().catch(() => undefined);
   }
-  await writeDigest(flowlensDir, digest);
   return { ok: true, digest, source: 'fresh' };
+}
+
+async function staleOr(flowlensDir: string, busy: boolean, message: string): Promise<DigestResolution> {
+  const stale = busy ? await readDigest(flowlensDir) : null;
+  return stale ? { ok: true, digest: stale, source: 'stale-cache' } : { ok: false, message };
 }
 
 export async function runAgentContext(options: RunContextOptions): Promise<AgentCommandResult> {
   const eventName = hookEventNameFor(options.event, options.hookEventName);
-  const resolution = await resolveDigest(options.rootDir);
+  const resolution = await resolveDigest(options.rootDir, { daemon: options.daemon });
   if (!resolution.ok) return unavailable(options, eventName, resolution.message);
 
   if (options.event === 'session_start') {

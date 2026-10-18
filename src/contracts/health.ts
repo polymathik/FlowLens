@@ -257,3 +257,6 @@ export interface HealthInput {
   /** ISO time of the newest file-index entry (fallback for last_indexed). */
   last_indexed_fallback?: string | null;
 }
+
+/** MCP resource serving the Markdown health report (wave 2). */
+export const HEALTH_RESOURCE_URI = 'flowlens://health';

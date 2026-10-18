@@ -2,7 +2,8 @@
  * CLI output formatting helpers.
  *
  * Centralises all console output so that formatting (colours, prefixes)
- * is consistent and can be changed in one place.
+ * is consistent and can be changed in one place. Errors go to stderr so
+ * piped stdout (export, JSON output, MCP stdio) is never polluted.
  */
 
 import chalk from 'chalk';
@@ -17,7 +18,7 @@ export function printSuccess(text: string): void {
 }
 
 export function printError(text: string): void {
-  console.log(chalk.red(`✗ ${text}`));
+  console.error(chalk.red(`✗ ${text}`));
 }
 
 export function printWarning(text: string): void {

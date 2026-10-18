@@ -46,6 +46,11 @@ export type DiagnosticRunner = (ctx: DoctorContext) => Promise<DiagnosticCheck>;
 export interface DoctorContext {
   rootDir: string;
   flowlensDir: string;
+  /**
+   * `false` (`--no-daemon`) opens the graph directly instead of through the
+   * FlowLens daemon (wave 2). Omitted = daemon unless FLOWLENS_NO_DAEMON=1.
+   */
+  daemon?: boolean;
 }
 
 export interface Doctor {

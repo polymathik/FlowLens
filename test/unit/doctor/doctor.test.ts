@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DefaultDoctor, runDoctor } from '../../../src/doctor/doctor.js';
+import { DefaultDoctor, runDoctor as runDoctorDefault } from '../../../src/doctor/doctor.js';
+
+// Unit scope: open graphs directly (daemon paths are covered by integration tests).
+const runDoctor = (root: string) => runDoctorDefault(root, { daemon: false });
 import { LevelGraphStore } from '../../../src/graph/levelgraph-store.js';
 import type { Entity } from '../../../src/contracts/entities.js';
 
@@ -86,13 +89,42 @@ describe('runDoctor', () => {
     const fl = await makeFlowlensDir(tmp);
     await writeFile(
       join(fl, 'architecture.json'),
-      JSON.stringify({ version: 2, layers: [{ name: 'Core' }, { name: 'UI' }] }),
+      JSON.stringify({
+        version: 2, inferred_by: 'manual', inferred_at: '2026-10-18T00:00:00Z',
+        layers: [{ name: 'Core', include: { patterns: ['src/core/**'] } }, { name: 'UI', include: { patterns: ['src/ui/**'] }, may_only_access: ['Core'] }],
+      }),
     );
 
     const report = await runDoctor(tmp);
     const archCheck = report.checks.find((c) => c.name === 'architecture-valid');
     expect(archCheck?.status).toBe('ok');
     expect(archCheck?.message).toContain('2 layers');
+  });
+
+  // Doctor now uses the same loader as check/MCP/agents (loadArchConfig): a file
+  // those commands reject must not be reported valid. (The old test accepted
+  // layers without `include`, which every consumer then ignored.)
+  it('warns when a v2 architecture.json fails the schema or references an unknown layer', async () => {
+    const fl = await makeFlowlensDir(tmp);
+    await writeFile(join(fl, 'architecture.json'), JSON.stringify({ version: 2, layers: [{ name: 'Core' }] }));
+    let check = (await runDoctor(tmp)).checks.find((c) => c.name === 'architecture-valid');
+    expect(check?.status).toBe('warning');
+    expect(check?.message).toContain('does not match the v2 schema');
+
+    await writeFile(join(fl, 'architecture.json'), JSON.stringify({
+      version: 2, inferred_by: 'manual', inferred_at: 'x',
+      layers: [{ name: 'Core', include: { patterns: ['src/**'] }, must_not_access: ['Ghost'] }],
+    }));
+    check = (await runDoctor(tmp)).checks.find((c) => c.name === 'architecture-valid');
+    expect(check?.status).toBe('warning');
+    expect(check?.message).toContain("unknown layer 'Ghost'");
+  });
+
+  it('errors when architecture.json is not JSON', async () => {
+    const fl = await makeFlowlensDir(tmp);
+    await writeFile(join(fl, 'architecture.json'), '{ nope');
+    const check = (await runDoctor(tmp)).checks.find((c) => c.name === 'architecture-valid');
+    expect(check?.status).toBe('error');
   });
 
   it('errors when config.json is malformed', async () => {

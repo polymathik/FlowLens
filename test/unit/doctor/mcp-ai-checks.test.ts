@@ -26,7 +26,7 @@ const CONFIG: FlowLensConfig = {
 
 describe('mcpReachableCheck (real server, indexed fixture)', () => {
   let tmp: string;
-  let ctx: { rootDir: string; flowlensDir: string };
+  let ctx: { rootDir: string; flowlensDir: string; daemon: boolean };
 
   beforeAll(async () => {
     tmp = await mkdtemp(join(tmpdir(), 'flowlens-doctor-mcp-'));
@@ -43,7 +43,7 @@ describe('mcpReachableCheck (real server, indexed fixture)', () => {
       incremental: false,
     });
     await store.close();
-    ctx = { rootDir: FIXTURE, flowlensDir };
+    ctx = { rootDir: FIXTURE, flowlensDir, daemon: false };
   }, 60_000);
 
   afterAll(async () => {
@@ -63,7 +63,7 @@ describe('mcpReachableCheck (real server, indexed fixture)', () => {
     try {
       const result = await mcpReachableCheck(ctx);
       expect(result.status).toBe('warning');
-      expect(result.message).toMatch(/in use by another FlowLens process/);
+      expect(result.message).toMatch(/locked by another FlowLens process.*--no-daemon/);
     } finally {
       await holder.close();
     }
