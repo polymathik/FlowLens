@@ -20,6 +20,7 @@ import type { DiscoveredFile } from '../contracts/discovery.js';
 import type { Entity } from '../contracts/entities.js';
 import type { Relation } from '../contracts/relations.js';
 import type { ParseError } from '../contracts/parser.js';
+import type { FileSymbols, PendingRelation } from '../contracts/symbols.js';
 import { AstGrepParser } from '../parser/ast-grep-parser.js';
 import { hashContent } from '../utils/hash.js';
 
@@ -37,9 +38,18 @@ export interface ParseChunkInput {
 export interface ParsedFileOutput {
   path: string;
   hash: string;
+  language: string;
   entities: Entity[];
+  /** Direct relations (storable as-is). */
   relations: Relation[];
   errors: ParseError[];
+  /** Cross-file references for pass 2 (not storable until resolved). */
+  pending: PendingRelation[];
+  symbols?: FileSymbols;
+  duplicate_declarations: number;
+  syntax_errors: number;
+  /** Extraction failed: keep the previous graph data, do not record the hash. */
+  failed: boolean;
 }
 
 export interface ParseChunkOutput {
@@ -77,9 +87,15 @@ export async function parseChunk(
       parsed.push({
         path: file.path,
         hash,
+        language: result.language,
         entities: result.entities,
         relations: result.relations,
         errors: result.errors,
+        pending: result.pending ?? [],
+        symbols: result.symbols,
+        duplicate_declarations: result.duplicate_declarations ?? 0,
+        syntax_errors: result.syntax_errors ?? 0,
+        failed: result.failed === true,
       });
     } catch (err) {
       failures.push({
@@ -114,8 +130,10 @@ export async function parallelParse(
   );
   const chunks = chunkInto(files, workers);
 
+  // A crashed worker must not fail the whole index: re-parse its chunk serially.
   const results = await Promise.all(
-    chunks.map((chunk) => runInWorker({ files: chunk, rootDir })),
+    chunks.map((chunk) =>
+      runInWorker({ files: chunk, rootDir }).catch(() => parseChunk({ files: chunk, rootDir }))),
   );
 
   return results.reduce<ParseChunkOutput>(

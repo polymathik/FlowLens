@@ -21,6 +21,7 @@ import { entityCanvasUrl, openView, resolveOrError } from '../tool-runtime.js';
 import { resolveSnapshotRef } from '../../analysis/snapshot-refs.js';
 import { moduleOfFile } from '../../analysis/module-path.js';
 import { toDiffEntryView } from './diff-interface.js';
+import { isDirectParameter } from '../../analysis/diff-computer.js';
 import { cachedDiff } from '../analysis-cache.js';
 
 /** Kinds that are never part of a module's exported interface. */
@@ -71,10 +72,12 @@ export async function handleGetModuleInterface(
 
     // Build type_signature based on entity kind
     if (e.kind === 'function' || e.kind === 'method') {
-      // Look up child parameter entities from the graph
-      const allFileEntities = await deps.graph.getNodesByFile(e.file);
+      // Direct parameters (QN `fn.param`), in source order, from the cached view
+      const allFileEntities = view.byFile.get(e.file) ?? [];
       const params = allFileEntities
-        .filter(p => p.kind === 'parameter' && p.qualified_name.startsWith(e.qualified_name + '.'))
+        .filter(p => isDirectParameter(p, e))
+        .sort((a, b) => a.location.line_start - b.location.line_start
+          || a.location.column_start - b.location.column_start)
         .map(p => p.name);
       entry.type_signature = `(${params.join(', ')})`;
     } else if (e.kind === 'class') {

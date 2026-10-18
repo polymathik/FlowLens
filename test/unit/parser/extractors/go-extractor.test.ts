@@ -134,8 +134,10 @@ import (
   "strings"
 )
 `);
+    // Phase 8: stdlib imports are external — they used to produce 3 edges to
+    // fabricated ids that dangled; now they produce none.
     const imports = relations.filter(r => r.type === 'import');
-    expect(imports).toHaveLength(3);
+    expect(imports).toHaveLength(0);
   });
 
   it('extracts call relations', () => {

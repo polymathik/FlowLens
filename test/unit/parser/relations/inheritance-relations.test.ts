@@ -117,13 +117,26 @@ describe('mixin relations', () => {
     expect(mixins).toHaveLength(0);
   });
 
-  it('creates mixin with lower confidence when mixin function is unresolved', () => {
+  // Phase 8: unbound mixins used to get a fabricated `unresolved:<name>` target id.
+  // Now an unbound (global/unknown) mixin produces no edge, and an imported one
+  // produces a pending relation resolved by pass 2 — never a fake id.
+  it('does not fabricate a target id for an unbound mixin function', () => {
     const { relations } = parseAndExtract(`
       class User extends UnknownMixin(Object) {}
     `);
     const mixins = filterByType(relations, 'mixin');
+    expect(mixins).toHaveLength(0);
+  });
+
+  it('emits a pending mixin relation for an imported mixin function', () => {
+    const { relations } = parseAndExtract(`
+      import { Timestamped } from './mixins';
+      class User extends Timestamped(Object) {}
+    `);
+    const mixins = filterByType(relations, 'mixin');
     expect(mixins).toHaveLength(1);
-    expect(mixins[0].confidence).toBe(0.5);
-    expect(mixins[0].to).toContain('unresolved:');
+    expect(mixins[0].to).toBe('');
+    expect(mixins[0].target_name).toBe('Timestamped');
+    expect(mixins[0].resolution).toBe('unresolved');
   });
 });

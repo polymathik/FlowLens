@@ -1,4 +1,5 @@
 import type { SgNode } from '@ast-grep/napi';
+import { walkNodes } from '../parser/ast-walk.js';
 
 /**
  * Node kinds that each contribute +1 decision point to cyclomatic complexity.
@@ -43,25 +44,13 @@ export function computeCyclomaticComplexity(node: SgNode): number {
 /**
  * Recursively count all decision points in the subtree rooted at `node`.
  */
-function countDecisionPoints(node: SgNode): number {
-  const kind = String(node.kind());
+function countDecisionPoints(root: SgNode): number {
   let count = 0;
-
-  // Count this node if it is a decision point
-  if (DECISION_KINDS.has(kind)) {
-    count += 1;
-  }
-
-  // For binary_expression, check if the operator child is a logical operator
-  if (kind === 'binary_expression') {
-    count += countLogicalOperator(node);
-  }
-
-  // Recurse into all children — we walk the full subtree
-  for (const child of node.children()) {
-    count += countDecisionPoints(child);
-  }
-
+  walkNodes(root, (node) => {
+    const kind = String(node.kind());
+    if (DECISION_KINDS.has(kind)) count += 1;
+    if (kind === 'binary_expression') count += countLogicalOperator(node);
+  });
   return count;
 }
 

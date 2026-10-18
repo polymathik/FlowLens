@@ -69,22 +69,24 @@ export type GraphRpcMethod = Exclude<keyof GraphStore, 'open' | 'close'>;
 export const GRAPH_READ_METHODS = [
   'getNode', 'getNodesByKind', 'getNodesByFile',
   'getEdgesFrom', 'getEdgesTo', 'getAllNodes', 'getAllEdges',
+  'getUnresolvedRelations',
 ] as const satisfies readonly GraphRpcMethod[];
 
 /** Writes are serialized per project inside the daemon. */
 export const GRAPH_WRITE_METHODS = [
   'putNode', 'deleteNode', 'deleteNodesByFile', 'putEdge', 'deleteEdge',
   'deleteEdgesByFile', 'putNodes', 'putEdges', 'clear',
+  'replaceFile',
 ] as const satisfies readonly GraphRpcMethod[];
 
 export interface GraphRpcRequest<M extends GraphRpcMethod = GraphRpcMethod> {
   method: M;
-  args: Parameters<GraphStore[M]>;
+  args: Parameters<NonNullable<GraphStore[M]>>;
 }
 
 export interface GraphRpcSuccess<M extends GraphRpcMethod = GraphRpcMethod> {
   ok: true;
-  result: Awaited<ReturnType<GraphStore[M]>> | null;
+  result: Awaited<ReturnType<NonNullable<GraphStore[M]>>> | null;
 }
 
 export type GraphRpcResponse<M extends GraphRpcMethod = GraphRpcMethod> =

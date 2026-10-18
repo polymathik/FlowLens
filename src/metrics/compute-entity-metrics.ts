@@ -14,6 +14,12 @@ import { computeCognitiveComplexity } from './cognitive-complexity.js';
 import { computeCyclomaticComplexity } from './cyclomatic-complexity.js';
 import { computeHalstead } from './halstead.js';
 import { computeQualityScore } from './quality-score.js';
+import { walkNodes } from '../parser/ast-walk.js';
+
+export interface PopulateMetricsOptions {
+  /** Compute cognitive complexity (only for languages with a verified profile). Default true. */
+  cognitive?: boolean;
+}
 
 // ─── AST node kinds that represent functions / methods ───────────
 
@@ -60,23 +66,13 @@ interface LocatedNode {
  */
 function findFunctionNodes(root: SgNode): LocatedNode[] {
   const results: LocatedNode[] = [];
-  walkForFunctions(root, results);
+  walkNodes(root, (node) => {
+    if (FUNCTION_NODE_KINDS.has(String(node.kind()))) {
+      const range = node.range();
+      results.push({ node, lineStart: range.start.line + 1, lineEnd: range.end.line + 1 });
+    }
+  });
   return results;
-}
-
-function walkForFunctions(node: SgNode, out: LocatedNode[]): void {
-  const kind = String(node.kind());
-  if (FUNCTION_NODE_KINDS.has(kind)) {
-    const range = node.range();
-    out.push({
-      node,
-      lineStart: range.start.line + 1,
-      lineEnd: range.end.line + 1,
-    });
-  }
-  for (const child of node.children()) {
-    walkForFunctions(child, out);
-  }
 }
 
 // ─── Node ↔ Entity matching ─────────────────────────────────────
@@ -128,14 +124,20 @@ function matchEntityToNode(
  * - class/interface/enum/namespace entities get: line_count, quality_score
  * - file entities already have line_count from the parser
  */
-export function populateEntityMetrics(root: SgNode, entities: Entity[]): void {
-  const funcNodes = findFunctionNodes(root);
+export function populateEntityMetrics(
+  root: SgNode,
+  entities: Entity[],
+  options: PopulateMetricsOptions = {},
+): void {
+  const hasFunctions = entities.some((e) => e.kind === 'function' || e.kind === 'method');
+  const funcNodes = hasFunctions ? findFunctionNodes(root) : [];
+  const cognitive = options.cognitive ?? true;
 
   for (const entity of entities) {
     ensureLineCount(entity);
 
     if (entity.kind === 'function' || entity.kind === 'method') {
-      populateFunctionMetrics(entity, funcNodes);
+      populateFunctionMetrics(entity, funcNodes, cognitive);
     } else if (isContainerKind(entity.kind)) {
       entity.metrics!.quality_score = computeQualityScore(entity.metrics!);
     }
@@ -164,12 +166,15 @@ function isContainerKind(kind: string): boolean {
 function populateFunctionMetrics(
   entity: Entity,
   funcNodes: LocatedNode[],
+  cognitive: boolean,
 ): void {
   const astNode = matchEntityToNode(entity, funcNodes);
 
   if (astNode) {
     const metrics = entity.metrics as EntityMetrics;
-    metrics.cognitive_complexity = computeCognitiveComplexity(astNode);
+    const cc = cognitive ? computeCognitiveComplexity(astNode, entity.language) : undefined;
+    if (cc === undefined) delete metrics.cognitive_complexity;
+    else metrics.cognitive_complexity = cc;
     metrics.cyclomatic_complexity = computeCyclomaticComplexity(astNode);
 
     const halstead = computeHalstead(astNode);

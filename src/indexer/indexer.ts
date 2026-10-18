@@ -1,39 +1,58 @@
 /**
- * Indexer orchestrator — coordinates the full indexing pipeline:
- *   discover files → detect changes → delete stale data →
- *   parse files → extract entities + relations → store in graph →
- *   create module entities → update file index.
+ * Indexer orchestrator (Phase 8 two-pass pipeline):
+ *
+ *   discover → detect changes → parse changed files (pass 1)
+ *   → find dependents (reverse imports, package scope, removed targets)
+ *   → parse dependents → rebuild project symbol table
+ *   → resolve pending relations (pass 2) → write graph
+ *   → sync module nodes → file index (hash only after success)
+ *   → symbols snapshot → churn → quality → manifest.
  */
-
-import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { dirname, join, resolve as resolvePath } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { GraphStore } from '../contracts/graph.js';
 import type { FlowLensConfig } from '../contracts/config.js';
 import type { DiscoveredFile } from '../contracts/discovery.js';
-import type { Entity } from '../contracts/entities.js';
-import { discoverFiles } from '../discovery/file-walker.js';
-import { loadIgnorePatterns } from '../discovery/ignore-rules.js';
-import { AstGrepParser } from '../parser/ast-grep-parser.js';
+import type { GraphQuality, IndexManifest } from '../contracts/quality.js';
+import type { FileSymbolRecord } from '../contracts/symbols.js';
+import { GRAPH_SCHEMA_VERSION } from '../contracts/manifest.js';
 import { FileIndexManager } from './file-index.js';
-import { buildUpdatedIndex } from './incremental.js';
-import { LANGUAGE_EXTENSIONS } from '../utils/paths.js';
-import { hashContent } from '../utils/hash.js';
-import { generateEntityId } from '../utils/id.js';
-import { computeChurn } from '../analysis/churn-analyzer.js';
-import { parallelParse, PARALLEL_THRESHOLD } from './parallel-parser.js';
+import { clearModuleResolverCaches } from '../parser/resolution/ts-module-resolver.js';
+import { recheckBinding } from '../parser/resolution/recheck.js';
+import { loadSymbolSnapshot, saveSymbolSnapshot, recordFromParsed } from './symbol-snapshot.js';
+import { findDependents } from './dependents.js';
+import { runPass2, countIdCollisions, strictIds } from './pass2.js';
+import {
+  discoverProjectFiles, detectChanges, parseBatch, writeFileGraph, deleteFileGraph,
+  syncModuleEntities, enrichWithChurnMetrics, updateFileIndex,
+} from './index-steps.js';
+import type { ParsedFileOutput } from './parallel-parser.js';
+import { computeGraphQuality } from '../quality/graph-quality.js';
+import { manifestStore } from '../manifest/manifest-store.js';
+import { readGitInfo } from '../manifest/git-info.js';
+import { flowlensVersion, PARSER_VERSION } from '../manifest/version.js';
+import { ensureProjectIdentity } from '../utils/project-identity.js';
 
-/* ---------- Public types ---------- */
+export { getSupportedExtensions } from './index-steps.js';
 
 export interface IndexResult {
   filesDiscovered: number;
+  /** Files parsed this run (changed + dependents re-resolved). */
   filesIndexed: number;
   filesSkipped: number;
   filesDeleted: number;
+  /** Unchanged files re-parsed because a file they depend on changed. */
+  filesReresolved: number;
+  /** Entities written this run (equals the stored count after a full index). */
   entitiesCreated: number;
+  /** Edges written this run, excluding unresolved records. */
   relationsCreated: number;
+  unresolvedRelations: number;
   languageCounts: Record<string, number>;
   errors: Array<{ file: string; message: string }>;
   duration: number;
+  quality: GraphQuality;
+  manifest: IndexManifest;
 }
 
 export interface IndexOptions {
@@ -42,273 +61,151 @@ export interface IndexOptions {
   config: FlowLensConfig;
   fileIndexPath: string;
   incremental: boolean;
+  /** `.flowlens/` directory (default: the directory of `fileIndexPath`). */
+  flowlensDir?: string;
 }
 
-/* ---------- Pipeline ---------- */
-
-/**
- * Run the full indexing pipeline.
- */
 export async function runIndex(options: IndexOptions): Promise<IndexResult> {
   const startTime = Date.now();
-
-  const { rootDir, graphStore, config, fileIndexPath, incremental } = options;
-
+  const startedAt = new Date(startTime).toISOString();
+  const { graphStore: store, config, fileIndexPath, incremental } = options;
+  const rootDir = resolvePath(options.rootDir);
+  const flowlensDir = options.flowlensDir ?? dirname(fileIndexPath);
+  const snapshotPath = join(flowlensDir, 'symbols.json');
   const errors: Array<{ file: string; message: string }> = [];
-  let entitiesCreated = 0;
-  let relationsCreated = 0;
+  clearModuleResolverCaches();
 
-  // --- Step 1: Discover files ---
+  const identity = ensureProjectIdentity(flowlensDir, rootDir);
+  const git = readGitInfo(rootDir);
+  const baseManifest = (): IndexManifest => ({
+    project_id: identity.id, root: rootDir, schema_version: GRAPH_SCHEMA_VERSION,
+    flowlens_version: flowlensVersion(), parser_version: PARSER_VERSION,
+    git_head: git.head, git_dirty: git.dirty, completion: 'in_progress',
+    started_at: startedAt, finished_at: null, file_count: 0, entity_count: 0, relation_count: 0,
+    errors: { parse_failures: 0, unresolved_relations: 0, ambiguous_relations: 0, failed_files: [] },
+  });
+  await manifestStore.write(flowlensDir, baseManifest());
+
+  // 1–2. discover + change detection
   const { discovered, languageCounts } = await discoverProjectFiles(rootDir, config);
+  const { changed, deleted, previousIndex } = await detectChanges(discovered, fileIndexPath, incremental);
+  const previous = incremental ? await loadSymbolSnapshot(snapshotPath) : new Map<string, FileSymbolRecord>();
+  const records = new Map(previous);
+  for (const d of deleted) records.delete(d);
 
-  // --- Step 2: Determine changes ---
-  const { changed, deleted, previousIndex } = await detectChanges(
-    discovered, fileIndexPath, incremental,
-  );
+  // 3. pass 1 on changed files
+  const first = await parseBatch(changed, rootDir);
+  const parsed: ParsedFileOutput[] = [...first.parsed];
+  const failures = [...first.failures];
+  for (const p of first.parsed) if (!p.failed) records.set(p.path, recordFromParsed(p));
 
-  // --- Step 3: Delete removed files from graph ---
-  const filesDeleted = await deleteStaleFiles(deleted, graphStore);
-
-  // --- Step 4: Parse changed files and store in graph ---
-  // Large runs go through worker threads via parallelParse; small runs stay
-  // serial (worker startup overhead isn't worth it below PARALLEL_THRESHOLD).
-  const fileHashes = new Map<string, string>();
-
-  if (changed.length >= PARALLEL_THRESHOLD) {
-    const { parsed, failures } = await parallelParse(changed, rootDir);
-    for (const file of parsed) {
-      fileHashes.set(file.path, file.hash);
-      await graphStore.deleteEdgesByFile(file.path);
-      await graphStore.deleteNodesByFile(file.path);
-      await graphStore.putNodes(file.entities);
-      await graphStore.putEdges(file.relations);
-      entitiesCreated += file.entities.length;
-      relationsCreated += file.relations.length;
-      for (const err of file.errors) {
-        errors.push({ file: err.file, message: err.message });
-      }
-    }
-    for (const failure of failures) {
-      errors.push({ file: failure.path, message: failure.message });
-    }
-  } else {
-    const parser = new AstGrepParser(rootDir);
-    for (const file of changed) {
-      const result = await parseAndStore(file, rootDir, parser, graphStore, fileHashes, errors);
-      entitiesCreated += result.entities;
-      relationsCreated += result.relations;
-    }
+  // 4. dependents of what changed → re-parse them too (incremental only)
+  let reresolved = 0;
+  if (incremental && previous.size > 0 && (changed.length > 0 || deleted.length > 0)) {
+    const touched = new Set([...changed.map((f) => f.path), ...deleted]);
+    const owners = await ownersOfRemovedTargets(store, previous, records, touched);
+    const deps = findDependents({
+      records, previous, touched, ownersOfRemovedTargets: owners,
+      recheck: (b, from, lang) => recheckBinding(b, from, lang, rootDir),
+    });
+    const byPath = new Map(discovered.map((f) => [f.path, f]));
+    const depFiles = [...deps].map((p) => byPath.get(p)).filter((f): f is DiscoveredFile => !!f);
+    const second = await parseBatch(depFiles, rootDir);
+    parsed.push(...second.parsed);
+    failures.push(...second.failures);
+    for (const p of second.parsed) if (!p.failed) records.set(p.path, recordFromParsed(p));
+    reresolved = second.parsed.length;
   }
 
-  // --- Step 5: Create module entities ---
-  const moduleCount = await createModuleEntities(changed, graphStore);
-  entitiesCreated += moduleCount;
+  // 5. identity check
+  const collisions = countIdCollisions(records);
+  if (collisions.count > 0) {
+    const msg = `${collisions.count} entity id collision(s): ${collisions.examples.join('; ')}`;
+    if (strictIds()) throw new Error(msg);
+    errors.push({ file: '', message: msg });
+  }
 
-  // --- Step 6: Update file index ---
-  const newIndex = buildUpdatedIndex(previousIndex, changed, fileHashes, deleted);
-  const fileIndexManager = new FileIndexManager();
-  await fileIndexManager.save(fileIndexPath, newIndex);
+  // 6. pass 2 + store writes
+  for (const d of deleted) await deleteFileGraph(store, d);
+  const pass2 = runPass2(records, parsed);
+  let entitiesCreated = 0;
+  let relationsCreated = 0;
+  let unresolvedRelations = 0;
+  for (const file of parsed) {
+    for (const err of file.errors) errors.push({ file: err.file, message: err.message });
+    const edges = pass2.byFile.get(file.path);
+    if (file.failed || !edges) continue;
+    await writeFileGraph(store, file, edges);
+    entitiesCreated += file.entities.length;
+    relationsCreated += edges.edges.length;
+    unresolvedRelations += edges.unresolved.length;
+  }
+  const parsedPaths = new Set(parsed.map((p) => p.path));
+  for (const f of failures) if (!parsedPaths.has(f.path)) errors.push({ file: f.path, message: f.message });
+  const modules = await syncModuleEntities(store, [...records.keys()]);
+  entitiesCreated += modules.created;
 
-  // --- Step 7: Enrich entities with git churn metrics ---
-  await enrichWithChurnMetrics(rootDir, graphStore);
+  // 7. bookkeeping
+  const newIndex = updateFileIndex(previousIndex, parsed, failures, deleted);
+  await new FileIndexManager().save(fileIndexPath, newIndex);
+  await saveSymbolSnapshot(snapshotPath, records);
+  if (git.head || existsSync(join(rootDir, '.git'))) await enrichWithChurnMetrics(rootDir, store);
 
-  // --- Step 8: Return summary ---
+  // 8. quality + manifest
+  const quality = await computeGraphQuality(store, { records, idCollisions: collisions.count });
+  const failedFiles = [...new Set(failures.map((f) => f.path))];
+  const manifest: IndexManifest = {
+    ...baseManifest(),
+    completion: failedFiles.length > 0 ? 'partial' : 'complete',
+    finished_at: new Date().toISOString(),
+    file_count: records.size,
+    entity_count: quality.entity_count,
+    relation_count: quality.edge_count,
+    errors: {
+      parse_failures: failedFiles.length,
+      unresolved_relations: quality.unresolved_count,
+      ambiguous_relations: quality.ambiguous_count,
+      failed_files: failedFiles.slice(0, 20),
+    },
+    quality,
+  };
+  await manifestStore.write(flowlensDir, manifest);
+
   return {
     filesDiscovered: discovered.length,
-    filesIndexed: changed.length,
-    filesSkipped: discovered.length - changed.length,
-    filesDeleted,
+    filesIndexed: parsed.length,
+    filesSkipped: discovered.length - parsed.length,
+    filesDeleted: deleted.length,
+    filesReresolved: reresolved,
     entitiesCreated,
     relationsCreated,
+    unresolvedRelations,
     languageCounts,
     errors,
     duration: Date.now() - startTime,
+    quality,
+    manifest,
   };
 }
 
-/* ---------- Step 1: File discovery ---------- */
-
-async function discoverProjectFiles(
-  rootDir: string,
-  config: FlowLensConfig,
-): Promise<{ discovered: DiscoveredFile[]; languageCounts: Record<string, number> }> {
-  const ignorePatterns = await loadIgnorePatterns(rootDir);
-  const excludePatterns = [...ignorePatterns, ...config.exclude];
-
-  const supportedExtensions = getSupportedExtensions(config.languages);
-
-  const discovered = await discoverFiles({
-    rootDir,
-    excludePatterns,
-    supportedExtensions,
-  });
-
-  const languageCounts: Record<string, number> = {};
-  for (const file of discovered) {
-    languageCounts[file.language] = (languageCounts[file.language] ?? 0) + 1;
-  }
-
-  return { discovered, languageCounts };
-}
-
-/**
- * Filter LANGUAGE_EXTENSIONS by the config.languages enable/disable map.
- * If a language is not listed in config.languages, it is included by default.
- */
-function getSupportedExtensions(languages: Record<string, boolean>): string[] {
-  return Object.entries(LANGUAGE_EXTENSIONS)
-    .filter(([, lang]) => languages[lang] !== false)
-    .map(([ext]) => ext);
-}
-
-/* ---------- Step 2: Change detection ---------- */
-
-async function detectChanges(
-  discovered: DiscoveredFile[],
-  fileIndexPath: string,
-  incremental: boolean,
-): Promise<{
-  changed: DiscoveredFile[];
-  deleted: string[];
-  previousIndex: Record<string, import('../contracts/file-index.js').FileIndexEntry>;
-}> {
-  const fileIndexManager = new FileIndexManager();
-
-  if (!incremental) {
-    return {
-      changed: discovered,
-      deleted: [],
-      previousIndex: {},
-    };
-  }
-
-  const previousIndex = await fileIndexManager.load(fileIndexPath);
-  const { changed, deleted } = await fileIndexManager.getChangedFiles(discovered, previousIndex);
-
-  return { changed, deleted, previousIndex };
-}
-
-/* ---------- Step 3: Delete stale files ---------- */
-
-async function deleteStaleFiles(
-  deletedPaths: string[],
-  graphStore: GraphStore,
-): Promise<number> {
-  for (const filePath of deletedPaths) {
-    await graphStore.deleteEdgesByFile(filePath);
-    await graphStore.deleteNodesByFile(filePath);
-  }
-  return deletedPaths.length;
-}
-
-/* ---------- Step 4: Parse and store ---------- */
-
-async function parseAndStore(
-  file: DiscoveredFile,
-  rootDir: string,
-  parser: AstGrepParser,
-  graphStore: GraphStore,
-  fileHashes: Map<string, string>,
-  errors: Array<{ file: string; message: string }>,
-): Promise<{ entities: number; relations: number }> {
-  try {
-    const content = await readFile(path.join(rootDir, file.path), 'utf-8');
-    fileHashes.set(file.path, hashContent(content));
-
-    const result = await parser.parseFile(file.path, content);
-
-    // Delete existing data for this file before storing new data
-    // (handles re-indexing of changed files in incremental mode)
-    await graphStore.deleteEdgesByFile(file.path);
-    await graphStore.deleteNodesByFile(file.path);
-
-    await graphStore.putNodes(result.entities);
-    await graphStore.putEdges(result.relations);
-
-    for (const err of result.errors) {
-      errors.push({ file: err.file, message: err.message });
-    }
-
-    return { entities: result.entities.length, relations: result.relations.length };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    errors.push({ file: file.path, message });
-    return { entities: 0, relations: 0 };
-  }
-}
-
-/* ---------- Step 5: Module entities ---------- */
-
-/**
- * Collect unique directory paths from the indexed files and create
- * a module entity for each directory. Existing module entities for
- * these paths are replaced.
- */
-async function createModuleEntities(
-  files: DiscoveredFile[],
-  graphStore: GraphStore,
-): Promise<number> {
-  const directories = new Set<string>();
-
-  for (const file of files) {
-    const dir = path.dirname(file.path);
-    if (dir && dir !== '.') {
-      directories.add(dir);
-    }
-  }
-
-  const moduleEntities: Entity[] = [];
-
-  for (const dir of directories) {
-    const dirName = path.basename(dir);
-    const entity: Entity = {
-      id: generateEntityId(dir, dirName, 'module'),
-      kind: 'module',
-      name: dirName,
-      qualified_name: dir,
-      file: dir,
-      location: { line_start: 0, line_end: 0, column_start: 0, column_end: 0 },
-      visibility: 'public',
-      language: 'unknown',
-    };
-    moduleEntities.push(entity);
-  }
-
-  if (moduleEntities.length > 0) {
-    await graphStore.putNodes(moduleEntities);
-  }
-
-  return moduleEntities.length;
-}
-
-/* ---------- Step 7: Churn enrichment ---------- */
-
-/**
- * Compute git churn for the repository and update entity metrics in the graph
- * with `churn_rate` and `hotspot_score` (churn_rate × cognitive_complexity).
- *
- * Silently skips if the directory is not a git repository.
- */
-async function enrichWithChurnMetrics(
-  rootDir: string,
-  graphStore: GraphStore,
-): Promise<void> {
-  const churnData = await computeChurn(rootDir, { period_days: 90 });
-  if (churnData.size === 0) return;
-
-  for (const [filePath, churnInfo] of churnData) {
-    const fileEntities = await graphStore.getNodesByFile(filePath);
-    for (const entity of fileEntities) {
-      if (!entity.metrics) continue;
-
-      entity.metrics.churn_rate = churnInfo.churn_rate;
-
-      const cognitiveComplexity = entity.metrics.cognitive_complexity;
-      if (typeof cognitiveComplexity === 'number') {
-        entity.metrics.hotspot_score = churnInfo.churn_rate * cognitiveComplexity;
+/** Files owning edges into entity ids that existed before this run but no longer do. */
+async function ownersOfRemovedTargets(
+  store: GraphStore,
+  previous: Map<string, FileSymbolRecord>,
+  records: Map<string, FileSymbolRecord>,
+  touched: Set<string>,
+): Promise<Set<string>> {
+  const owners = new Set<string>();
+  for (const file of touched) {
+    const before = previous.get(file);
+    if (!before) continue;
+    const now = new Set((records.get(file)?.entities ?? []).map((e) => e.id));
+    for (const e of before.entities) {
+      if (now.has(e.id)) continue;
+      for (const edge of await store.getEdgesTo(e.id)) {
+        if (edge.location.file !== file) owners.add(edge.location.file);
       }
-
-      await graphStore.putNode(entity);
     }
   }
+  return owners;
 }

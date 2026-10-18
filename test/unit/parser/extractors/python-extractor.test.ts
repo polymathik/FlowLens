@@ -149,8 +149,10 @@ describe('Python extractor — relations', () => {
 import os
 from typing import List
 `);
+    // Phase 8: `os` / `typing` are stdlib (external) — they used to yield import
+    // edges to fabricated ids; external modules now produce no edge.
     const imports = relations.filter(r => r.type === 'import');
-    expect(imports).toHaveLength(2);
+    expect(imports).toHaveLength(0);
   });
 
   it('extracts extend relations from class inheritance', () => {
@@ -165,13 +167,16 @@ class Dog(Animal):
     expect(extends_.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('extracts implement relations for ABC', () => {
+  // Phase 8: `ABC` used to become an `implement` edge to a fabricated id.
+  // ABC comes from the stdlib `abc` module, so no edge is produced; a project
+  // base class (same file or imported) gives an `extend` edge.
+  it('does not fabricate edges for stdlib base classes like ABC', () => {
     const { relations } = extractRelations(`
+from abc import ABC
 class Animal(ABC):
     pass
 `);
-    const impls = relations.filter(r => r.type === 'implement');
-    expect(impls).toHaveLength(1);
+    expect(relations.filter(r => r.type === 'implement' || r.type === 'extend')).toHaveLength(0);
   });
 
   it('extracts contain relations for methods in class', () => {

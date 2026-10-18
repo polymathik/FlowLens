@@ -1,39 +1,37 @@
 /**
  * TypeScript / JavaScript language extractor.
  *
- * Wraps the existing `extractEntities` and `extractRelations` functions
- * as a `LanguageExtractor`, handling all JS-family languages (TS, TSX,
- * JS, JSX, MJS, CJS).
+ * One factory builds the extractor for each JS-family language key so the
+ * entities carry the real language (`javascript` files are not labelled
+ * `typescript`).
  */
 import type { LanguageExtractor } from '../../contracts/language-extractor.js';
 import type { RelationType } from '../../contracts/relations.js';
 import { extractEntities } from '../entity-extractor.js';
 import { extractRelations } from '../relation-extractor.js';
+import { extractTsSymbols } from '../symbols/ts-symbols.js';
 
-export const typescriptExtractor: LanguageExtractor = {
-  language: 'typescript',
-  extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
-  supportedRelationTypes: [
-    'import',
-    'call',
-    'extend',
-    'implement',
-    'override',
-    'mixin',
-    'use',
-    'contain',
-    'create',
-    'parameter',
-    'return',
-    'throw',
-    'decorate',
-  ] as RelationType[],
+const RELATION_TYPES: RelationType[] = [
+  'import', 'call', 'extend', 'implement', 'override', 'mixin', 'use',
+  'contain', 'create', 'parameter', 'return', 'throw', 'decorate',
+];
 
-  extractEntities(root, filePath) {
-    return extractEntities(root, filePath, 'typescript');
-  },
+export function createTypescriptExtractor(language: string): LanguageExtractor {
+  return {
+    language,
+    extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
+    supportedRelationTypes: RELATION_TYPES,
+    cognitiveComplexity: true,
+    extractEntities(root, filePath) {
+      return extractEntities(root, filePath, language);
+    },
+    extractSymbols(root, filePath, _entities, rootDir) {
+      return extractTsSymbols(root, filePath, rootDir, language);
+    },
+    extractRelations(root, filePath, entities, rootDir, symbols) {
+      return extractRelations(root, filePath, entities, rootDir, symbols);
+    },
+  };
+}
 
-  extractRelations(root, filePath, entities, rootDir) {
-    return extractRelations(root, filePath, entities, rootDir);
-  },
-};
+export const typescriptExtractor: LanguageExtractor = createTypescriptExtractor('typescript');

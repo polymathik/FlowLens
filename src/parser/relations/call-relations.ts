@@ -1,121 +1,55 @@
 /**
- * Call relation extraction: direct function calls and this.method() calls.
+ * Call relation extraction (TS/JS).
  *
- * Identifies function/method calls within the same file and creates
- * relations from the calling entity to the callee entity.
+ * - `foo()`          → local function, or pending through an import binding.
+ * - `this.m()`       → method of the *enclosing* class (by qualified name),
+ *                      else the parent class's member (optional, pass 2).
+ * - `super.m()`      → parent class member (optional).
+ * - `ns.f()`/`A.b()` → namespace import member / static member; member
+ *                      calls through non-namespace bindings are optional
+ *                      because the receiver may be an instance.
+ * Calls whose receiver is a local variable or an expression are dropped:
+ * without type information their target is unknown.
  */
 import type { SgNode } from '@ast-grep/napi';
-import type { Entity } from '../../contracts/entities.js';
-import type { Relation } from '../../contracts/relations.js';
-import { generateRelationId } from '../../utils/id.js';
-import {
-  walkNodes,
-  buildEntityNameMap,
-  buildClassMethodMap,
-  findEnclosingFunctionEntity,
-  findEnclosingClassName,
-  getCallExpressionCallee,
-} from './shared.js';
+import type { ScopeFrame, TsRelationContext } from './ts-context.js';
+import { refText } from './ts-context.js';
 
-// ─── Public API ─────────────────────────────────────────────────
+export function handleCall(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): void {
+  const from = frame.entity;
+  if (!from) return;
+  const callee = node.children()[0];
+  if (!callee) return;
+  const em = ctx.emitter;
 
-export function extractCallRelations(
-  root: SgNode,
-  filePath: string,
-  entities: Entity[],
-  relations: Relation[],
-): void {
-  const entityByName = buildEntityNameMap(entities);
-  const methodsByClass = buildClassMethodMap(entities);
-
-  walkNodes(root, (node) => {
-    if (node.kind() !== 'call_expression') return;
-
-    const callee = getCallExpressionCallee(node);
-    if (!callee) return;
-
-    const callerEntity = findEnclosingFunctionEntity(node, filePath, entities);
-    if (!callerEntity) return;
-
-    if (callee.kind() === 'identifier') {
-      handleDirectCall(callee, callerEntity, entityByName, node, filePath, relations);
-    } else if (callee.kind() === 'member_expression') {
-      handleMemberCall(callee, callerEntity, methodsByClass, node, filePath, relations);
-    }
-  });
-}
-
-// ─── Direct Call ────────────────────────────────────────────────
-
-function handleDirectCall(
-  callee: SgNode,
-  callerEntity: Entity,
-  entityByName: Map<string, Entity>,
-  callNode: SgNode,
-  filePath: string,
-  relations: Relation[],
-): void {
-  const name = callee.text();
-  if (name === 'require') return;
-
-  const targetEntity = entityByName.get(name);
-  if (!targetEntity) return;
-  if (targetEntity.kind !== 'function' && targetEntity.kind !== 'method') return;
-
-  createCallRelation(callerEntity, targetEntity, callNode, filePath, relations);
-}
-
-// ─── Member Call ────────────────────────────────────────────────
-
-function handleMemberCall(
-  callee: SgNode,
-  callerEntity: Entity,
-  methodsByClass: Map<string, Map<string, Entity>>,
-  callNode: SgNode,
-  filePath: string,
-  relations: Relation[],
-): void {
-  const children = callee.children();
-  if (children.length < 3) return;
-
-  const objectNode = children[0];
-  const propertyNode = children[children.length - 1];
-  const methodName = propertyNode.text();
-
-  if (objectNode.kind() === 'this') {
-    const enclosingClassName = findEnclosingClassName(callNode);
-    if (!enclosingClassName) return;
-
-    const classMethods = methodsByClass.get(enclosingClassName);
-    if (!classMethods) return;
-
-    const targetEntity = classMethods.get(methodName);
-    if (!targetEntity) return;
-
-    createCallRelation(callerEntity, targetEntity, callNode, filePath, relations);
+  if (callee.kind() === 'identifier') {
+    em.link(from, 'call', callee.text(), node);
+    return;
   }
-}
+  if (callee.kind() !== 'member_expression') return;
 
-// ─── Relation Creation ──────────────────────────────────────────
+  const parts = callee.children();
+  const object = parts[0];
+  const property = parts[parts.length - 1];
+  if (!object || !property || property.kind() !== 'property_identifier') return;
+  const method = property.text();
 
-function createCallRelation(
-  from: Entity,
-  to: Entity,
-  callNode: SgNode,
-  filePath: string,
-  relations: Relation[],
-): void {
-  const range = callNode.range();
-  const line = range.start.line + 1;
-  const column = range.start.column + 1;
+  if (object.kind() === 'this') {
+    if (!frame.cls) return;
+    const own = em.member(frame.cls.entity, method, ['method']);
+    if (own) em.direct(from, own, 'call', node);
+    else if (frame.cls.parentRef) em.link(from, 'call', `${frame.cls.parentRef}.${method}`, node, { optional: true });
+    return;
+  }
+  if (object.kind() === 'super') {
+    if (frame.cls?.parentRef) em.link(from, 'call', `${frame.cls.parentRef}.${method}`, node, { optional: true });
+    return;
+  }
 
-  relations.push({
-    id: generateRelationId(from.id, to.id, 'call', filePath, line),
-    from: from.id,
-    to: to.id,
-    type: 'call',
-    location: { file: filePath, line, column },
-    weight: 1,
-    confidence: 1.0,
-  });
+  const receiver = refText(object);
+  if (!receiver) return;
+  const head = receiver.split('.')[0];
+  const binding = em.binding(head);
+  const optional = binding ? binding.imported !== '*' : true;
+  em.link(from, 'call', `${receiver}.${method}`, node, { optional });
 }

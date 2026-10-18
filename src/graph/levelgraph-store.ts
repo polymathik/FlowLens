@@ -10,6 +10,17 @@
  *   Edge:          { subject: fromId,   predicate: relationType,    object: toId,  _data: <json> }
  *   Edge ID idx:   { subject: edgeId,   predicate: 'edge_idx',     object: fromId, _data: <json> }
  *   Edge file idx: { subject: edgeId,   predicate: 'edge_in_file', object: filePath }
+ *   Unresolved:    { subject: edgeId,   predicate: 'unresolved',   object: filePath, _data: <json> }
+ *
+ * Edge identity: the primary edge triple is keyed by (from, type, to), so
+ * repeated occurrences must be aggregated into one relation with a summed
+ * `weight` (see graph/aggregate.ts). `putEdges` aggregates within its batch
+ * and, if an edge with the same key already exists from an earlier write,
+ * replaces it and removes the stale index triples.
+ *
+ * Unresolved / ambiguous relations (`to === ''`) never become edge triples;
+ * they live under the internal `unresolved` predicate, are excluded from
+ * every edge read and removed by `deleteEdgesByFile`.
  */
 
 import { createRequire } from 'node:module';
@@ -18,55 +29,20 @@ import type { GraphStore } from '../contracts/graph.js';
 import type { Entity, EntityKind } from '../contracts/entities.js';
 import type { Relation, RelationType } from '../contracts/relations.js';
 import { wrapForCallbacks } from './level-compat.js';
+import { aggregateRelations } from './aggregate.js';
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const levelgraph = require('levelgraph');
 
 /** Internal predicates used for node/edge index triples. */
-const INTERNAL_PREDICATES = new Set(['entity', 'in_file', 'edge_idx', 'edge_in_file']);
+const INTERNAL_PREDICATES = new Set(['entity', 'in_file', 'edge_idx', 'edge_in_file', 'unresolved']);
 
-/* ---------- LevelGraph minimal typings ---------- */
-
-interface Triple {
-  subject: string;
-  predicate: string;
-  object: string;
-  [key: string]: unknown;
+function isUnresolved(r: Relation): boolean {
+  return r.to === '' || r.resolution === 'unresolved' || r.resolution === 'ambiguous';
 }
 
-interface LevelGraphDB {
-  put(triple: Triple | Triple[], cb: (err: Error | null) => void): void;
-  get(pattern: Partial<Triple>, cb: (err: Error | null, list: unknown[]) => void): void;
-  del(triple: Triple | Triple[], cb: (err: Error | null) => void): void;
-  close(cb: (err?: Error | null) => void): void;
-}
-
-/* ---------- Promisified helpers ---------- */
-
-function lgPut(db: LevelGraphDB, triple: Triple | Triple[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    db.put(triple, (err) => (err ? reject(err) : resolve()));
-  });
-}
-
-function lgGet(db: LevelGraphDB, pattern: Partial<Triple>): Promise<Triple[]> {
-  return new Promise((resolve, reject) => {
-    db.get(pattern, (err, list) => {
-      if (err) return reject(err);
-      const triples = (list as unknown[]).map((item) =>
-        typeof item === 'string' ? JSON.parse(item) as Triple : item as Triple,
-      );
-      resolve(triples);
-    });
-  });
-}
-
-function lgDel(db: LevelGraphDB, triple: Triple | Triple[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    db.del(triple, (err) => (err ? reject(err) : resolve()));
-  });
-}
+import { type Triple, type LevelGraphDB, lgPut, lgGet, lgDel } from './levelgraph-helpers.js';
 
 /* ---------- LevelGraphStore ---------- */
 
@@ -107,26 +83,20 @@ export class LevelGraphStore implements GraphStore {
   /* ---- nodes ---- */
 
   async putNode(entity: Entity): Promise<void> {
-    const db = this.ensureOpen();
-    const entityTriple: Triple = {
-      subject: entity.id,
-      predicate: 'entity',
-      object: entity.kind,
-      _data: JSON.stringify(entity),
-    };
-    const fileTriple: Triple = {
-      subject: entity.id,
-      predicate: 'in_file',
-      object: entity.file,
-    };
-    await lgPut(db, entityTriple);
-    await lgPut(db, fileTriple);
+    await this.putNodes([entity]);
   }
 
   async putNodes(entities: Entity[]): Promise<void> {
+    if (entities.length === 0) return;
+    const db = this.ensureOpen();
+    const triples: Triple[] = [];
     for (const entity of entities) {
-      await this.putNode(entity);
+      triples.push(
+        { subject: entity.id, predicate: 'entity', object: entity.kind, _data: JSON.stringify(entity) },
+        { subject: entity.id, predicate: 'in_file', object: entity.file },
+      );
     }
+    await lgPut(db, triples);
   }
 
   async getNode(id: string): Promise<Entity | null> {
@@ -176,42 +146,40 @@ export class LevelGraphStore implements GraphStore {
   /* ---- edges ---- */
 
   async putEdge(relation: Relation): Promise<void> {
-    const db = this.ensureOpen();
-    const data = JSON.stringify(relation);
-
-    // Primary edge triple
-    const edgeTriple: Triple = {
-      subject: relation.from,
-      predicate: relation.type,
-      object: relation.to,
-      _data: data,
-      _edgeId: relation.id,
-      _file: relation.location.file,
-    };
-    await lgPut(db, edgeTriple);
-
-    // Edge ID index — allows lookup/delete by edge ID
-    const idxTriple: Triple = {
-      subject: relation.id,
-      predicate: 'edge_idx',
-      object: relation.from,
-      _data: data,
-    };
-    await lgPut(db, idxTriple);
-
-    // Edge file index — allows deleteEdgesByFile
-    const fileTriple: Triple = {
-      subject: relation.id,
-      predicate: 'edge_in_file',
-      object: relation.location.file,
-    };
-    await lgPut(db, fileTriple);
+    await this.putEdges([relation]);
   }
 
   async putEdges(relations: Relation[]): Promise<void> {
-    for (const rel of relations) {
-      await this.putEdge(rel);
+    if (relations.length === 0) return;
+    const db = this.ensureOpen();
+    const triples: Triple[] = [];
+    for (const relation of aggregateRelations(relations)) {
+      const data = JSON.stringify(relation);
+      if (isUnresolved(relation)) {
+        triples.push({ subject: relation.id, predicate: 'unresolved', object: relation.location.file, _data: data });
+        continue;
+      }
+      // Replace an existing edge with the same key written by an earlier call.
+      const existing = await lgGet(db, { subject: relation.from, predicate: relation.type, object: relation.to });
+      for (const t of existing) {
+        if (t._edgeId && t._edgeId !== relation.id) await this.deleteEdge(t._edgeId as string);
+      }
+      triples.push(
+        // Primary edge triple
+        { subject: relation.from, predicate: relation.type, object: relation.to, _data: data, _edgeId: relation.id, _file: relation.location.file },
+        // Edge ID index — lookup/delete by edge ID
+        { subject: relation.id, predicate: 'edge_idx', object: relation.from, _data: data },
+        // Edge file index — deleteEdgesByFile
+        { subject: relation.id, predicate: 'edge_in_file', object: relation.location.file },
+      );
     }
+    await lgPut(db, triples);
+  }
+
+  async getUnresolvedRelations(): Promise<Relation[]> {
+    const db = this.ensureOpen();
+    const results = await lgGet(db, { predicate: 'unresolved' });
+    return results.map((t) => JSON.parse(t._data as string) as Relation);
   }
 
   async getEdgesFrom(entityId: string, type?: RelationType): Promise<Relation[]> {
@@ -269,6 +237,8 @@ export class LevelGraphStore implements GraphStore {
     for (const ft of fileTriples) {
       await this.deleteEdge(ft.subject);
     }
+    const unresolved = await lgGet(db, { predicate: 'unresolved', object: filePath });
+    if (unresolved.length > 0) await lgDel(db, unresolved);
   }
 
   /* ---- bulk reads ---- */
@@ -280,11 +250,18 @@ export class LevelGraphStore implements GraphStore {
   }
 
   async getAllEdges(): Promise<Relation[]> {
+    // Scan only the edge-id index (one triple per edge) instead of the whole store.
     const db = this.ensureOpen();
-    const results = await lgGet(db, {});
-    return results
-      .filter((t) => !INTERNAL_PREDICATES.has(t.predicate) && t._data)
-      .map((t) => JSON.parse(t._data as string) as Relation);
+    const results = await lgGet(db, { predicate: 'edge_idx' });
+    return results.filter((t) => t._data).map((t) => JSON.parse(t._data as string) as Relation);
+  }
+
+  /** Replace everything stored for one file in a single call. */
+  async replaceFile(filePath: string, entities: Entity[], relations: Relation[]): Promise<void> {
+    await this.deleteEdgesByFile(filePath);
+    await this.deleteNodesByFile(filePath);
+    await this.putNodes(entities);
+    await this.putEdges(relations);
   }
 
   /* ---- internal ---- */

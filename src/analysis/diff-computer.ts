@@ -19,6 +19,12 @@ import type {
   InterfaceDiff,
   InterfaceDiffEntry,
 } from '../contracts/analysis/diff.js';
+import {
+  isVisibilityReduction, detectParameterChanges, detectReturnChanged,
+  detectTypeChanged, detectModified, dependentsIndex,
+} from './diff-detectors.js';
+
+export { isDirectParameter } from './diff-detectors.js';
 
 export interface DiffOptions {
   /** When true, only breaking changes are included in the result. */
@@ -52,10 +58,15 @@ export async function computeDiff(
 
   const changes: InterfaceDiffEntry[] = [];
 
-  // Removed entities — present in snapshot, absent from current
+  // Removed entities — present in snapshot, absent from current. Their
+  // dependents no longer exist in the current graph (the edges went with the
+  // entity), so the blast radius is counted on the snapshot's relations.
+  // Parameters are reported as parameter_added/removed on their function.
+  const snapshotDependents = dependentsIndex(snapshotData.relations);
   for (const [qn, old] of snapshotMap) {
+    if (old.kind === 'parameter') continue;
     if (!currentMap.has(qn)) {
-      const dependents = await countDependents(currentGraph, old.id);
+      const dependents = snapshotDependents.get(old.id)?.size ?? 0;
       changes.push({
         entity_id: old.id,
         entity_name: old.name,
@@ -70,6 +81,7 @@ export async function computeDiff(
 
   // Added entities — present in current, absent from snapshot
   for (const [qn, curr] of currentMap) {
+    if (curr.kind === 'parameter') continue;
     if (!snapshotMap.has(qn)) {
       changes.push({
         entity_id: curr.id,
@@ -197,172 +209,6 @@ export async function computeDiff(
       non_breaking_changes: filtered.length - breakingCount,
       most_impacted_entity: mostImpacted?.entity_name,
     },
-  };
-}
-
-/**
- * Returns true when the visibility change is a restriction (broader → narrower).
- *
- * Visibility order from most open to most restricted:
- *   public > protected > internal > private
- */
-function isVisibilityReduction(from: string, to: string): boolean {
-  const order = ['public', 'protected', 'internal', 'private'];
-  const fromIdx = order.indexOf(from);
-  const toIdx = order.indexOf(to);
-  // Unknown visibility values default to -1; treat as no restriction.
-  if (fromIdx === -1 || toIdx === -1) return false;
-  return toIdx > fromIdx;
-}
-
-/**
- * Detect parameter additions and removals for a function/method entity.
- * Parameters are separate entities whose qualified_name is prefixed with
- * the parent function's qualified_name followed by a dot.
- */
-function detectParameterChanges(
-  old: Entity,
-  curr: Entity,
-  snapshotEntities: Entity[],
-  currentEntities: Entity[],
-): Omit<InterfaceDiffEntry, 'affected_dependents'>[] {
-  const oldParams = snapshotEntities.filter(
-    (e) => e.kind === 'parameter' && e.qualified_name.startsWith(old.qualified_name + '.'),
-  );
-  const currParams = currentEntities.filter(
-    (e) => e.kind === 'parameter' && e.qualified_name.startsWith(curr.qualified_name + '.'),
-  );
-
-  const oldParamNames = new Set(oldParams.map((p) => p.name));
-  const currParamNames = new Set(currParams.map((p) => p.name));
-
-  const results: Omit<InterfaceDiffEntry, 'affected_dependents'>[] = [];
-
-  for (const p of currParams) {
-    if (!oldParamNames.has(p.name)) {
-      results.push({
-        entity_id: curr.id,
-        entity_name: curr.name,
-        change_type: 'parameter_added',
-        severity: 'breaking',
-        details: `Parameter '${p.name}' added to ${curr.name}`,
-        before: old,
-        after: curr,
-      });
-    }
-  }
-
-  for (const p of oldParams) {
-    if (!currParamNames.has(p.name)) {
-      results.push({
-        entity_id: curr.id,
-        entity_name: curr.name,
-        change_type: 'parameter_removed',
-        severity: 'breaking',
-        details: `Parameter '${p.name}' removed from ${curr.name}`,
-        before: old,
-        after: curr,
-      });
-    }
-  }
-
-  return results;
-}
-
-/**
- * Detect return type changes by comparing 'return' relations from a
- * function/method entity in the snapshot vs the current graph.
- */
-function detectReturnChanged(
-  old: Entity,
-  curr: Entity,
-  snapshotRelations: Relation[],
-  currentEdges: Relation[],
-): Omit<InterfaceDiffEntry, 'affected_dependents'> | null {
-  const oldReturnTargets = new Set(
-    snapshotRelations
-      .filter((r) => r.type === 'return' && r.from === old.id)
-      .map((r) => r.to),
-  );
-  const currReturnTargets = new Set(
-    currentEdges
-      .filter((r) => r.type === 'return' && r.from === curr.id)
-      .map((r) => r.to),
-  );
-
-  // Only flag a change if at least one side has return relations
-  if (oldReturnTargets.size === 0 && currReturnTargets.size === 0) return null;
-
-  const sameTargets =
-    oldReturnTargets.size === currReturnTargets.size &&
-    [...oldReturnTargets].every((t) => currReturnTargets.has(t));
-
-  if (sameTargets) return null;
-
-  return {
-    entity_id: curr.id,
-    entity_name: curr.name,
-    change_type: 'return_changed',
-    severity: 'breaking',
-    details: `Return type of '${curr.name}' changed`,
-    before: old,
-    after: curr,
-  };
-}
-
-/**
- * Detect changes to type alias definitions. If a 'type' entity exists in
- * both states but its definition length changed significantly (different
- * line range), consider it a type definition change.
- */
-function detectTypeChanged(
-  old: Entity,
-  curr: Entity,
-): Omit<InterfaceDiffEntry, 'affected_dependents'> | null {
-  const oldLen = old.location.line_end - old.location.line_start;
-  const currLen = curr.location.line_end - curr.location.line_start;
-
-  if (oldLen === currLen) return null;
-
-  return {
-    entity_id: curr.id,
-    entity_name: curr.name,
-    change_type: 'type_changed',
-    severity: 'breaking',
-    details: `Type '${curr.name}' definition changed (${oldLen + 1} → ${currLen + 1} lines)`,
-    before: old,
-    after: curr,
-  };
-}
-
-/**
- * Detect general structural modifications. If an entity's line count
- * changed by more than 50%, flag it as modified (non-breaking catch-all).
- */
-function detectModified(
-  old: Entity,
-  curr: Entity,
-): Omit<InterfaceDiffEntry, 'affected_dependents'> | null {
-  const oldLines = old.metrics?.line_count ?? 0;
-  const currLines = curr.metrics?.line_count ?? 0;
-
-  // Skip if we don't have meaningful line counts
-  if (oldLines === 0 && currLines === 0) return null;
-
-  const maxLines = Math.max(oldLines, currLines);
-  const diff = Math.abs(currLines - oldLines);
-  const changeRatio = maxLines > 0 ? diff / maxLines : 0;
-
-  if (changeRatio <= 0.5) return null;
-
-  return {
-    entity_id: curr.id,
-    entity_name: curr.name,
-    change_type: 'modified',
-    severity: 'non-breaking',
-    details: `Entity '${curr.name}' structurally modified (${oldLines} → ${currLines} lines)`,
-    before: old,
-    after: curr,
   };
 }
 

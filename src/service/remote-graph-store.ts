@@ -115,6 +115,10 @@ export class RemoteGraphStore implements GraphStore {
   getAllNodes(): Promise<Entity[]> { return this.call('getAllNodes', []); }
   getAllEdges(): Promise<Relation[]> { return this.call('getAllEdges', []); }
   clear(): Promise<void> { return this.call('clear', []); }
+  replaceFile(filePath: string, entities: Entity[], relations: Relation[]): Promise<void> {
+    return this.call('replaceFile', [filePath, entities, relations]);
+  }
+  getUnresolvedRelations(): Promise<Relation[]> { return this.call('getUnresolvedRelations', []); }
 
   /* ---------------- internals ---------------- */
 
