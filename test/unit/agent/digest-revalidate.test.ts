@@ -83,6 +83,17 @@ describe('digest revalidation', () => {
     expect(await readFreshDigest(fl)).toBeNull();
   });
 
+  it('lets the guard reuse a digest that is stale only for the files it is about to patch', async () => {
+    await writeFile(join(root, 'src/a.ts'), 'edited; the watcher already applied it');
+    await touchGraph();
+    expect(await readFreshDigest(fl)).toBeNull();
+    const forGuard = await readFreshDigest(fl, ['src/a.ts']);
+    expect(forGuard).not.toBeNull();
+    expect(forGuard!.fingerprint).not.toBe(captureStamp(fl)!.fingerprint); // not re-stamped until patched
+    await writeFile(join(root, 'src/b.ts'), 'another file changed too');
+    expect(await readFreshDigest(fl, ['src/a.ts'])).toBeNull();
+  });
+
   it('needs read_at and lists directories with ancestors', () => {
     expect(unchangedSince(root, { entities: [] } as never)).toBe(false);
     expect([...directoriesOf(['src/x/y.ts', 'lib/z.ts'])].sort()).toEqual(['', 'lib', 'src', 'src/x']);

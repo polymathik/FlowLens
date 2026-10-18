@@ -96,16 +96,18 @@ export async function readDigest(flowlensDir: string): Promise<AgentGraphDigest 
 
 /**
  * The cached digest if it still describes the graph: exact revision match,
- * or (same base) no source file changed since it was computed.
+ * or (same base) no source file changed since it was computed — apart from
+ * `patching`, files the caller re-reads from the live graph anyway.
  */
-export async function readFreshDigest(flowlensDir: string): Promise<AgentGraphDigest | null> {
+export async function readFreshDigest(flowlensDir: string, patching: string[] = []): Promise<AgentGraphDigest | null> {
   const fingerprint = graphFingerprint(flowlensDir);
   if (!fingerprint) return null;
   const digest = await readDigest(flowlensDir);
   if (!digest) return null;
   if (digest.fingerprint === fingerprint) return digest;
   if (!digest.base_fingerprint || digest.base_fingerprint !== baseFingerprint(flowlensDir)) return null;
-  if (!unchangedSince(dirname(flowlensDir), digest)) return null;
+  if (!unchangedSince(dirname(flowlensDir), digest, patching)) return null;
+  if (patching.length > 0) return digest; // only valid once patched; the caller re-stamps
   const restamped = { ...digest, fingerprint };
   await persist(flowlensDir, restamped);
   return restamped;

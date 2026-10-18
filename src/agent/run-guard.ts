@@ -75,8 +75,11 @@ export async function runAgentGuard(options: RunGuardOptions): Promise<AgentComm
   if (options.hook && changed.files.length === 0) return ok('');
 
   const head = getGitHead(rootDir);
-  const digest = await readFreshDigest(flowlensDir);
   const reindex = options.reindex && changed.files.length > 0;
+  // When re-indexing, the changed files are re-read from the live graph and
+  // patched in, so the digest may already be stale for exactly those files
+  // (e.g. the daemon's watcher applied the edit first).
+  const digest = await readFreshDigest(flowlensDir, reindex ? changed.files : []);
   if (digest && !reindex) {
     const baseline = await loadBaseline(flowlensDir, head);
     return render(options, await analyse(graphFromDigest(digest), flowlensDir, options, changed, baseline));

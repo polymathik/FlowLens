@@ -40,17 +40,28 @@ export function directoriesOf(files: Iterable<string>): Set<string> {
   return dirs;
 }
 
-export function unchangedSince(rootDir: string, digest: AgentGraphDigest): boolean {
+/**
+ * @param patching files the caller is about to re-read from the live graph
+ *   and patch into the digest (the guard's changed files) — they, and their
+ *   directories, may have changed. Known gap: another new file created in
+ *   the same directory in the same window is not noticed until the next
+ *   full digest.
+ */
+export function unchangedSince(rootDir: string, digest: AgentGraphDigest, patching: string[] = []): boolean {
   if (typeof digest.read_at !== 'number') return false;
   const cutoff = digest.read_at - REVALIDATE_SLACK_MS;
   const accounted = digest.accounted ?? {};
+  const skip = new Set(patching);
+  const skipDirs = new Set([...skip].map((file) => dirname(file)).map((dir) => (dir === '.' ? '' : dir)));
   const files = new Set(digest.entities.map((row) => row[4]));
   for (const file of files) {
+    if (skip.has(file)) continue;
     const m = mtime(join(rootDir, file));
     if (m === null) return false; // deleted
     if (m >= cutoff && accounted[file] !== m) return false;
   }
   for (const dir of directoriesOf(files)) {
+    if (skipDirs.has(dir)) continue;
     const m = mtime(join(rootDir, dir));
     if (m === null) return false;
     if (m >= cutoff && accounted[`${dir}/`] !== m) return false; // entries added/removed
