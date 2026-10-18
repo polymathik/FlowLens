@@ -16,7 +16,7 @@
  */
 import { DAEMON_PORT_ENV, DEFAULT_EXPLORER_PORT } from './canvas/explorer.js';
 
-export type CanvasLinkKind = 'entity' | 'module' | 'file';
+export type CanvasLinkKind = 'entity' | 'module' | 'file' | 'flow';
 
 export type CanvasOverlay =
   | 'complexity'
@@ -41,6 +41,11 @@ export interface CanvasLinkOptions {
   projectId?: string;
   /** Port of the running daemon, when the caller knows it (Phase 12). */
   daemonPort?: number;
+  /**
+   * Extra query parameters of the hash (Flow view, M6a): `depth`, and for an
+   * inline-handler entry `span=<first>-<last>`. Appended after `overlay`.
+   */
+  params?: Record<string, string | number>;
 }
 
 /** Explorer host; the daemon only listens on loopback. */
@@ -67,11 +72,16 @@ export function resolveCanvasBaseUrl(override?: string, daemonPort?: number): st
  * `#/<kind>/<identifier>` that the explorer maps to the active project. The identifier is
  * percent-encoded so path-like qualified names (e.g. `src/foo/bar.ts::Foo`)
  * survive the URL fragment. Overlays become `?overlay=<name>` on the hash.
+ * The Flow view link is `#/p/<id>/map/flow/<entityId>?depth=N` (kind `flow`).
  */
 export function buildCanvasUrl(opts: CanvasLinkOptions): string {
   const base = resolveCanvasBaseUrl(opts.baseUrl, opts.daemonPort).replace(/\/+$/, '');
   const encoded = encodeURIComponent(opts.identifier);
-  const overlaySuffix = opts.overlay ? `?overlay=${opts.overlay}` : '';
+  const query = [
+    ...(opts.overlay ? [`overlay=${opts.overlay}`] : []),
+    ...Object.entries(opts.params ?? {}).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`),
+  ];
+  const overlaySuffix = query.length > 0 ? `?${query.join('&')}` : '';
   const project = opts.projectId ? `p/${encodeURIComponent(opts.projectId)}/map/` : '';
   return `${base}/#/${project}${opts.kind}/${encoded}${overlaySuffix}`;
 }
