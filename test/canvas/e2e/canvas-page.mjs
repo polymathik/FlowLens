@@ -67,8 +67,10 @@ export async function edgeCount(page, cls = '') {
   return page.$$eval(`.react-flow__edge${cls}`, (els) => els.length);
 }
 
+/** A zone frame ignores pointer events except on its chip: that is what a user double-clicks. */
 export async function dblclickNode(page, id) {
-  await page.locator(nodeSel(id)).dblclick();
+  const chip = page.locator(`${nodeSel(id)} [data-testid="zone-chip"]`);
+  await ((await chip.count()) ? chip.first() : page.locator(nodeSel(id))).dblclick();
   await settle(page);
 }
 
@@ -77,7 +79,8 @@ export async function clickNode(page, id) {
 }
 
 export async function nodeOverlay(page, id) {
-  return page.$eval(`${nodeSel(id)} .flowlens-node`, (el) => ({
+  // A node is a card (.flowlens-node) or a zone frame (.fl-zone); both carry data-overlay.
+  return page.$eval(`${nodeSel(id)} .flowlens-node, ${nodeSel(id)} .fl-zone`, (el) => ({
     tag: el.getAttribute('data-overlay'),
     background: getComputedStyle(el).backgroundColor,
     border: getComputedStyle(el).borderTopColor,
@@ -107,8 +110,11 @@ export async function assertCleanLayout(page, label) {
     const inside = n.x >= pane.x - 1 && n.y >= pane.y - 1 && n.x + n.w <= pane.x + pane.w + 1 && n.y + n.h <= pane.y + pane.h + 1;
     assert(inside, `${label}: node ${n.id} off-screen ${JSON.stringify(n)} pane ${JSON.stringify(pane)}`);
   }
+  // A zone frame holds its cards: containment is allowed, partial overlap is not.
+  const holds = (a, b) => a.x <= b.x + 1 && a.y <= b.y + 1 && a.x + a.w >= b.x + b.w - 1 && a.y + a.h >= b.y + b.h - 1;
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
+      if (holds(nodes[i], nodes[j]) || holds(nodes[j], nodes[i])) continue;
       assert(!overlaps(nodes[i], nodes[j]), `${label}: ${nodes[i].id} overlaps ${nodes[j].id}`);
     }
   }

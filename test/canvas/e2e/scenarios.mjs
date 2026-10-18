@@ -38,9 +38,13 @@ export const scenarios = [
       assert(ids.every((id) => id.startsWith('folder:') || id.startsWith('file:')), `only hierarchy boxes at root: ${ids}`);
       assert((await edgeCount(page)) >= 1, 'src → lib/util import edge rendered');
       await assertCleanLayout(page, 'root view');
-      const counts = await page.textContent('.react-flow__node[data-id="folder:src"]');
-      assert(/3 folders/.test(counts) && /1 file/.test(counts), `src card shows its child counts: ${counts}`);
-      assert(await page.locator('.react-flow__node[data-id="folder:src"] [data-testid="top-files"]').count(), 'src card lists top files');
+      // Zones are frames: the chip names the zone and counts every file below it, the cards sit inside the frame.
+      const chip = await page.textContent('.react-flow__node[data-id="folder:src"] [data-testid="zone-chip"]');
+      assert(/src/.test(chip) && /7/.test(chip), `src chip shows its name and file count: ${chip}`);
+      const frame = await page.locator('.react-flow__node[data-id="folder:src"]').boundingBox();
+      const cards = await page.$$eval('[data-testid="file-card"][data-parent="folder:src"]', (els) => els.map((e) => e.closest('.react-flow__node').getBoundingClientRect().toJSON()));
+      assert(cards.length > 0, 'src frame holds file cards');
+      assert(cards.every((c) => c.x >= frame.x - 1 && c.y >= frame.y - 1 && c.right <= frame.x + frame.width + 1 && c.bottom <= frame.y + frame.height + 1), 'every card of src lies inside the src frame');
       await page.waitForSelector('[data-testid="stat-strip"]');
       const files = await page.textContent('[data-testid="stat-files"]');
       assert(files.includes('9'), `stat strip files: ${files}`);

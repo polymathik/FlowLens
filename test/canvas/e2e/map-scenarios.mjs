@@ -33,8 +33,10 @@ const portalsOf = (page) =>
     els.map((e) => ({ dir: e.getAttribute('data-direction'), target: e.getAttribute('data-target'), count: Number(e.getAttribute('data-count')) })),
   );
 
+/** Double-click a zone by its chip (frames ignore pointer events elsewhere), a card or portal anywhere. */
 async function dbl(page, id) {
-  await page.locator(`.react-flow__node[data-id="${id}"]`).dblclick();
+  const chip = page.locator(`.react-flow__node[data-id="${id}"] [data-testid="zone-chip"]`);
+  await ((await chip.count()) ? chip.first() : page.locator(`.react-flow__node[data-id="${id}"]`)).dblclick();
   await settle(page);
 }
 
@@ -77,16 +79,18 @@ export const mapScenarios = [
       const { page } = ctx;
       await prepare(ctx);
       await open(ctx, ctx.deepId);
-      assert((await nodeIds(page)).join() === 'folder:packages,config:.', `root: ${await nodeIds(page)}`);
+      // Default grouping is Packages: both workspace packages are frames (the plain `packages/` folder
+      // that only holds packages is dissolved), the root Config group is a muted card.
+      const root = await nodeIds(page);
+      for (const id of ['package:packages/core', 'package:packages/web', 'config:.']) assert(root.includes(id), `root has ${id}: ${root}`);
+      assert(!root.includes('folder:packages'), `a folder holding only packages is not a zone: ${root}`);
+      assert(await page.locator('[data-testid="file-card"][data-parent="package:packages/core"]').count(), 'core frame holds file cards');
       await assertInViewport(page, 'root');
       await shot(ctx, '20-deep-root');
 
-      await dbl(page, 'folder:packages');
-      assert((await nodeIds(page)).join() === 'package:packages/core,package:packages/web', 'both packages');
-      assert((await edgeCount(page)) === 1, 'web → core edge between the packages');
-      const label = await page.textContent('[data-testid="edge-label"]');
-      assert(/imports \d+/.test(label) && /calls \d+/.test(label), `aggregated edge label names the kinds: ${label}`);
-      await assertInViewport(page, 'packages');
+      assert((await edgeCount(page)) >= 1, 'web → core bundle between the package frames');
+      const labels = await page.$$eval('[data-testid="edge-label"]', (els) => els.map((e) => e.textContent));
+      assert(labels.some((l) => /imports \d+/.test(l) && /calls \d+/.test(l)), `a bundled edge label names the kinds: ${labels}`);
       await shot(ctx, '21-deep-packages');
 
       await dbl(page, 'package:packages/core');
