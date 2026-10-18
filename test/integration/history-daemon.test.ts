@@ -16,7 +16,7 @@ import {
 } from '../../src/contracts/history.js';
 import { createExplorerMount } from '../../src/service/explorer.js';
 import { startHarness, type Harness } from '../helpers/daemon-harness.js';
-import { tempDir } from '../helpers/service-env.js';
+import { removeDir, tempDir } from '../helpers/service-env.js';
 import { createIndexedFixture, type IndexedFixture } from '../canvas/helpers/fixture-project.js';
 
 interface Res { status: number; body: string }
@@ -81,6 +81,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await h?.stop();
   await fx?.cleanup();
+  if (plain) await removeDir(plain);
 });
 
 describe('auth and routing', () => {
