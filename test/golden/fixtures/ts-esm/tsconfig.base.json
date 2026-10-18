@@ -1,0 +1,9 @@
+{
+  // shared options
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@lib/*": ["src/lib/*"], /* alias for the library */
+    },
+  },
+}
