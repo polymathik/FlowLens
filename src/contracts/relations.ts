@@ -45,6 +45,20 @@ export interface RelationMeta {
    * occurrence (it feeds the stable relation id), so `sites[0]` can precede it.
    */
   sites?: RelationSite[];
+  /**
+   * Owner of module-level code (Parser truth 2, additive): the edge starts at
+   * the file entity (or, in a single-file component, at the component) because
+   * the call/create/throw sits in a module-scope statement or inside an
+   * anonymous function (callback, IIFE, default export) that has no named
+   * enclosing function. Anonymous callbacks inside a *named* function belong to
+   * that function and are not marked.
+   */
+  owner?: 'module';
+  /**
+   * How the target of a member call (`recv.method()`) was inferred, as written
+   * in the source (`discovery`, `this.store`, `new Foo`); absent on plain calls.
+   */
+  receiver?: string;
   /** Total number of occurrences when `sites` was capped (equals `weight` of the edge). */
   sites_total?: number;
 }

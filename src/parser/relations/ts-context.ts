@@ -35,6 +35,13 @@ export interface TsRelationContext {
   fileEntityId: string;
   /** Decorator entities by `line:column` of their node. */
   decoratorsAt: Map<string, Entity>;
+  /**
+   * Owner of module-scope code and of anonymous callbacks without a named
+   * enclosing function: the single-file component, else the file entity.
+   */
+  rootOwner: Entity;
+  /** True when `rootOwner` is the file entity (plain module), false for a component. */
+  ownerIsFile: boolean;
 }
 
 export const CLASS_KINDS = new Set(['class_declaration', 'abstract_class_declaration', 'class']);
@@ -44,7 +51,7 @@ export const FUNCTION_KINDS = new Set([
 export const ANON_FUNCTION_KINDS = new Set(['arrow_function', 'function_expression', 'function', 'generator_function']);
 
 export function createTsContext(
-  filePath: string, rootDir: string, entities: Entity[], symbols: FileSymbols,
+  filePath: string, rootDir: string, entities: Entity[], symbols: FileSymbols, rootEntity?: Entity,
 ): TsRelationContext {
   const decoratorsAt = new Map<string, Entity>();
   for (const e of entities) {
@@ -57,7 +64,26 @@ export function createTsContext(
     symbols,
     fileEntityId: fileEntityIdFor(filePath),
     decoratorsAt,
+    rootOwner: rootEntity ?? fileEntityOf(filePath, entities),
+    ownerIsFile: !rootEntity,
   };
+}
+
+/** The file's own entity; synthesised when the caller passed only extracted symbols. */
+function fileEntityOf(filePath: string, entities: Entity[]): Entity {
+  const found = entities.find((e) => e.kind === 'file' && e.file === filePath);
+  if (found) return found;
+  const name = path.basename(filePath);
+  return {
+    id: fileEntityIdFor(filePath), kind: 'file', name, qualified_name: filePath, file: filePath,
+    location: { line_start: 1, line_end: 1, column_start: 0, column_end: 0 },
+    visibility: 'public', language: entities[0]?.language ?? 'typescript',
+  };
+}
+
+/** Options marking a relation as module-owned when `frame` is the root owner's scope. */
+export function ownerOptions(frame: ScopeFrame, ctx: TsRelationContext): { meta?: { owner: 'module' } } {
+  return frame.entity?.id === ctx.rootOwner.id ? { meta: { owner: 'module' } } : {};
 }
 
 export function fileEntityIdFor(filePath: string): string {

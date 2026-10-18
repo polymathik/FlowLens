@@ -11,7 +11,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { Entity } from '../../contracts/entities.js';
 import type { Relation } from '../../contracts/relations.js';
 import type { ScopeFrame, TsRelationContext } from './ts-context.js';
-import { refText, sameNode } from './ts-context.js';
+import { ownerOptions, refText, sameNode } from './ts-context.js';
 import { generateRelationId } from '../../utils/id.js';
 
 const CONTAINER_KINDS = new Set(['class', 'namespace', 'interface', 'enum']);
@@ -48,7 +48,7 @@ export function handleNew(node: SgNode, frame: ScopeFrame, ctx: TsRelationContex
   const ctor = node.children().find((c) => c.kind() !== 'new');
   const name = ctor ? refText(ctor) : null;
   if (!name) return;
-  ctx.emitter.link(frame.entity, frame.inThrow ? 'throw' : 'create', name, node);
+  ctx.emitter.link(frame.entity, frame.inThrow ? 'throw' : 'create', name, node, ownerOptions(frame, ctx));
 }
 
 /** Identifier contexts that are declarations, call/new targets or keys — not reads. */
@@ -67,6 +67,9 @@ const FIRST_IS_DECL = new Set(['variable_declarator', 'arrow_function', 'for_in_
 
 export function handleIdentifierUse(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): void {
   if (!frame.entity) return;
+  // Plain module-scope reads (`const x = CONFIG`) stay unrecorded: only calls, `new` and
+  // (item 5) handler references are attributed to the file entity.
+  if (ctx.ownerIsFile && frame.entity.id === ctx.rootOwner.id) return;
   const name = node.text();
   if (!ctx.emitter.isLocal(name) && !ctx.emitter.isImported(name)) return;
   const parent = node.parent();

@@ -39,10 +39,10 @@ export function extractRelations(
   rootEntity?: Entity,
 ): Relation[] {
   const sym = symbols ?? extractTsSymbols(root, filePath, rootDir, entities[0]?.language ?? 'typescript');
-  const ctx = createTsContext(filePath, rootDir, entities, sym);
+  const ctx = createTsContext(filePath, rootDir, entities, sym, rootEntity);
   const methodsByClass = groupMethods(entities, filePath);
 
-  walkWithContext<ScopeFrame>(root, rootFrame(rootEntity), (node, frame) => visit(node, frame, ctx, methodsByClass));
+  walkWithContext<ScopeFrame>(root, rootFrame(ctx.rootOwner), (node, frame) => visit(node, frame, ctx, methodsByClass));
 
   return aggregateRelations([...containRelations(entities, filePath), ...ctx.emitter.relations]);
 }

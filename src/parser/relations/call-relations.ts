@@ -13,7 +13,7 @@
  */
 import type { SgNode } from '@ast-grep/napi';
 import type { ScopeFrame, TsRelationContext } from './ts-context.js';
-import { refText } from './ts-context.js';
+import { ownerOptions, refText } from './ts-context.js';
 
 export function handleCall(node: SgNode, frame: ScopeFrame, ctx: TsRelationContext): void {
   const from = frame.entity;
@@ -21,9 +21,10 @@ export function handleCall(node: SgNode, frame: ScopeFrame, ctx: TsRelationConte
   const callee = node.children()[0];
   if (!callee) return;
   const em = ctx.emitter;
+  const owner = ownerOptions(frame, ctx);
 
   if (callee.kind() === 'identifier') {
-    em.link(from, 'call', callee.text(), node);
+    em.link(from, 'call', callee.text(), node, owner);
     return;
   }
   if (callee.kind() !== 'member_expression') return;
@@ -37,12 +38,12 @@ export function handleCall(node: SgNode, frame: ScopeFrame, ctx: TsRelationConte
   if (object.kind() === 'this') {
     if (!frame.cls) return;
     const own = em.member(frame.cls.entity, method, ['method']);
-    if (own) em.direct(from, own, 'call', node);
-    else if (frame.cls.parentRef) em.link(from, 'call', `${frame.cls.parentRef}.${method}`, node, { optional: true });
+    if (own) em.direct(from, own, 'call', node, owner);
+    else if (frame.cls.parentRef) em.link(from, 'call', `${frame.cls.parentRef}.${method}`, node, { optional: true, ...owner });
     return;
   }
   if (object.kind() === 'super') {
-    if (frame.cls?.parentRef) em.link(from, 'call', `${frame.cls.parentRef}.${method}`, node, { optional: true });
+    if (frame.cls?.parentRef) em.link(from, 'call', `${frame.cls.parentRef}.${method}`, node, { optional: true, ...owner });
     return;
   }
 
@@ -51,5 +52,5 @@ export function handleCall(node: SgNode, frame: ScopeFrame, ctx: TsRelationConte
   const head = receiver.split('.')[0];
   const binding = em.binding(head);
   const optional = binding ? binding.imported !== '*' : true;
-  em.link(from, 'call', `${receiver}.${method}`, node, { optional });
+  em.link(from, 'call', `${receiver}.${method}`, node, { optional, ...owner });
 }
