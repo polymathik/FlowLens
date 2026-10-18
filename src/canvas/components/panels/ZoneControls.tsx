@@ -22,7 +22,7 @@ export function ZoneControls({ view, hierarchy }: { view: MapView; hierarchy: Hi
   const zoneSet = view.zoning?.zoneSet;
   const applyAll = (open: boolean) => {
     if (!zoneSet) return;
-    const ids = zoneItemIds(hierarchy, zoneSet);
+    const ids = zoneItemIds(hierarchy, zoneSet, view.containerId);
     setZoneExpansion(Object.fromEntries([...ids.values()].map((id) => [expansionKey(view.containerId, id), open])));
   };
   return (

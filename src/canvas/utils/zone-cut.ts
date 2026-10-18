@@ -22,11 +22,11 @@ const RESERVED_NODES = 24;
 export const expansionKey = (containerId: string, itemId: string): string => `${containerId}|${itemId}`;
 
 /** Zone id → item (React Flow node) id: the hierarchy id when the zone has a node of its own, else the zone id. */
-export function zoneItemIds(h: Hierarchy, zoneSet: ZoneSet): Map<string, string> {
+export function zoneItemIds(h: Hierarchy, zoneSet: ZoneSet, scopeId?: string): Map<string, string> {
   const used = new Set<string>();
   const ids = new Map<string, string>();
   for (const z of zoneSet.zones) {
-    const own = hierarchyIdOfZone(h, z);
+    const own = hierarchyIdOfZone(h, z, scopeId);
     const id = own && !used.has(own) ? own : z.id;
     used.add(id);
     ids.set(z.id, id);
@@ -75,7 +75,7 @@ export function buildCut(input: CutInput): MapCut {
     return n;
   };
 
-  const itemIds = zoneItemIds(h, zoneSet);
+  const itemIds = zoneItemIds(h, zoneSet, containerId);
 
   const isProtected = (itemId: string) => options.expansion[expansionKey(containerId, itemId)] === true || reveal.has(itemId);
 
@@ -92,7 +92,8 @@ export function buildCut(input: CutInput): MapCut {
       if (autoCollapsed.has(itemId)) return { expanded: false, by: 'budget' };
       const ov = options.overrides?.zones[`${mode}:${z.key}`]?.collapsed;
       if (ov !== undefined) return { expanded: !ov, by: ov ? 'override' : undefined };
-      if (z.collapsed) return { expanded: false, by: 'override' };
+      if (z.source === 'config') return { expanded: false, by: 'default' }; // muted group: a single card until opened
+      if (z.collapsed) return { expanded: false, by: 'default' };
       const open = files.length <= ZONE_LAYOUT.expandAllUpTo || total <= ZONE_LAYOUT.collapseAbove;
       return { expanded: open, by: open ? undefined : 'default' };
     };
@@ -127,7 +128,7 @@ export function buildCut(input: CutInput): MapCut {
         id: itemId,
         kind: 'zone',
         zoneId: z.id,
-        hierarchyId: hierarchyIdOfZone(h, z),
+        hierarchyId: hierarchyIdOfZone(h, z, containerId),
         label: z.label,
         source: z.source,
         colorIndex: z.colorIndex,
@@ -191,9 +192,9 @@ export function buildCut(input: CutInput): MapCut {
 }
 
 /** Item ids of the zones containing a file, outermost first (what a reveal must expand). */
-export function zoneChainOfFile(h: Hierarchy, zoneSet: ZoneSet, fileId: string): string[] {
+export function zoneChainOfFile(h: Hierarchy, zoneSet: ZoneSet, fileId: string, scopeId?: string): string[] {
   const zoneById = new Map(zoneSet.zones.map((z) => [z.id, z]));
-  const ids = zoneItemIds(h, zoneSet);
+  const ids = zoneItemIds(h, zoneSet, scopeId);
   const chain: string[] = [];
   let cur = zoneSet.zoneOfFile[fileId];
   while (cur) {

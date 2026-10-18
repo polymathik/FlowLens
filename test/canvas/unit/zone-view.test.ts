@@ -12,7 +12,7 @@ const opts = (over: Partial<MapViewOptions['zones'] & object> = {}, mode: 'packa
 });
 const sum = (a: { edges: number; portalIn: number; portalOut: number; internal: number; hidden: number }) => a.edges + a.portalIn + a.portalOut + a.internal + a.hidden;
 
-describe('zones adapter (local ZoneSet producer)', () => {
+describe('zones service as consumed by the canvas', () => {
   it('packages mode hoists packages out of apps/ and packages/, keeps folders without packages, Config last', () => {
     const z = getZones({ mode: 'packages', hierarchy: h });
     const labels = z.rootIds.map((id) => z.zones.find((x) => x.id === id)!.label);
@@ -34,7 +34,7 @@ describe('zones adapter (local ZoneSet producer)', () => {
     for (const zone of z.zones) for (const f of zone.fileIds) owners.set(f, (owners.get(f) ?? 0) + 1);
     expect([...owners.values()].every((c) => c === 1)).toBe(true);
     expect(z.zoneOfFile['file:packages/server/src/adapters/codex/codex.ts']).toContain('codex');
-    expect(z.zoneOfFile['file:packages/server/src/cli.ts']).toBeUndefined(); // direct file: loose
+    expect(z.zoneOfFile['file:packages/server/src/cli.ts']).toBe('zone:folders:packages/server/src'); // direct files form the scope's Root zone
   });
 
   it('overrides rename, recolour, collapse and pin files', () => {
@@ -119,7 +119,7 @@ describe('computeMapView with zones: the cut', () => {
     expect(v.cut!.items.some((i) => i.kind === 'zone')).toBe(false);
   });
 
-  it('modes the local producer does not know (communities, layers) are shown as folders', () => {
+  it('modes without a strategy yet (communities, layers) are shown as folders', () => {
     const v = computeMapView(h, relations, [], opts({}, 'communities' as 'packages'));
     expect(v.cut!.items.some((i) => i.id === 'package:packages/server')).toBe(true);
   });

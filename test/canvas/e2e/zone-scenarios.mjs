@@ -107,7 +107,7 @@ export const zoneScenarios = [
 
       await page.locator('[data-testid="group-by-folders"]').click();
       await settle(page);
-      assert((await nodeIds(page)).includes('folder:packages'), `Folders grouping nests like the directory tree: ${await nodeIds(page)}`);
+      assert((await nodeIds(page)).includes('folder:packages/core/src'), `Folders grouping nests like the directory tree: ${await nodeIds(page)}`);
       await assertCleanLayout(page, 'folders grouping');
       await shot(ctx, '33-group-folders');
     },

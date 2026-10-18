@@ -33,11 +33,21 @@ export function computeZoneView(h: Hierarchy, relations: Relation[], containerId
       zoneSet = byFolders;
     }
   }
+  // The scope's own "Root" zone (files directly in the open container) is never a frame: its id would be the
+  // open container itself. Those files stay loose cards beside the zones.
+  const scopePath = h.nodes.get(containerId)?.path || '.';
+  if (h.nodes.get(containerId)?.kind === 'config') zoneSet = { ...zoneSet, zones: [], rootIds: [], zoneOfFile: {} }; // a Config group is a flat file list
+  const rootZone = zoneSet.zones.find((z) => z.parentId === null && z.key === scopePath);
+  if (rootZone) {
+    const zoneOfFile = { ...zoneSet.zoneOfFile };
+    for (const f of rootZone.fileIds) delete zoneOfFile[f];
+    zoneSet = { ...zoneSet, zones: zoneSet.zones.filter((z) => z !== rootZone), rootIds: zoneSet.rootIds.filter((id) => id !== rootZone.id), zoneOfFile };
+  }
   const reveal = [...(zo.reveal ?? [])];
   for (const ref of zo.revealRefs ?? []) {
     const node = resolveRef(h, ref);
     const file = node && pathOf(h, node).find((id) => h.nodes.get(id)?.kind === 'file');
-    if (file) reveal.push(...zoneChainOfFile(h, zoneSet, file));
+    if (file) reveal.push(...zoneChainOfFile(h, zoneSet, file, containerId));
   }
   const cut = buildCut({ h, zoneSet, containerId, files, mode, options: { ...zo, reveal } });
 

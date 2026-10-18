@@ -57,7 +57,7 @@ export function ZoneMenu({ target, view, hierarchy, onClose }: { target: MenuTar
     onClose();
   };
   const style: React.CSSProperties = { left: Math.min(target.x, window.innerWidth - 230), top: Math.min(target.y, window.innerHeight - 260), ['--z' as string]: 'var(--fl-zone-5)' };
-  const ids = zoneItemIds(hierarchy, zoning.zoneSet);
+  const ids = zoneItemIds(hierarchy, zoning.zoneSet, view.containerId);
   const pinned = filePath ? overrides.pins[filePath] : undefined;
 
   return (
