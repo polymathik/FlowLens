@@ -5,47 +5,21 @@
  * reuse `requireAuth` for its own API routes.
  */
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { GRAPH_RPC_PROTOCOL, type PingResponse, type ServiceOptions } from '../contracts/service.js';
-import type { FileProjectRegistry } from '../projects/registry.js';
+import type { MountRoutes, ServiceDeps } from '../contracts/service-deps.js';
+import { GRAPH_RPC_PROTOCOL, type PingResponse } from '../contracts/service.js';
 import { authenticate } from './auth.js';
+import { OWN_PROTOCOL_KEY } from './daemon-info.js';
 import { authenticateBrowser } from './browser-auth.js';
-import type { SessionStore } from './sessions.js';
 import { errorBody, ServiceError, toServiceError } from './errors.js';
-import type { EventHub } from './events.js';
-import type { GraphPool } from './graph-pool.js';
-import type { ProjectCache } from './project-cache.js';
 import { mountGraphRoutes } from './routes-graph.js';
 import { mountProjectRoutes } from './routes-projects.js';
-import type { Logger, WatcherManager } from './watchers.js';
+import { mountReindexRoute } from './routes-reindex.js';
 
-export interface ServiceDeps {
-  token: string;
-  registry: FileProjectRegistry;
-  /** Cached registry lookups for hot routes. */
-  projects: ProjectCache;
-  pool: GraphPool;
-  watchers: WatcherManager;
-  hub: EventHub;
-  options: ServiceOptions;
-  version: string;
-  startedAt: number;
-  /** Called by POST /api/shutdown after the response is sent. */
-  onShutdown: () => void;
-  log: Logger;
-  /** Bound port, filled in once listening. */
-  port?: number;
-  /** Called on every authenticated request (daemon idle-exit bookkeeping). */
-  onActivity?: () => void;
-  /** Explorer browser sessions (cookie auth); absent = bearer only. */
-  sessions?: SessionStore;
-}
-
-/** Extra routes (e.g. the explorer UI, wave 2), mounted before the 404/error handlers. */
-export type MountRoutes = (app: Express, deps: ServiceDeps) => void;
+export type { MountRoutes, ServiceDeps } from '../contracts/service-deps.js';
 
 export function requireAuth(deps: Pick<ServiceDeps, 'token' | 'onActivity' | 'sessions' | 'port'>) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    let denied = authenticate(deps.token, req.headers, req.originalUrl);
+    let denied = authenticate(deps.token, req.headers, req.originalUrl, req.method);
     if (denied?.code === 'unauthorized') {
       const path = req.originalUrl.split('?')[0];
       denied = authenticateBrowser(deps.sessions, deps.port, req.method, path, req.headers);
@@ -71,6 +45,7 @@ export function createServiceApp(deps: ServiceDeps, mount?: MountRoutes): Expres
   app.get('/api/ping', (_req, res) => {
     const pong: PingResponse = {
       ok: true, pid: process.pid, version: deps.version, uptime_ms: Date.now() - deps.startedAt, protocol: GRAPH_RPC_PROTOCOL,
+      protocol_key: OWN_PROTOCOL_KEY,
     };
     res.json(pong);
   });
@@ -84,6 +59,7 @@ export function createServiceApp(deps: ServiceDeps, mount?: MountRoutes): Expres
 
   mountProjectRoutes(app, deps);
   mountGraphRoutes(app, deps);
+  mountReindexRoute(app, deps);
   mount?.(app, deps);
 
   app.use('/api', (_req, res) => {

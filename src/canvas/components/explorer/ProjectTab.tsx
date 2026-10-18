@@ -78,9 +78,10 @@ export function ProjectTab({ projectId, project, route, routeStamp }: Props) {
 function MissingProject({ project }: { project: ProjectDetail }) {
   const closeTab = useExplorerStore((s) => s.closeTab);
   const [error, setError] = useState<string | null>(null);
+  const inUse = project.graph?.leases ?? 0;
   const remove = async () => {
     try {
-      await removeProject(project.id);
+      await removeProject(project.id, inUse > 0);
       const next = closeTab(project.id);
       await refreshProjects();
       navigate(tabHash(next));
@@ -101,12 +102,13 @@ function MissingProject({ project }: { project: ProjectDetail }) {
         </p>
         <div className="fl-actions">
           <button type="button" className="fl-primary-btn" onClick={remove} data-testid="remove-project">
-            Remove from list
+            {inUse > 0 ? 'Remove anyway' : 'Remove from list'}
           </button>
           <button type="button" className="fl-quiet-btn" onClick={() => navigate(tabHash(closeTab(project.id)))}>
             Close tab
           </button>
         </div>
+        {inUse > 0 && <p data-testid="project-in-use">In use by {inUse} client{inUse === 1 ? '' : 's'}.</p>}
         {error && <p role="alert">Could not remove it: {error}</p>}
       </div>
     </div>

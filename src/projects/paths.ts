@@ -3,7 +3,7 @@
  * `$FLOWLENS_HOME` (default `~/.flowlens`) holds user-level state;
  * each project's graph stays in `<root>/.flowlens/`.
  */
-import { realpathSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { FLOWLENS_HOME_ENV } from '../contracts/projects.js';
@@ -13,10 +13,19 @@ export function flowlensHome(): string {
   return override && override.trim() !== '' ? resolve(override) : join(homedir(), '.flowlens');
 }
 
-/** Create `$FLOWLENS_HOME` (mode 0700 — it holds the daemon token). */
+/**
+ * Create `$FLOWLENS_HOME` (mode 0700 — it holds the daemon token). An
+ * existing directory with looser permissions (e.g. created by hand or
+ * restored from a backup) is tightened to 0700 (POSIX only; Phase 12 L3).
+ */
 export function ensureFlowlensHome(): string {
   const dir = flowlensHome();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') {
+    try {
+      if ((statSync(dir).mode & 0o077) !== 0) chmodSync(dir, 0o700);
+    } catch { /* not ours to fix (e.g. owned by another user) */ }
+  }
   return dir;
 }
 

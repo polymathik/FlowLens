@@ -16,7 +16,7 @@ import type { ProjectWithStatus } from '../contracts/projects.js';
 import {
   GRAPH_READ_METHODS, GRAPH_WRITE_METHODS, type GraphRpcMethod, type GraphRpcRequest,
 } from '../contracts/service.js';
-import type { ServiceDeps } from './app.js';
+import type { ServiceDeps } from '../contracts/service-deps.js';
 import { authenticate } from './auth.js';
 import { errorBody, ServiceError, toServiceError } from './errors.js';
 import { projectParam, route } from './routes-projects.js';
@@ -105,7 +105,7 @@ export function createRpcFastPath(deps: ServiceDeps) {
     if (!m) return false;
     void (async () => {
       try {
-        const denied = authenticate(deps.token, req.headers, req.url ?? '');
+        const denied = authenticate(deps.token, req.headers, req.url ?? '', req.method);
         if (denied) throw denied;
         deps.onActivity?.();
         const id = decodeURIComponent(m[1]);

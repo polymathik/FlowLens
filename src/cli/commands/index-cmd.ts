@@ -13,10 +13,9 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { openGraphStore } from '../../service/open-graph-store.js';
-import { runIndex } from '../../indexer/indexer.js';
+import { indexProject, openGraphStore } from '../../service/open-graph-store.js';
 import { formatQualitySummary } from '../../quality/graph-quality.js';
-import { printHeader, printSuccess, printError, printSummary } from '../output.js';
+import { printHeader, printSuccess, printError, printSummary, printWarning } from '../output.js';
 import type { FlowLensConfig } from '../../contracts/config.js';
 
 export const indexCommand = new Command('index')
@@ -43,15 +42,18 @@ export const indexCommand = new Command('index')
       // Open graph store
       const graphStore = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'index' });
 
-      const result = await runIndex({
-        rootDir,
-        graphStore,
-        config,
-        fileIndexPath: join(flowlensDir, 'file_index.json'),
-        incremental: true,
-      });
-
-      await graphStore.close();
+      // Via the daemon: runs in the project's write queue, after any hook/watcher
+      // run in flight. --no-daemon: directly, under .flowlens/index.lock.
+      let result;
+      try {
+        result = await indexProject(graphStore, {
+          rootDir,
+          config,
+          onLockWait: (pid) => printWarning(`Waiting for another index run${pid ? ` (pid ${pid})` : ''} to finish…`),
+        });
+      } finally {
+        await graphStore.close();
+      }
 
       printSummary(result);
       for (const line of formatQualitySummary(result.quality)) console.log(line);

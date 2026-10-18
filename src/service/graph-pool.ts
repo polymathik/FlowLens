@@ -67,8 +67,11 @@ export class GraphPool {
     this.watchDemandListener = listener;
   }
 
-  /** Run `fn` against the project's open store (opening it if needed). */
-  async use<T>(project: PoolProject, write: boolean, fn: (s: GraphStore) => Promise<T>): Promise<T> {
+  /**
+   * Run `fn` against the project's open store (opening it if needed).
+   * `releaseDelayMs` overrides how long an unpinned DB stays open afterwards.
+   */
+  async use<T>(project: PoolProject, write: boolean, fn: (s: GraphStore) => Promise<T>, releaseDelayMs?: number): Promise<T> {
     const e = this.entry(project);
     while (e.closing) await e.closing;
     e.inflight++;
@@ -86,7 +89,7 @@ export class GraphPool {
     } finally {
       e.inflight--;
       e.lastUsed = Date.now();
-      this.scheduleRelease(e);
+      this.scheduleRelease(e, releaseDelayMs);
     }
   }
 
@@ -263,15 +266,16 @@ export class GraphPool {
     return e.leases.size > 0 || this.isWatched(e.project.id);
   }
 
-  private scheduleRelease(e: Entry): void {
+  private scheduleRelease(e: Entry, delayMs = this.opts.releaseDelayMs): void {
     if (!e.store || e.inflight > 0 || this.pinned(e)) return;
+    if (e.releaseTimer && delayMs <= 0) return; // keep a pending (longer) explorer hold
     this.cancelRelease(e);
     const fire = () => {
       e.releaseTimer = null;
       if (e.inflight === 0 && !this.pinned(e)) void this.close(e.project.id);
     };
-    if (this.opts.releaseDelayMs <= 0) fire();
-    else e.releaseTimer = setTimeout(fire, this.opts.releaseDelayMs).unref();
+    if (delayMs <= 0) fire();
+    else e.releaseTimer = setTimeout(fire, delayMs).unref();
   }
 
   private cancelRelease(e: Entry): void {

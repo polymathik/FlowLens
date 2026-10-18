@@ -4,12 +4,28 @@
  * or it is older than `staleMs` (holders only keep it for milliseconds).
  * Waiters retry with jittered backoff until `timeoutMs`.
  */
-import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, statSync, unlinkSync, utimesSync, writeSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 export interface FileLockOptions {
   staleMs?: number;
   timeoutMs?: number;
+  /**
+   * Long-held locks: refresh the lockfile's mtime this often while `fn`
+   * runs, so waiters only treat it as stale after `staleMs` without a beat.
+   */
+  heartbeatMs?: number;
+  /** Called once when the lock is busy and this caller starts waiting. */
+  onWait?: (holder: { pid?: number; at?: string }) => void;
+}
+
+/** Current holder recorded in a lockfile (best effort). */
+export function readLockHolder(lockPath: string): { pid?: number; at?: string } {
+  try {
+    return JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: number; at?: string };
+  } catch {
+    return {};
+  }
 }
 
 export function isPidAlive(pid: number): boolean {
@@ -58,18 +74,33 @@ export async function withFileLock<T>(
   const staleMs = opts.staleMs ?? 10_000;
   const deadline = Date.now() + (opts.timeoutMs ?? 10_000);
   let delay = 5;
+  let waited = false;
   while (!tryAcquire(lockPath)) {
     if (isStale(lockPath, staleMs)) {
       try { unlinkSync(lockPath); } catch { /* another waiter removed it */ }
       continue;
     }
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for lock ${lockPath}`);
+    if (!waited) {
+      waited = true;
+      opts.onWait?.(readLockHolder(lockPath));
+    }
+    if (Date.now() > deadline) {
+      const holder = readLockHolder(lockPath);
+      throw new Error(`Timed out waiting for lock ${lockPath}${holder.pid ? ` (held by pid ${holder.pid})` : ''}`);
+    }
     await sleep(delay + Math.floor(Math.random() * delay));
     delay = Math.min(delay * 2, 100);
   }
+  const beat = opts.heartbeatMs
+    ? setInterval(() => {
+      try { const now = new Date(); utimesSync(lockPath, now, now); } catch { /* removed */ }
+    }, opts.heartbeatMs)
+    : null;
+  beat?.unref();
   try {
     return await fn();
   } finally {
+    if (beat) clearInterval(beat);
     try { unlinkSync(lockPath); } catch { /* already gone */ }
   }
 }

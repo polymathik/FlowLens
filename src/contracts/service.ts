@@ -17,13 +17,31 @@
  * registry ProjectRecord.id).
  */
 import type { GraphStore } from './graph.js';
+import type { IndexResult, IndexRunRequest } from './indexer.js';
 import type { GraphManifest } from './manifest.js';
 import type { ProjectWithStatus } from './projects.js';
 
 /* ---------------- discovery ---------------- */
 
+/**
+ * Legacy (pre-Phase-12) discovery file, written by older FlowLens daemons.
+ * Current daemons never read it to connect and never stop its daemon;
+ * `flowlens daemon status` still lists it.
+ */
 export const DAEMON_INFO_FILE = 'daemon.json';
 export const DAEMON_LOG_FILE = 'daemon.log';
+/**
+ * Phase 12 review H2: one daemon per protocol. Daemons of different
+ * FlowLens versions/protocols run side by side; each writes
+ * `$FLOWLENS_HOME/daemon-p<protocol_key>.json` (and `.log`), where
+ * `protocol_key` hashes the version, `GRAPH_RPC_PROTOCOL` and
+ * `SERVICE_PROTOCOL_REVISION`. A client only ever connects to — and only
+ * replaces — a daemon with its own key; others are stopped only by an
+ * explicit `flowlens daemon stop --all` when they have no live leases.
+ */
+export const DAEMON_INFO_PREFIX = 'daemon-p';
+/** Bump when a non-RPC service route changes incompatibly (2 = Phase 12 `reindex`). */
+export const SERVICE_PROTOCOL_REVISION = 2;
 export const DAEMON_HOST = '127.0.0.1';
 /** Set to `1` to bypass the daemon and open LevelDB directly (tests/CI). */
 export const NO_DAEMON_ENV = 'FLOWLENS_NO_DAEMON';
@@ -37,6 +55,10 @@ export interface DaemonInfo {
   /** FlowLens package version the daemon runs. */
   version: string;
   started_at: string;
+  /** Phase 12: the daemon's `GRAPH_RPC_PROTOCOL` (absent in legacy daemon.json). */
+  protocol?: string;
+  /** Phase 12: compatibility key used in the info file name (see DAEMON_INFO_PREFIX). */
+  protocol_key?: string;
 }
 
 /* ---------------- routes ---------------- */
@@ -54,6 +76,7 @@ export const SERVICE_ROUTES = {
   lease: '/api/projects/:id/leases/:lease', // PUT (renew) / DELETE (release)
   close: '/api/projects/:id/close', // POST → { ok: true } (evict: stop watcher, close DB)
   events: '/api/projects/:id/events', // GET  → text/event-stream of ServiceEvent
+  reindex: '/api/projects/:id/reindex', // POST ReindexRequest → ReindexResponse (Phase 12)
 } as const;
 
 /** Fill a route template: `routePath(SERVICE_ROUTES.rpc, { id })`. */
@@ -135,6 +158,20 @@ export interface ProjectDetail extends ProjectWithStatus {
   graph: ProjectGraphState;
 }
 
+/* ---------------- re-index (Phase 12 review H1) ---------------- */
+
+/**
+ * Run the incremental indexer inside the daemon, in the project's write
+ * queue, so index runs from hooks, `flowlens index`, `init` and the watcher
+ * never overlap (each run reads and rewrites symbols.json/file_index.json).
+ */
+export type ReindexRequest = IndexRunRequest;
+
+export interface ReindexResponse {
+  ok: true;
+  result: IndexResult;
+}
+
 /* ---------------- leases ---------------- */
 
 /**
@@ -193,6 +230,8 @@ export interface PingResponse {
   uptime_ms: number;
   /** `GRAPH_RPC_PROTOCOL` of the daemon's code (absent on pre-Phase-8 daemons). */
   protocol?: string;
+  /** Compatibility key (Phase 12; absent on older daemons). */
+  protocol_key?: string;
 }
 
 export interface VersionResponse {
@@ -210,6 +249,7 @@ export type ServiceErrorCode =
   | 'not_found' // unknown route or project id (404)
   | 'bad_request' // invalid body / method / args (400)
   | 'project_missing' // project root or .flowlens/ gone (409)
+  | 'project_in_use' // DELETE of a project that clients still lease, without ?force=1 (409)
   | 'graph_locked' // another process holds the LevelDB lock (423)
   | 'shutting_down' // daemon is stopping (503)
   | 'internal'; // anything else (500)
@@ -225,6 +265,7 @@ export const SERVICE_ERROR_STATUS: Record<ServiceErrorCode, number> = {
   not_found: 404,
   bad_request: 400,
   project_missing: 409,
+  project_in_use: 409,
   graph_locked: 423,
   shutting_down: 503,
   internal: 500,
@@ -237,6 +278,13 @@ export interface ServiceOptions {
   idleCloseMs: number;
   /** Close an unleased, unwatched DB this long after its last use (default 0). */
   releaseDelayMs: number;
+  /**
+   * Same, after a use by the explorer UI (default 5 s; Phase 12 review L5):
+   * a browsing session makes many short requests, which must not reopen
+   * LevelDB every time; CLI uses keep `releaseDelayMs` so `--no-daemon`
+   * commands are not locked out.
+   */
+  explorerReleaseDelayMs: number;
   /** Max simultaneously open project DBs; least-recently-used is closed (default 16). */
   maxOpenProjects: number;
   /** Lease time-to-live without renewal (default 60 s). */
@@ -250,6 +298,7 @@ export interface ServiceOptions {
 export const DEFAULT_SERVICE_OPTIONS: ServiceOptions = {
   idleCloseMs: 10 * 60_000,
   releaseDelayMs: 0,
+  explorerReleaseDelayMs: 5_000,
   maxOpenProjects: 16,
   leaseTtlMs: 60_000,
   rpcEventDebounceMs: 500,

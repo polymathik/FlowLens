@@ -9,11 +9,12 @@
  *   → symbols snapshot → churn → quality → manifest.
  */
 import { dirname, join, resolve as resolvePath } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import type { GraphStore } from '../contracts/graph.js';
 import type { FlowLensConfig } from '../contracts/config.js';
 import type { DiscoveredFile } from '../contracts/discovery.js';
-import type { GraphQuality, IndexManifest } from '../contracts/quality.js';
+import type { IndexManifest } from '../contracts/quality.js';
+import type { IndexResult } from '../contracts/indexer.js';
 import type { FileSymbolRecord } from '../contracts/symbols.js';
 import { GRAPH_SCHEMA_VERSION } from '../contracts/manifest.js';
 import { FileIndexManager } from './file-index.js';
@@ -32,28 +33,11 @@ import { manifestStore } from '../manifest/manifest-store.js';
 import { readGitInfo } from '../manifest/git-info.js';
 import { flowlensVersion, PARSER_VERSION } from '../manifest/version.js';
 import { ensureProjectIdentity } from '../utils/project-identity.js';
+import { withIndexLock } from './index-lock.js';
 
 export { getSupportedExtensions } from './index-steps.js';
 
-export interface IndexResult {
-  filesDiscovered: number;
-  /** Files parsed this run (changed + dependents re-resolved). */
-  filesIndexed: number;
-  filesSkipped: number;
-  filesDeleted: number;
-  /** Unchanged files re-parsed because a file they depend on changed. */
-  filesReresolved: number;
-  /** Entities written this run (equals the stored count after a full index). */
-  entitiesCreated: number;
-  /** Edges written this run, excluding unresolved records. */
-  relationsCreated: number;
-  unresolvedRelations: number;
-  languageCounts: Record<string, number>;
-  errors: Array<{ file: string; message: string }>;
-  duration: number;
-  quality: GraphQuality;
-  manifest: IndexManifest;
-}
+export type { IndexResult } from '../contracts/indexer.js';
 
 export interface IndexOptions {
   rootDir: string;
@@ -69,9 +53,22 @@ export interface IndexOptions {
    * Ignored on full runs and when there is no symbol snapshot yet.
    */
   paths?: string[];
+  /** Called once if another index run on this project holds the index lock. */
+  onLockWait?: (holderPid?: number) => void;
 }
 
+/**
+ * One indexer run, holding the project's cross-process index lock
+ * (`.flowlens/index.lock`) for its whole duration: the run reads and then
+ * rewrites symbols.json/file_index.json, so overlapping runs lose edits.
+ */
 export async function runIndex(options: IndexOptions): Promise<IndexResult> {
+  const flowlensDir = options.flowlensDir ?? dirname(options.fileIndexPath);
+  mkdirSync(flowlensDir, { recursive: true });
+  return withIndexLock(flowlensDir, () => runIndexLocked(options), options.onLockWait);
+}
+
+async function runIndexLocked(options: IndexOptions): Promise<IndexResult> {
   const startTime = Date.now();
   const startedAt = new Date(startTime).toISOString();
   const { graphStore: store, config, fileIndexPath, incremental } = options;

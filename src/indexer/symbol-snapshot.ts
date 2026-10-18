@@ -8,9 +8,10 @@
  * A missing or unreadable snapshot just means "full re-resolution".
  */
 import { existsSync } from 'node:fs';
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import type { FileSymbolRecord, FileSymbols, SymbolEntity } from '../contracts/symbols.js';
 import type { ParsedFileOutput } from './parallel-parser.js';
+import { writeFileAtomicAsync } from '../projects/atomic.js';
 
 const SNAPSHOT_VERSION = 1;
 
@@ -32,9 +33,8 @@ export async function loadSymbolSnapshot(path: string): Promise<Map<string, File
 
 export async function saveSymbolSnapshot(path: string, records: Map<string, FileSymbolRecord>): Promise<void> {
   const data: SnapshotFile = { version: SNAPSHOT_VERSION, files: Object.fromEntries(records) };
-  const tmp = `${path}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(data), 'utf-8');
-  await rename(tmp, path);
+  // Unique tmp name per write: two writers in one process never share a tmp file.
+  await writeFileAtomicAsync(path, JSON.stringify(data));
 }
 
 /** Build the symbol record of a freshly parsed file. */

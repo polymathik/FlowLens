@@ -6,6 +6,7 @@
  * `npx flowlens`, a tarball install inside another project, or a source
  * checkout run through `tsx`.
  */
+import type { CanvasLocations } from '../../contracts/canvas-host.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,15 +36,7 @@ export function findPackageRoot(startFile: string = fileURLToPath(import.meta.ur
   }
 }
 
-export interface CanvasLocations {
-  packageRoot: string;
-  /** Built SPA (`dist/canvas/app`) — present in any built/installed package. */
-  builtDir: string;
-  builtAvailable: boolean;
-  /** Canvas sources (`src/canvas`) — present only in a source checkout. */
-  sourceDir: string;
-  sourceAvailable: boolean;
-}
+export type { CanvasLocations } from '../../contracts/canvas-host.js';
 
 export function locateCanvas(packageRoot: string | null = findPackageRoot()): CanvasLocations {
   if (!packageRoot) {

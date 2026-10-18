@@ -1,23 +1,25 @@
 /**
  * Find a running daemon or start one.
  *
- * 1. Read `daemon.json`; ping with its token. Same version and graph RPC
- *    protocol → use it; a different FlowLens version or RPC method set (a
- *    daemon still running older code) is asked to shut down and replaced.
- * 2. Otherwise, under a start lockfile (so concurrent CLIs spawn only one
- *    daemon), spawn `flowlens daemon start --foreground` detached with
- *    stdio to `daemon.log`, `windowsHide`, cwd = `$FLOWLENS_HOME` (never a
- *    project dir — Windows would pin it), `unref()` it, and poll until it
- *    answers or the timeout passes.
+ * 1. Read this code base's `daemon-p<key>.json`; ping with its token. Same
+ *    version, graph RPC protocol and key → use it. Anything else is NOT
+ *    ours: it is ignored, never stopped (Phase 12 review H2 — two FlowLens
+ *    versions used to kill each other's daemon on every command). Daemons
+ *    of other versions keep their own info file and port.
+ * 2. Otherwise, under a per-key start lockfile (so concurrent CLIs spawn
+ *    only one daemon), spawn `flowlens daemon start --foreground` detached
+ *    with stdio to `daemon-p<key>.log`, `windowsHide`, cwd = `$FLOWLENS_HOME`
+ *    (never a project dir — Windows would pin it), `unref()` it, and poll
+ *    until it answers or the timeout passes.
  */
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, statSync, truncateSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { GRAPH_RPC_PROTOCOL, type DaemonInfo } from '../contracts/service.js';
+import { GRAPH_RPC_PROTOCOL, type DaemonInfo, type PingResponse } from '../contracts/service.js';
 import { isPidAlive, withFileLock } from '../projects/file-lock.js';
 import { ensureFlowlensHome } from '../projects/paths.js';
 import { DaemonClient } from './client.js';
-import { daemonLogPath, daemonStartLockPath, readDaemonInfo } from './daemon-info.js';
+import { daemonLogPath, daemonStartLockPath, OWN_PROTOCOL_KEY, readDaemonInfo } from './daemon-info.js';
 import { cliLaunch, FLOWLENS_VERSION } from './runtime.js';
 
 export interface ConnectOptions {
@@ -29,18 +31,22 @@ export interface ConnectOptions {
 
 const LOG_MAX_BYTES = 5 * 1024 * 1024;
 
-/** A live, same-version daemon, or null. Never spawns. */
+/** True when a ping comes from a daemon running this code base's protocol. */
+export function isCompatiblePong(pong: PingResponse): boolean {
+  return pong.version === FLOWLENS_VERSION && pong.protocol === GRAPH_RPC_PROTOCOL
+    && pong.protocol_key === OWN_PROTOCOL_KEY;
+}
+
+/** A live daemon of this code base's protocol, or null. Never spawns, never stops anything. */
 export async function findDaemon(): Promise<DaemonClient | null> {
   const info = readDaemonInfo();
   if (!info) return null;
   const client = new DaemonClient(info);
   const pong = await client.ping();
-  if (!pong) {
+  if (!pong || !isCompatiblePong(pong)) {
+    // Gone, or something else answers on that port (pid/port reuse): not ours. A
+    // fresh daemon of ours overwrites the file; we never shut the other one down.
     client.destroy();
-    return null;
-  }
-  if (pong.version !== FLOWLENS_VERSION || pong.protocol !== GRAPH_RPC_PROTOCOL) {
-    await stopDaemon(client);
     return null;
   }
   return client;
@@ -113,15 +119,16 @@ async function spawnAndWait(timeoutMs: number): Promise<DaemonClient> {
     const info: DaemonInfo | null = readDaemonInfo();
     if (info && isPidAlive(info.pid)) {
       const client = new DaemonClient(info);
-      if (await client.ping(500)) return client;
+      const pong = await client.ping(500);
+      if (pong && isCompatiblePong(pong)) return client;
       client.destroy();
     }
     if (exitCode !== null) {
       const raced = await findDaemon(); // another daemon won the race
       if (raced) return raced;
-      throw new Error(`FlowLens daemon exited during start (code ${exitCode}).\n${logTail()}`);
+      throw new Error(`FlowLens daemon exited during start (code ${exitCode}); "flowlens daemon status" lists every FlowLens daemon.\n${logTail()}`);
     }
     await sleep(50);
   }
-  throw new Error(`FlowLens daemon did not answer within ${timeoutMs} ms.\n${logTail()}`);
+  throw new Error(`FlowLens daemon did not answer within ${timeoutMs} ms (log: ${daemonLogPath()}).\n${logTail()}`);
 }

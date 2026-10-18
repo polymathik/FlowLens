@@ -1,7 +1,8 @@
 /**
  * Per-project explorer routes on the daemon:
  *
- *   DELETE /api/projects/:id                 remove from registry (+ stop watcher, close DB)
+ *   DELETE /api/projects/:id[?force=1]       remove from registry (+ stop watcher, close DB);
+ *                                            409 project_in_use while clients hold leases, unless force
  *   *      /api/projects/:id/canvas/*        canvas graph API (createGraphApp) on the pooled graph
  *   GET    /api/projects/:id/health          HealthReport
  *   GET    /api/projects/:id/health/summary  ExplorerHealthSummary
@@ -17,7 +18,7 @@ import type { HealthReport } from '../contracts/health.js';
 import type { ProjectWithStatus } from '../contracts/projects.js';
 import { buildHealthReport, loadHealthInput, renderHealth, summarizeHealth } from '../health/index.js';
 import { projectFlowlensDir } from '../projects/paths.js';
-import type { ServiceDeps } from './app.js';
+import type { ServiceDeps } from '../contracts/service-deps.js';
 import { ServiceError } from './errors.js';
 import { HealthCache, healthFingerprint } from './health-cache.js';
 import { projectParam, route } from './routes-projects.js';
@@ -36,7 +37,7 @@ export async function projectHealth(
 ): Promise<{ report: HealthReport; cached: boolean; revision: number }> {
   const revision = deps.pool.revision(p.id);
   const result = await state.health.get(p.id, healthFingerprint(p.root, revision), async () => {
-    const input = await deps.pool.use(p, false, (graphStore) => loadHealthInput(p.root, { graphStore }));
+    const input = await deps.pool.use(p, false, (graphStore) => loadHealthInput(p.root, { graphStore }), deps.options.explorerReleaseDelayMs);
     return buildHealthReport(input, { canvas_base_url: `http://127.0.0.1:${deps.port}` });
   });
   return { ...result, revision };
@@ -46,7 +47,7 @@ function canvasRouter(deps: ServiceDeps, state: ExplorerProjectState, p: Project
   const hit = state.routers.get(p.id);
   if (hit && hit.root === p.root) return hit.router;
   const { router } = createGraphApp({
-    graph: { withGraph: (fn) => deps.pool.use(p, false, fn) },
+    graph: { withGraph: (fn) => deps.pool.use(p, false, fn, deps.options.explorerReleaseDelayMs) },
     rootDir: p.root,
     flowlensDir: projectFlowlensDir(p.root),
     events: { subscribe: (_req, res) => deps.hub.subscribe(p.id, res) },
@@ -65,6 +66,10 @@ export function mountExplorerProjects(app: Express, deps: ServiceDeps, state: Ex
     const id = String(req.params.id);
     const existing = await deps.registry.get(id);
     if (!existing) throw new ServiceError('not_found', `Unknown project: ${id}`);
+    const leases = deps.pool.state(id).leases;
+    if (leases > 0 && req.query.force !== '1') {
+      throw new ServiceError('project_in_use', `${existing.name} is in use by ${leases} client(s); remove with ?force=1 (they re-register on their next request).`);
+    }
     await deps.watchers.stop(id);
     await deps.pool.close(id, true);
     const removed = await deps.registry.remove(id);

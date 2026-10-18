@@ -12,6 +12,7 @@ import {
   BUSY_HINT_DAEMON, BUSY_HINT_DIRECT, describeGraphFailure, isGraphLockedError, openAgentGraph, type GraphOpener,
 } from '../../../src/agent/graph-access.js';
 import { RemoteServiceError } from '../../../src/service/errors.js';
+import { HOOK_STORE_TIMEOUTS } from '../../../src/contracts/open-graph.js';
 import { InMemoryGraph } from '../../../src/agent/memory-graph.js';
 
 describe('openAgentGraph via openGraphStore', () => {
@@ -34,7 +35,7 @@ describe('openAgentGraph via openGraphStore', () => {
     };
     const handle = await openAgentGraph(root, { open, daemon: false });
     expect(handle.ok).toBe(true);
-    expect(calls).toEqual([{ client: 'hook', daemon: false }]);
+    expect(calls).toEqual([{ client: 'hook', daemon: false, ...HOOK_STORE_TIMEOUTS }]);
     expect(probed).toBe(true);
   });
 

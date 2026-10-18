@@ -16,8 +16,8 @@
  *   GET  /api/projects/:id/health/report?format=html|md   download
  *   GET  /api/projects/:id/events            SSE ServiceEvent (existing route)
  *
- * Browser auth: the CLI holds the daemon's bearer token (daemon.json, 0600)
- * and mints a single-use code (60 s); the browser opens `/auth?t=<code>`,
+ * Browser auth: the CLI holds the daemon's bearer token (daemon info file,
+ * 0600) and mints a single-use code (15 s); the browser opens `/auth?t=<code>`,
  * which sets an HttpOnly, SameSite=Strict session cookie and redirects.
  * Cookie-authenticated requests are limited to the explorer routes above,
  * and state-changing ones must carry a same-origin `Origin`.
@@ -44,7 +44,21 @@ export const DAEMON_PORT_ENV = 'FLOWLENS_DAEMON_PORT';
 
 /** Session cookie name; the daemon port is appended because cookies are not port-isolated (RFC 6265 §8.5). */
 export const SESSION_COOKIE_PREFIX = 'flowlens_session_';
-export const AUTH_CODE_TTL_MS = 60_000;
+/**
+ * Sign-in code lifetime when the CLI opens the browser itself (Phase 12
+ * review M2). The code never appears in the browser's argv: the CLI writes
+ * a 0600 launch file (`$FLOWLENS_HOME/run/open-<random>.html`) that
+ * redirects to `/auth?t=…`, opens that file and removes it after
+ * `LAUNCH_FILE_TTL_MS` (the approach Jupyter uses).
+ */
+export const AUTH_CODE_TTL_MS = 15_000;
+/** `--no-open`: the link is printed for the user to paste, so it lives longer (and is shown in the terminal). */
+export const AUTH_CODE_MANUAL_TTL_MS = 120_000;
+/** Upper bound the daemon accepts for `AuthCodeRequest.ttl_ms`. */
+export const AUTH_CODE_MAX_TTL_MS = AUTH_CODE_MANUAL_TTL_MS;
+export const LAUNCH_FILE_TTL_MS = 30_000;
+/** Directory (under `$FLOWLENS_HOME`) for launch files. */
+export const LAUNCH_FILE_DIR = 'run';
 export const SESSION_TTL_MS = 12 * 60 * 60_000;
 
 /* ---------------- auth ---------------- */
@@ -52,6 +66,8 @@ export const SESSION_TTL_MS = 12 * 60 * 60_000;
 export interface AuthCodeRequest {
   /** Hash route to open after sign-in, e.g. `#/p/<id>/health` (validated). */
   redirect?: string;
+  /** Code lifetime (default `AUTH_CODE_TTL_MS`, clamped to 1 s … `AUTH_CODE_MAX_TTL_MS`). */
+  ttl_ms?: number;
 }
 
 export interface AuthCodeResponse {

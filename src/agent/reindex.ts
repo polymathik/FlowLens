@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import type { GraphStore } from '../contracts/graph.js';
 import type { AgentReindexSummary } from '../contracts/agent.js';
 import type { WatchEvent } from '../contracts/watch.js';
-import { applyWatchEvents } from '../watch/incremental-updater.js';
+import { indexProject } from '../service/open-graph-store.js';
+import { EMPTY_UPDATE, toUpdateResult, watchEventPaths } from '../watch/incremental-updater.js';
 
 export async function reindexAgentChangedFiles(
   rootDir: string,
@@ -12,7 +13,12 @@ export async function reindexAgentChangedFiles(
 ): Promise<AgentReindexSummary | undefined> {
   const events = toWatchEvents(rootDir, changedFiles);
   if (events.length === 0) return undefined;
-  const result = await applyWatchEvents(events, { rootDir, graph });
+  const paths = watchEventPaths(events);
+  // Through the daemon's per-project write queue (or the index lock with
+  // --no-daemon): concurrent hooks must not run the indexer side by side.
+  const result = paths.length === 0
+    ? EMPTY_UPDATE
+    : toUpdateResult(await indexProject(graph, { rootDir, paths }));
   return {
     files_reparsed: result.filesReparsed,
     files_deleted: result.filesDeleted,

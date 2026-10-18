@@ -45,3 +45,30 @@ export function defaultHookBaseCommand(fromUrl: string = import.meta.url): strin
 export function shellQuote(value: string): string {
   return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
 }
+
+/** Portable base command for shared settings: the project's own FlowLens install. */
+export const PORTABLE_HOOK_COMMAND = 'npx --no-install flowlens';
+
+/**
+ * `npx --no-install flowlens` when FlowLens is a dependency of the project
+ * at `projectDir` (declared in package.json and installed in
+ * node_modules/.bin), so a committed `.claude/settings.json` works on every
+ * teammate's machine; null otherwise.
+ */
+export function portableHookBaseCommand(projectDir: string): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf-8')) as {
+      dependencies?: Record<string, string>; devDependencies?: Record<string, string>;
+    };
+    const declared = Boolean(pkg.devDependencies?.flowlens ?? pkg.dependencies?.flowlens);
+    const installed = ['flowlens', 'flowlens.cmd'].some((b) => existsSync(join(projectDir, 'node_modules', '.bin', b)));
+    return declared && installed ? PORTABLE_HOOK_COMMAND : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when a hook command embeds an absolute filesystem path (machine-specific). */
+export function embedsAbsolutePath(command: string): boolean {
+  return /(^|[\s"'])(\/[^\s"']|[A-Za-z]:[\\/])/.test(command);
+}

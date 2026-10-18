@@ -1,6 +1,8 @@
 /**
- * Best-effort "open this URL in the default browser" without a dependency.
- * Failures are swallowed: the URL is always printed for the user anyway.
+ * Best-effort "open this URL or local file in the default browser" without
+ * a dependency. Failures are swallowed (the caller tells the user what to
+ * do). Never pass a secret here: the argument is visible in the process
+ * list — `flowlens canvas` passes a launch file instead (launch-file.ts).
  */
 import { spawn } from 'node:child_process';
 

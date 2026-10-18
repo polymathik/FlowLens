@@ -5,9 +5,14 @@
  */
 import { closeSync, fsyncSync, openSync, renameSync, unlinkSync, writeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { open, rename, unlink } from 'node:fs/promises';
+
+function tmpPath(path: string): string {
+  return `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
+}
 
 export function writeFileAtomic(path: string, data: string, mode = 0o644): void {
-  const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
+  const tmp = tmpPath(path);
   const fd = openSync(tmp, 'w', mode);
   try {
     writeSync(fd, data);
@@ -25,4 +30,22 @@ export function writeFileAtomic(path: string, data: string, mode = 0o644): void 
 
 export function writeJsonAtomic(path: string, value: unknown, mode = 0o644): void {
   writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`, mode);
+}
+
+/** Async `writeFileAtomic` (large files: does not block the event loop while writing). */
+export async function writeFileAtomicAsync(path: string, data: string, mode = 0o644): Promise<void> {
+  const tmp = tmpPath(path);
+  const fh = await open(tmp, 'w', mode);
+  try {
+    await fh.writeFile(data, 'utf8');
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
+  try {
+    await rename(tmp, path);
+  } catch (err) {
+    await unlink(tmp).catch(() => undefined);
+    throw err;
+  }
 }

@@ -21,24 +21,13 @@ import { mkdirSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import type { FlowLensConfig } from '../contracts/config.js';
 import type { GraphStore } from '../contracts/graph.js';
+import type { IndexResult, UpdateResult } from '../contracts/indexer.js';
 import type { WatchEvent } from '../contracts/watch.js';
 import { runIndex } from '../indexer/indexer.js';
 import { loadProjectConfig } from '../projects/config.js';
 import { LANGUAGE_EXTENSIONS, normalizeRelativePath } from '../utils/paths.js';
 
-export interface UpdateResult {
-  /** Files from the batch that were re-parsed (changed or added). */
-  filesReparsed: number;
-  /** Unchanged files re-parsed because a file they depend on changed. */
-  filesReresolved: number;
-  /** Indexed files removed from the graph. */
-  filesDeleted: number;
-  entitiesUpdated: number;
-  relationsUpdated: number;
-  errors: Array<{ path: string; message: string }>;
-  /** Milliseconds spent in this update. */
-  durationMs: number;
-}
+export type { UpdateResult } from '../contracts/indexer.js';
 
 export interface UpdateOptions {
   rootDir: string;
@@ -54,13 +43,8 @@ export async function applyWatchEvents(
   options: UpdateOptions,
 ): Promise<UpdateResult> {
   const start = Date.now();
-  const paths = [...new Set(events.map((e) => normalizeRelativePath(e.path)).filter(isSupportedPath))];
-  if (paths.length === 0) {
-    return {
-      filesReparsed: 0, filesReresolved: 0, filesDeleted: 0, entitiesUpdated: 0, relationsUpdated: 0,
-      errors: [], durationMs: Date.now() - start,
-    };
-  }
+  const paths = watchEventPaths(events);
+  if (paths.length === 0) return EMPTY_UPDATE;
 
   const rootDir = resolve(options.rootDir);
   const flowlensDir = join(rootDir, '.flowlens');
@@ -75,6 +59,20 @@ export async function applyWatchEvents(
     paths,
   });
 
+  return toUpdateResult(result, Date.now() - start);
+}
+
+export const EMPTY_UPDATE: UpdateResult = Object.freeze({
+  filesReparsed: 0, filesReresolved: 0, filesDeleted: 0, entitiesUpdated: 0, relationsUpdated: 0,
+  errors: [], durationMs: 0,
+}) as UpdateResult;
+
+/** The batch's distinct, supported, root-relative paths. */
+export function watchEventPaths(events: WatchEvent[]): string[] {
+  return [...new Set(events.map((e) => normalizeRelativePath(e.path)).filter(isSupportedPath))];
+}
+
+export function toUpdateResult(result: IndexResult, durationMs = result.duration): UpdateResult {
   return {
     filesReparsed: result.filesIndexed - result.filesReresolved,
     filesReresolved: result.filesReresolved,
@@ -82,7 +80,7 @@ export async function applyWatchEvents(
     entitiesUpdated: result.entitiesCreated,
     relationsUpdated: result.relationsCreated,
     errors: result.errors.map((e) => ({ path: e.file, message: e.message })),
-    durationMs: Date.now() - start,
+    durationMs,
   };
 }
 

@@ -6,7 +6,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import type { ProjectWithStatus } from '../contracts/projects.js';
 import type { LeaseRequest, ProjectDetail, ResolveProjectRequest } from '../contracts/service.js';
 import { readManifest, syncLastIndexed } from '../projects/manifest-sync.js';
-import type { ServiceDeps } from './app.js';
+import type { ServiceDeps } from '../contracts/service-deps.js';
 import { ServiceError } from './errors.js';
 
 type Handler = (req: Request, res: Response) => Promise<void>;

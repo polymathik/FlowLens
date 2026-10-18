@@ -77,7 +77,7 @@ describe('agent integration', () => {
       command: 'flowlens',
     });
     const content = JSON.parse(
-      await readFile(join(tmp, '.claude/settings.json'), 'utf-8'),
+      await readFile(join(tmp, '.claude/settings.local.json'), 'utf-8'),
     );
 
     expect(result.hooks_added).toBe(3);
@@ -89,7 +89,7 @@ describe('agent integration', () => {
     await installClaudeCodeHooks({ project_dir: tmp, command: 'flowlens' });
     const result = await uninstallClaudeCodeHooks(tmp);
     const content = JSON.parse(
-      await readFile(join(tmp, '.claude/settings.json'), 'utf-8'),
+      await readFile(join(tmp, '.claude/settings.local.json'), 'utf-8'),
     );
 
     expect(result.hooks_removed).toBe(3);
