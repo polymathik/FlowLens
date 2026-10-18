@@ -29,4 +29,7 @@ build/
 *.log
 npm-debug.log*
 
-CLAUDE.md
+# Personal agent tooling (never commit)
+.claude/settings.local.json
+.claude/worktrees/
+.codex/

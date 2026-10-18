@@ -43,9 +43,10 @@ FlowLens/
 - **Research before building.** Before implementing any new component or integration, spawn a research agent to find the latest docs, patterns, and known issues for the relevant libraries.
 - **Validate before committing.** After any implementation, spawn validation agents to: run the test suite, verify contract compliance, check that `_docs/` is updated, and confirm no regressions in dependent components.
 
-## Git rules 
-- Each phase will be implemented on respective branch. Create and switch to branch if it isn't present. For each phase, the corresponding ground truth/reference is in `_docs/specs/PHASE-*`.
-- Merge the branch to `main` once phase implementation is done and validated against the specs in the specs folder. The user will test on `main` and roll back if anything is off.
+## Git rules
+- Each phase is implemented on its own branch (`phase-N-<name>`). Create and switch to the branch if it isn't present. For each phase, the corresponding ground truth/reference is in `_docs/specs/PHASE-*`.
+- **Parallel lanes:** when the plan defines parallel lanes (see `_docs/AUDIT_AND_PLAN_2026-10-18.md` §6.2), each lane gets its own branch **and its own git worktree** (`git worktree add ../<repo>-<lane> <branch>`). Lanes must not edit files owned by another lane; shared contracts are agreed on `main` before lanes start.
+- Merge a branch to `main` once its implementation is done and validated against its spec (tests, golden checks, contract compliance). Merge order follows the plan's lane order; rebase later lanes on `main` before merging. The user will test on `main` and roll back if anything is off.
 
 ## Key Technical Decisions
 

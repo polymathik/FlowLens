@@ -25,8 +25,14 @@ export interface WatchEvent {
 export interface WatchConfig {
   /** Milliseconds to wait before flushing a batch of changes. Default 300. */
   debounceMs: number;
-  /** Chokidar ignore patterns; should match FlowLensConfig.exclude. */
+  /** Glob ignore patterns; should match FlowLensConfig.exclude. */
   ignore: string[];
+  /**
+   * Use filesystem polling instead of native events. Off by default:
+   * polling costs significant idle CPU. Enable only for network or
+   * virtualised filesystems where native events are unreliable.
+   */
+  usePolling?: boolean;
 }
 
 export interface FileWatcher {
@@ -41,4 +47,7 @@ export interface FileWatcher {
    * handler is supported; re-registering replaces.
    */
   onChanges(callback: (events: WatchEvent[]) => Promise<void>): void;
+
+  /** Resolves once the initial scan is complete and events will be delivered. */
+  ready(): Promise<void>;
 }

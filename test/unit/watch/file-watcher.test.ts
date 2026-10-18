@@ -31,8 +31,7 @@ describe('ChokidarFileWatcher', () => {
     });
     watcher.start(tmp, { debounceMs: 100, ignore: [] });
 
-    // Let chokidar settle before triggering changes.
-    await delay(200);
+    await watcher.ready();
 
     await writeFile(join(tmp, 'a.ts'), 'a');
     await writeFile(join(tmp, 'b.ts'), 'b');
@@ -59,6 +58,7 @@ describe('ChokidarFileWatcher', () => {
 
   it('stop() is idempotent', async () => {
     watcher.start(tmp, { debounceMs: 50, ignore: [] });
+    await watcher.ready();
     await watcher.stop();
     await watcher.stop(); // should not throw
   });
@@ -67,3 +67,22 @@ describe('ChokidarFileWatcher', () => {
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+import { buildIgnoreMatcher } from '../../../src/watch/file-watcher.js';
+
+describe('buildIgnoreMatcher', () => {
+  const root = '/repo';
+  const match = buildIgnoreMatcher(root, ['dist/**', '**/*.log']);
+  it('ignores built-in heavy directories', () => {
+    expect(match('/repo/node_modules/x/index.js')).toBe(true);
+    expect(match('/repo/.git/HEAD')).toBe(true);
+    expect(match('/repo/.flowlens/graph')).toBe(true);
+  });
+  it('honours glob patterns relative to the root', () => {
+    expect(match('/repo/dist')).toBe(true);
+    expect(match('/repo/dist/a.js')).toBe(true);
+    expect(match('/repo/logs/a.log')).toBe(true);
+    expect(match('/repo/src/a.ts')).toBe(false);
+    expect(match('/repo')).toBe(false);
+  });
+});

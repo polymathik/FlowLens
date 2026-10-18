@@ -1,0 +1,4 @@
+# FlowLens indexing its own repo: skip test fixtures and benchmark corpora
+test/fixtures/**
+benchmarks/fixtures/**
+dist/**
