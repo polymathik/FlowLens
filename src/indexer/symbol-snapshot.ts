@@ -52,11 +52,28 @@ export function recordFromParsed(file: ParsedFileOutput): FileSymbolRecord {
   const extendsRefs: FileSymbolRecord['extends'] = [];
   for (const r of file.relations) if (r.type === 'extend') extendsRefs.push({ from: r.from, to: r.to });
   for (const r of file.pending) if (r.type === 'extend') extendsRefs.push({ from: r.from, target_name: r.target_name });
-  // A class with a base class that left no relation (external or unresolvable base): record that it has one.
-  const known = new Set(extendsRefs.map((x) => x.from));
-  for (const e of file.entities) if (e.kind === 'class' && e.annotations?.extends && !known.has(e.id)) extendsRefs.push({ from: e.id });
+  // A class / interface with a base that left no relation (external or unresolvable base): record that it
+  // has one, so pass 2 does not report members possibly inherited from outside the project as unresolved.
+  const linked = new Map<string, number>();
+  for (const x of extendsRefs) linked.set(x.from, (linked.get(x.from) ?? 0) + 1);
+  for (const e of file.entities) {
+    const base = (e.kind === 'class' || e.kind === 'interface') ? e.annotations?.extends : undefined;
+    if (base && (linked.get(e.id) ?? 0) < (e.kind === 'interface' ? topLevelItems(base) : 1)) extendsRefs.push({ from: e.id });
+  }
   const rec: FileSymbolRecord = { symbols, entities, extends: extendsRefs };
   if (file.duplicate_declarations > 0) rec.duplicates = file.duplicate_declarations;
   if (file.syntax_errors > 0) rec.syntax_errors = file.syntax_errors;
   return rec;
+}
+
+/** Number of comma-separated items of `A, B<C, D>` (commas inside `<>` do not count). */
+function topLevelItems(list: string): number {
+  let depth = 0;
+  let items = 1;
+  for (const ch of list) {
+    if (ch === '<') depth++;
+    else if (ch === '>') depth--;
+    else if (ch === ',' && depth === 0) items++;
+  }
+  return items;
 }

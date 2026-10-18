@@ -4,4 +4,11 @@ function fetchJson(path: string): Promise<unknown> {
 
 export const api = {
   workspace: () => fetchJson('/api/workspace'),
+  async save(id: string) {
+    return fetchJson(`/api/${id}`);
+  },
+  version: 3,
+  get label() {
+    return 'api';
+  },
 };

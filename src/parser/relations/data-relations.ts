@@ -15,7 +15,7 @@ import { ownerOptions, refText, sameNode } from './ts-context.js';
 import { handleReferenceIdentifier } from './reference-relations.js';
 import { generateRelationId } from '../../utils/id.js';
 
-const CONTAINER_KINDS = new Set(['class', 'namespace', 'interface', 'enum']);
+const CONTAINER_KINDS = new Set(['class', 'namespace', 'interface', 'enum', 'variable']); // a variable holds the function members of an object literal
 const MEMBER_KINDS = new Set(['field', 'method', 'enum_member']);
 
 /** Containment edges for one file (members are direct children by qualified name). */

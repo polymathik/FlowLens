@@ -18,7 +18,19 @@ export function handleDecorator(
   // Scoped under the decorated declaration (caller pushes its name): `Cls.method.@Dec`
   const entity = createEntity(node, `@${name}`, 'decorator', 'public', ctx);
   entity.name = name;
+  const arg = firstStringArgument(node);
+  if (arg !== null) entity.annotations = { arg };
   entities.push(entity);
+}
+
+/** `@Get(':id')` → `:id` (the first string literal argument, as written), or null. */
+function firstStringArgument(decorator: SgNode): string | null {
+  const call = findChild(decorator, 'call_expression');
+  const args = call ? findChild(call, 'arguments') : null;
+  const first = args?.children().find((c) => c.kind() !== '(');
+  if (!first || first.kind() !== 'string') return null;
+  const text = first.text().slice(1, -1);
+  return text.length <= 120 ? text : null;
 }
 
 function extractDecoratorName(node: SgNode): string {

@@ -18,6 +18,8 @@ import type {
 } from '../../contracts/symbols.js';
 import { preferByKind } from './target-kinds.js';
 
+type ParentRef = { file: string; to?: string; target_name?: string };
+
 type Target =
   | { kind: 'entity'; entity: SymbolEntity }
   | { kind: 'module'; file: string }
@@ -33,7 +35,8 @@ export class ProjectSymbolTable implements SymbolTable {
   private fileIds = new Map<string, string>();
   private packages = new Map<string, string[]>();
   private bindings = new Map<string, Map<string, ImportBinding>>();
-  private parents = new Map<string, { file: string; to?: string; target_name?: string }>();
+  /** Base classes / interfaces per entity, in declaration order (a marker without target = an unresolvable base). */
+  private parents = new Map<string, ParentRef[]>();
 
   constructor(records: Map<string, FileSymbolRecord>) {
     this.records = records;
@@ -52,7 +55,10 @@ export class ProjectSymbolTable implements SymbolTable {
       const local = new Map<string, ImportBinding>();
       for (const b of rec.symbols.imports) if (b.local && b.local !== '*' && !local.has(b.local)) local.set(b.local, b);
       this.bindings.set(file, local);
-      for (const ext of rec.extends) if (!this.parents.has(ext.from)) this.parents.set(ext.from, { file, ...ext });
+      for (const ext of rec.extends) {
+        const list = this.parents.get(ext.from);
+        if (list) list.push({ file, ...ext }); else this.parents.set(ext.from, [{ file, ...ext }]);
+      }
     }
   }
 
@@ -198,12 +204,23 @@ export class ProjectSymbolTable implements SymbolTable {
     if (child.length > 0) {
       return this.members(child.map((entity) => ({ kind: 'entity' as const, entity })), rest.slice(1), level);
     }
+    if (owner.kind === 'type') return [{ kind: 'opaque' }]; // an alias (`type Db = ExternalDb`): its shape is not indexed
     if (level >= 5) return [];
     const typed = this.typedMember(owner, rest, level);
     if (typed) return typed;
-    const parent = this.parentOf(owner);
-    if (parent) return this.memberOf(parent, rest, level + 1);
-    return this.parents.has(owner.id) ? [{ kind: 'opaque' }] : [];
+    // A variable's members come from whatever its initializer built (`z.object(…)`, `create(…)`, an
+    // object literal): unless its declared type led to a class above, a miss says nothing.
+    if (owner.kind === 'variable') return [{ kind: 'opaque' }];
+    const refs = this.parents.get(owner.id);
+    if (!refs) return [];
+    const found: Target[] = [];
+    let unknownBase = false;
+    for (const ref of refs) {
+      const parent = this.resolveParent(ref);
+      if (parent) found.push(...this.memberOf(parent, rest, level + 1));
+      else unknownBase = true;
+    }
+    return found.length > 0 || !unknownBase ? found : [{ kind: 'opaque' }];
   }
 
   /** `store.get` where `store` is a variable declared as an instance of a class: look in that class. */
@@ -216,8 +233,11 @@ export class ProjectSymbolTable implements SymbolTable {
 
   /** Resolve the parent class of a class entity (direct id or symbolic). */
   parentOf(cls: SymbolEntity): SymbolEntity | undefined {
-    const p = this.parents.get(cls.id);
-    if (!p) return undefined;
+    const ref = this.parents.get(cls.id)?.[0];
+    return ref ? this.resolveParent(ref) : undefined;
+  }
+
+  private resolveParent(p: ParentRef): SymbolEntity | undefined {
     if (p.to) return this.byId.get(p.to);
     if (!p.target_name) return undefined;
     const r = this.resolve(p.file, p.target_name, ['class', 'interface']);

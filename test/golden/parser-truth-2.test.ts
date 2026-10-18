@@ -79,14 +79,27 @@ describe('member calls through declared receiver types', () => {
     expect(fx.unresolved.filter((u) => u.target_name?.includes('custom'))).toEqual([]);
   });
 
-  it('keeps an unresolved leaf for a project receiver whose member cannot be found (object-literal api)', async () => {
+  it('keeps an unresolved leaf for an interface receiver whose member cannot be found', async () => {
     fx = await indexFixture(FIXTURE);
-    const leaf = fx.unresolved.find((u) => u.target_name === 'api.workspace');
+    const leaf = fx.unresolved.find((u) => u.target_name === 'Registry.vanish');
     expect(leaf?.type).toBe('call');
-    expect(leaf?.meta?.receiver).toBe('api');
+    expect(leaf?.meta?.receiver).toBe('reg');
     expect(leaf?.resolution).toBe('unresolved');
     // member leaves are reported apart from parse-level unresolved references
     const q = fx.result.quality!;
     expect(q.member_unresolved_count).toBeGreaterThanOrEqual(1);
+    expect(q.unresolved_count).toBe(fx.unresolved.filter((u) => u.meta?.receiver === undefined).length);
+  });
+
+  it('resolves calls through an object-literal service and owns calls made inside its members', async () => {
+    fx = await indexFixture(FIXTURE);
+    const API = 'apps/web/src/lib/api.ts';
+    expect(findEdge(fx, 'call', 'apps/web/src/routes/+page.svelte/load', `${API}/api.workspace`)).toBeDefined();
+    expect(findEdge(fx, 'call', `${API}/api.workspace`, `${API}/fetchJson`)).toBeDefined();
+    expect(findEdge(fx, 'call', `${API}/api.save`, `${API}/fetchJson`)).toBeDefined();
+    expect(findEdge(fx, 'contain', `${API}/api`, `${API}/api.save`)).toBeDefined();
+    // data and accessor members are not entities; a missing member of a variable is not reported
+    expect(fx.nodes.filter((n) => n.file === API && n.qualified_name.startsWith(`${API}/api.`)).map((n) => n.name).sort()).toEqual(['id', 'save', 'workspace']);
+    expect(fx.unresolved.filter((u) => u.target_name?.startsWith('api.'))).toEqual([]);
   });
 });

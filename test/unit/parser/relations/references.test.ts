@@ -24,6 +24,22 @@ describe('handler references as call arguments', () => {
     expect(r.meta?.sites?.map((s) => s.line)).toEqual([3, 4, 5]);
   });
 
+  it('records the route of a registration: verb and path literal as written (meta.route)', async () => {
+    const p = await parseSource([
+      'function list() {}',
+      'function item() {}',
+      'function other() {}',
+      'app.get("/sessions", list);',
+      'router.post("/sessions/:id", auth, item);',
+      'cache.get("key", other);', // a lookup, not a route
+      'app.use(other);',
+    ].join('\n'));
+    const route = (to: string) => p.relations.find((r) => r.type === 'use' && p.entities.find((e) => e.id === r.to)?.name === to)?.meta?.route;
+    expect(route('list')).toBe('GET /sessions');
+    expect(route('item')).toBe('POST /sessions/:id');
+    expect(route('other')).toBeUndefined();
+  });
+
   it('names `.method` as the callee for a call on a non-trivial receiver', async () => {
     const p = await parseSource('function fmt() {}\n[1].map(fmt);\n');
     expect(p.lines(['use'])).toEqual(['use src/a.ts -> fmt [module] ~argument:.map']);

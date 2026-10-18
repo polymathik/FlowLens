@@ -76,6 +76,13 @@ export interface RelationMeta {
   ref?: 'argument' | 'table' | 'binding';
   /** The callee (`ref: 'argument'`) or attribute / directive (`ref: 'binding'`) the reference sits in. */
   ref_via?: string;
+  /**
+   * Route a handler is registered for (Parser truth 2, additive): `VERB /path` as written, for a
+   * `ref: 'argument'` edge whose call has a path literal first (`app.get('/x', handler)` →
+   * `GET /x`; verbs get / post / put / patch / delete / head / options / all / use / route).
+   * Lets entry-point detection read the graph instead of the source line.
+   */
+  route?: string;
 }
 
 /** One occurrence of a relation in its file (1-based line and column). */

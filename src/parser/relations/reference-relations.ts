@@ -28,7 +28,9 @@ const JSX_TAGS = new Set(['jsx_opening_element', 'jsx_self_closing_element', 'js
 const WRAPPERS = new Set(['parenthesized_expression', 'as_expression', 'satisfies_expression', 'non_null_expression']);
 const MAX_DEPTH = 6;
 
-export interface RefContext { ref: NonNullable<RelationMeta['ref']>; via: string | null }
+export interface RefContext { ref: NonNullable<RelationMeta['ref']>; via: string | null; route?: string }
+
+const ROUTE_VERBS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'all', 'use', 'route']);
 
 /** Callee of a call / `new` as written, `.name` for a member call on a non-trivial receiver. */
 function calleeText(call: SgNode): string | null {
@@ -51,6 +53,17 @@ function attributeName(expr: SgNode): string | null {
   return name ? name.text() : null;
 }
 
+/** `GET /x` for `app.get('/x', handler)`: a verb-named callee whose first argument is a path literal. */
+function routeOf(call: SgNode, args: SgNode): string | undefined {
+  const callee = call.children()[0];
+  const verb = callee && callee.kind() === 'member_expression' ? callee.children().at(-1)?.text() : undefined;
+  if (!verb || !ROUTE_VERBS.has(verb)) return undefined;
+  const first = args.children().find((c) => c.kind() !== '(');
+  if (!first || first.kind() !== 'string') return undefined;
+  const path = first.text().slice(1, -1);
+  return /^[/*]/.test(path) ? `${verb.toUpperCase()} ${path}` : undefined;
+}
+
 /**
  * Is `node` (an identifier / `this.member`) a hand-off position? Climbs through
  * array and object literals (at most `MAX_DEPTH` levels) to an argument list, a
@@ -65,7 +78,9 @@ export function referenceContext(node: SgNode): RefContext | null {
     const pk = String(parent.kind());
     if (pk === 'arguments') {
       const call = parent.parent();
-      return call ? { ref: 'argument', via: calleeText(call) } : null;
+      if (!call) return null;
+      const route = call.kind() === 'call_expression' ? routeOf(call, parent) : undefined;
+      return { ref: 'argument', via: calleeText(call), ...(route ? { route } : {}) };
     }
     if (pk === 'jsx_expression') {
       const via = nested ? null : attributeName(parent);
@@ -110,6 +125,7 @@ function kindsFor(rc: RefContext, owned: boolean): EntityKind[] {
 function metaFor(rc: RefContext, frame: ScopeFrame, ctx: TsRelationContext): RelationMeta {
   const meta: RelationMeta = { ref: rc.ref, ...ownerOptions(frame, ctx).meta };
   if (rc.via) meta.ref_via = rc.via;
+  if (rc.route) meta.route = rc.route;
   return meta;
 }
 

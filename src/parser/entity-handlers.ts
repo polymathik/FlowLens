@@ -18,6 +18,9 @@ import {
 } from './extractor-helpers.js';
 import { handleDecorator, extractParameters } from './entity-members.js';
 import { declaratorTypeName } from './relations/type-names.js';
+import { handleAbstractMethod, handleInterfaceBody } from './entity-signatures.js';
+import { baseClassText, interfaceBaseText } from './entity-heritage.js';
+import { handleObjectMembers } from './object-literal.js';
 
 export { handleDecorator } from './entity-members.js';
 
@@ -58,19 +61,6 @@ export function handleClassDeclaration(
   ctx.insideClass = prevInsideClass;
 }
 
-/** Source text of the `extends` target (`Base`, `ns.Base`, `Mixin(Base)`), if any. */
-function baseClassText(node: SgNode): string | null {
-  const heritage = findChild(node, 'class_heritage');
-  if (!heritage) return null;
-  const clause = findChild(heritage, 'extends_clause') ?? heritage;
-  const kids = clause.children();
-  const at = kids.findIndex((c) => c.kind() === 'extends');
-  const base = at >= 0 ? kids[at + 1] : undefined;
-  if (!base || base.kind() === 'type_arguments') return null;
-  const text = base.text().replace(/\s+/g, ' ');
-  return text.length > 80 ? `${text.slice(0, 77)}...` : text;
-}
-
 function visitClassBody(
   body: SgNode,
   ctx: VisitorContext,
@@ -84,7 +74,12 @@ function visitClassBody(
       pendingDecorators.push(child);
       continue;
     }
-    if (ck === 'method_definition' || ck === 'public_field_definition') {
+    if (ck === 'abstract_method_signature') {
+      ctx.parentNames.push(memberNameOf(child));
+      for (const dec of pendingDecorators) handleDecorator(dec, ctx, entities);
+      ctx.parentNames.pop();
+      handleAbstractMethod(child, ctx, entities);
+    } else if (ck === 'method_definition' || ck === 'public_field_definition') {
       // Method decorators precede the method as siblings: `Cls.method.@Dec`
       const memberName = memberNameOf(child);
       ctx.parentNames.push(memberName);
@@ -113,7 +108,19 @@ export function handleInterfaceDeclaration(
 ): void {
   const name = findChildText(node, 'type_identifier') ?? '<anonymous>';
   const visibility = resolveTopLevelVisibility(ctx);
-  entities.push(createEntity(node, name, 'interface', visibility, ctx));
+  const iface = createEntity(node, name, 'interface', visibility, ctx);
+  // Remember a base interface even when it is external (`extends EventEmitter`): pass 2 must not report
+  // a member missing from such an interface as unresolved (it may be inherited from outside the project).
+  const base = interfaceBaseText(node);
+  if (base) iface.annotations = { extends: base };
+  entities.push(iface);
+
+  const body = findChild(node, 'interface_body');
+  if (body) {
+    ctx.parentNames.push(name);
+    handleInterfaceBody(body, ctx, entities);
+    ctx.parentNames.pop();
+  }
 }
 
 // ─── Function Declaration ────────────────────────────────────────
@@ -201,6 +208,7 @@ function handleVariableDeclarator(
     const typeRef = ctx.parentNames.length === 0 ? declaratorTypeName(declarator) : null;
     if (typeRef) entity.annotations = { type_ref: typeRef };
     entities.push(entity);
+    if (ctx.parentNames.length === 0 && !ctx.insideClass) handleObjectMembers(declarator, name, visibility, ctx, entities);
   }
 }
 

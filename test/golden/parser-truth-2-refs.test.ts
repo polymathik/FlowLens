@@ -19,7 +19,7 @@ describe('handler references', () => {
   it('links module-scope route registrations to the handlers, same file and imported', async () => {
     fx = await indexFixture(FIXTURE);
     const local = findEdge(fx, 'use', APP, `${APP}/sessionList`);
-    expect(local?.meta).toEqual({ owner: 'module', ref: 'argument', ref_via: 'app.get' });
+    expect(local?.meta).toEqual({ owner: 'module', ref: 'argument', ref_via: 'app.get', route: 'GET /sessions' });
     const imported = findEdge(fx, 'use', APP, 'apps/server/src/boot.ts/onShutdown');
     expect(imported?.meta).toEqual({ owner: 'module', ref: 'argument', ref_via: 'process.on' });
   });
