@@ -1,7 +1,7 @@
 /**
  * flowlens serve — starts the MCP server for AI assistant integration.
  *
- * Currently supports stdio transport only. The server exposes all 12
+ * Currently supports stdio transport only. The server exposes all 14
  * FlowLens tools plus agent/health resources over the Model Context
  * Protocol. stdout carries only MCP JSON-RPC; every log line goes to stderr.
  */
@@ -41,7 +41,7 @@ export const serveCommand = new Command('serve')
       // Snapshot manager
       const snapshotManager = new SnapshotManager(join(flowlensDir, 'snapshots'));
 
-      // Create MCP server with all 12 tools
+      // Create MCP server with all 14 tools
       const server = createFlowLensServer({
         graph,
         annotationStore,

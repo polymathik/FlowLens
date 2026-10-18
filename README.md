@@ -17,7 +17,7 @@ knowledge through an MCP server and Claude Code hooks, so it stops guessing.
 - **Explorer**: one browser app for all your projects. Home shows every
   project's health; each project has a Health screen and an interactive Map
   (system → module → file → symbol, with overlays).
-- **For coding agents**: an MCP server with 12 tools, health and context
+- **For coding agents**: an MCP server with 14 tools, health and context
   resources, and optional Claude Code hooks that add context to prompts and
   check every edit.
 - **CI-friendly checks**: `flowlens check` exits non-zero on dependency
@@ -107,7 +107,8 @@ npm, `npx flowlens` in a project without it cannot find it. `flowlens serve`
 indexes the project on first use if needed. Tools: `get_context`,
 `get_dependents`, `get_module_interface`, `annotate`, `traverse`,
 `detect_cycles`, `get_metrics`, `diff_interface`, `check_architecture`,
-`get_summary`, `get_hotspots`, `get_layer_map`. Resources:
+`get_summary`, `get_hotspots`, `get_layer_map`, `trace_flow` (what happens
+when X runs? / what triggers X?), `list_entry_points`. Resources:
 `flowlens://health`, `flowlens://architecture`, `flowlens://hotspots`,
 `flowlens://changed-context`; prompts `flowlens-plan-task` and
 `flowlens-review-change`. `flowlens doctor` checks that the server starts.

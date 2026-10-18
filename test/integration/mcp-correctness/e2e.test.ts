@@ -86,6 +86,7 @@ describe('MCP correctness end-to-end', () => {
     const cases: Array<[ToolName, Record<string, unknown>]> = [
       ['get_summary', {}],
       ['get_layer_map', {}],
+      ['trace_flow', { entity: 'src/shared/format.ts/format', direction: 'in' }],
       ['annotate', { entity: 'Store', text: 'e2e', category: 'decision', author: 'test' }],
     ];
     for (const [tool, args] of cases) {

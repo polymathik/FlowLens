@@ -50,10 +50,10 @@ describe('mcpReachableCheck (real server, indexed fixture)', () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it('starts the MCP server in-process and lists all 12 tools', async () => {
+  it('starts the MCP server in-process and lists all 14 tools', async () => {
     const result = await mcpReachableCheck(ctx);
     expect(result.status).toBe('ok');
-    expect(result.message).toContain('12 tools listed');
+    expect(result.message).toContain('14 tools listed');
     for (const tool of EXPECTED_MCP_TOOLS) expect(result.details).toContain(tool);
   });
 

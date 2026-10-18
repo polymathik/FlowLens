@@ -31,6 +31,8 @@ import type { handleCheckArchitecture } from './tools/check-architecture.js';
 import type { handleGetSummary } from './tools/get-summary.js';
 import type { handleGetHotspots } from './tools/get-hotspots.js';
 import type { handleGetLayerMap } from './tools/get-layer-map.js';
+import type { handleTraceFlow } from './tools/trace-flow.js';
+import type { handleListEntryPoints } from './tools/list-entry-points.js';
 
 type Equals<A, B> = (<X>() => X extends A ? 1 : 2) extends (<X>() => X extends B ? 1 : 2) ? true : false;
 type Extends<A, B> = [A] extends [B] ? true : false;
@@ -50,6 +52,8 @@ export type ContractConformance = [
   Equals<In<typeof handleGetSummary>, T.GetSummaryInput>,
   Equals<In<typeof handleGetHotspots>, T.GetHotspotsInput>,
   Equals<In<typeof handleGetLayerMap>, T.GetLayerMapInput>,
+  Equals<In<typeof handleTraceFlow>, T.TraceFlowInput>,
+  Equals<In<typeof handleListEntryPoints>, T.ListEntryPointsInput>,
   Equals<z.infer<S['DetectedCycleSchema']>, DetectedCycle>,
   Equals<z.infer<S['HotspotEntrySchema']>, HotspotEntry>,
   Extends<ArchitectureViolation, z.infer<S['ArchitectureViolationSchema']>>,
@@ -60,6 +64,6 @@ export type ContractConformance = [
 
 /** Every element must be `true`; a drift turns one into `false` and fails here. */
 export const CONTRACT_CONFORMANCE: ContractConformance = [
-  true, true, true, true, true, true, true, true, true, true, true, true,
+  true, true, true, true, true, true, true, true, true, true, true, true, true, true,
   true, true, true, true, true, true,
 ];

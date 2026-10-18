@@ -11,7 +11,7 @@ import { CONTRACT_CONFORMANCE } from '../../../src/mcp/contract-conformance.js';
 
 describe('MCP tool contracts', () => {
   it('every tool has a contract with an output schema and envelope', () => {
-    expect(TOOL_NAMES).toHaveLength(12);
+    expect(TOOL_NAMES).toHaveLength(14); // 12 + trace_flow, list_entry_points (Map v2 M6a)
     for (const name of TOOL_NAMES) {
       expect(TOOL_CONTRACTS[name].output).toBeDefined();
       expect(() => toolEnvelopeSchema(name)).not.toThrow();
