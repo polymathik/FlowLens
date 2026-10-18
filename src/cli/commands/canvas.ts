@@ -14,6 +14,8 @@
 import { Command } from 'commander';
 import { printError, printHeader, printSuccess } from '../output.js';
 import { openBrowser } from '../canvas-host/open-browser.js';
+import { pruneLaunchFiles, scheduleLaunchFileRemoval, writeLaunchFile } from '../canvas-host/launch-file.js';
+import { AUTH_CODE_MANUAL_TTL_MS, LAUNCH_FILE_TTL_MS } from '../../contracts/canvas/explorer.js';
 import { startDevHost } from '../canvas-host/dev-host.js';
 import { CanvasHostError } from '../../contracts/canvas-host.js';
 import type { DevHost } from '../../contracts/canvas/explorer.js';
@@ -32,7 +34,7 @@ interface CanvasOptions {
 
 export const canvasCommand = new Command('canvas')
   .description('Open the FlowLens explorer (all registered projects) in the browser')
-  .option('--no-open', 'Print the sign-in URL instead of opening the browser')
+  .option('--no-open', 'Print a sign-in URL (valid 2 min, shown in the terminal) instead of opening the browser')
   .option('--watch', 'Keep this project in sync with file changes while the command runs')
   .option('--debounce <ms>', 'Debounce for --watch (ms)', '300')
   .option('--dev', 'Contributors: serve the UI sources through Vite (source checkout only)')
@@ -42,7 +44,8 @@ export const canvasCommand = new Command('canvas')
     let dev: DevHost | null = null;
     try {
       printHeader('FlowLens Explorer');
-      const launch = await prepareExplorer(process.cwd());
+      const manual = opts.open === false;
+      const launch = await prepareExplorer(process.cwd(), manual ? { codeTtlMs: AUTH_CODE_MANUAL_TTL_MS } : {});
       const daemonOrigin = `http://127.0.0.1:${launch.client.info.port}`;
       let url = launch.url;
       if (opts.dev) {
@@ -53,8 +56,17 @@ export const canvasCommand = new Command('canvas')
 
       const where = launch.project ? `project "${launch.project.name}"` : 'Home (no .flowlens/ here — run "flowlens init" to add this folder)';
       printSuccess(`Explorer at ${dev ? dev.origin : daemonOrigin} — opening ${where}`);
-      console.log(`  Sign-in link (works once, for 60 s):\n  ${url}`);
-      if (opts.open !== false) openBrowser(url);
+      if (manual) {
+        // Trade-off: the printed link shows the one-time code in this terminal (and its scrollback).
+        console.log(`  Sign-in link (works once, for ${AUTH_CODE_MANUAL_TTL_MS / 1000} s):\n  ${url}`);
+      } else {
+        // The code never reaches the browser's argv: open a 0600 launch file that redirects.
+        const file = writeLaunchFile(url);
+        openBrowser(file);
+        if (opts.watch || dev) setTimeout(() => pruneLaunchFiles(), LAUNCH_FILE_TTL_MS + 1_000).unref();
+        else scheduleLaunchFileRemoval(file);
+        console.log('  If no browser opened, run "flowlens canvas --no-open" and paste the link it prints.');
+      }
 
       if (opts.watch) {
         if (!launch.project) throw new CanvasHostError('--watch needs a project: run it in a folder with .flowlens/ (flowlens init).');

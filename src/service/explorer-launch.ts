@@ -4,7 +4,7 @@
  * sign-in URL that lands on that project's Health screen (or Home).
  */
 import { existsSync } from 'node:fs';
-import { EXPLORER_ROUTES, type AuthCodeResponse } from '../contracts/canvas/explorer.js';
+import { EXPLORER_ROUTES, type AuthCodeRequest, type AuthCodeResponse } from '../contracts/canvas/explorer.js';
 import type { ProjectWithStatus } from '../contracts/projects.js';
 import { SERVICE_ROUTES } from '../contracts/service.js';
 import { canonicalRoot, projectFlowlensDir } from '../projects/paths.js';
@@ -25,12 +25,15 @@ export function explorerRedirect(project: ProjectWithStatus | null): string {
   return project ? `#/p/${encodeURIComponent(project.id)}/health` : '#/home';
 }
 
-export async function mintSignInUrl(client: DaemonClient, redirect: string): Promise<string> {
-  const res = await client.request<AuthCodeResponse>('POST', EXPLORER_ROUTES.authCode, { redirect });
+export async function mintSignInUrl(client: DaemonClient, redirect: string, ttlMs?: number): Promise<string> {
+  const body: AuthCodeRequest = ttlMs === undefined ? { redirect } : { redirect, ttl_ms: ttlMs };
+  const res = await client.request<AuthCodeResponse>('POST', EXPLORER_ROUTES.authCode, body);
   return res.url;
 }
 
-export async function prepareExplorer(cwd: string, o: { startTimeoutMs?: number } = {}): Promise<ExplorerLaunch> {
+export async function prepareExplorer(
+  cwd: string, o: { startTimeoutMs?: number; codeTtlMs?: number } = {},
+): Promise<ExplorerLaunch> {
   const client = await connectDaemon({ timeoutMs: o.startTimeoutMs });
   let project: ProjectWithStatus | null = null;
   const root = canonicalRoot(cwd);
@@ -38,5 +41,5 @@ export async function prepareExplorer(cwd: string, o: { startTimeoutMs?: number 
     project = await client.request<ProjectWithStatus>('POST', SERVICE_ROUTES.resolve, { root, register: true });
   }
   const redirect = explorerRedirect(project);
-  return { client, project, redirect, url: await mintSignInUrl(client, redirect) };
+  return { client, project, redirect, url: await mintSignInUrl(client, redirect, o.codeTtlMs) };
 }

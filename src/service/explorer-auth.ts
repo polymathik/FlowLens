@@ -1,7 +1,7 @@
 /**
  * Explorer sign-in routes:
  *
- *   POST /api/auth/code   bearer only → AuthCodeResponse (single-use, 60 s)
+ *   POST /api/auth/code   bearer only → AuthCodeResponse (single-use, 15 s by default)
  *   GET  /auth?t=<code>   sets the session cookie, 303 → /#<redirect>
  *   GET  /api/session     SessionResponse (cookie or bearer)
  *
@@ -12,7 +12,7 @@
  */
 import type { Express } from 'express';
 import {
-  EXPLORER_ROUTES, type AuthCodeRequest, type AuthCodeResponse, type SessionResponse,
+  AUTH_CODE_MAX_TTL_MS, EXPLORER_ROUTES, type AuthCodeRequest, type AuthCodeResponse, type SessionResponse,
 } from '../contracts/canvas/explorer.js';
 import type { ServiceDeps } from './app.js';
 import { isLoopbackHost } from './auth.js';
@@ -23,8 +23,13 @@ const SIGN_IN_FAILED = `<!doctype html><meta charset="utf-8"><title>FlowLens —
 <style>body{font:15px/1.5 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 16px;color:#1f2937}
 code{background:#f1f5f9;padding:2px 6px;border-radius:4px}@media(prefers-color-scheme:dark){body{background:#0f141b;color:#e5e7eb}code{background:#1f2937}}</style>
 <h1>This sign-in link has expired</h1>
-<p>Links from <code>flowlens canvas</code> work once and only for a minute.
+<p>Links from <code>flowlens canvas</code> work once and only for a few seconds.
 Run <code>flowlens canvas</code> again in your project folder to open the explorer.</p>`;
+
+function clampTtl(raw: unknown, fallback: number): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return fallback;
+  return Math.min(AUTH_CODE_MAX_TTL_MS, Math.max(1_000, Math.round(raw)));
+}
 
 export function mountExplorerAuth(app: Express, deps: ServiceDeps, sessions: SessionStore): void {
   app.post(EXPLORER_ROUTES.authCode, (req, res) => {
@@ -33,12 +38,13 @@ export function mountExplorerAuth(app: Express, deps: ServiceDeps, sessions: Ses
       return;
     }
     const body = (req.body ?? {}) as AuthCodeRequest;
-    const code = sessions.mintCode(body.redirect);
+    const ttl = clampTtl(body.ttl_ms, sessions.defaultCodeTtlMs);
+    const code = sessions.mintCode(body.redirect, ttl);
     const out: AuthCodeResponse = {
       ok: true,
       code,
       url: `http://127.0.0.1:${deps.port}${EXPLORER_ROUTES.auth}?t=${encodeURIComponent(code)}`,
-      expires_in_ms: 60_000,
+      expires_in_ms: ttl,
     };
     res.json(out);
   });

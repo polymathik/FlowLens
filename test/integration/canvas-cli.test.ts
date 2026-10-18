@@ -6,7 +6,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
 import type { ProjectDetail } from '../../src/contracts/service.js';
 import { CLI_TS, TSX_LOADER, copyFixture, removeDir, runCli, tempDir } from '../helpers/service-env.js';
@@ -46,6 +48,35 @@ describe('flowlens canvas', () => {
     const projects = (await (await fetch(`${origin}/api/projects`, { headers: { Cookie: cookie } })).json()) as ProjectDetail[];
     expect(projects.map((p) => p.root)).toContain(root);
     expect(loc).toContain(projects.find((p) => p.root === root)!.id);
+  }, 90_000);
+
+  it('opening the browser never puts the sign-in code in its argv (review M2)', async () => {
+    if (process.platform === 'win32') return;
+    // A fake `xdg-open`/`open` that records its arguments.
+    const bin = join(home, 'fake-bin');
+    const argvLog = join(home, 'browser-argv.txt');
+    await mkdir(bin, { recursive: true });
+    for (const name of ['xdg-open', 'open']) {
+      await writeFile(join(bin, name), `#!/bin/sh\nprintf '%s\\n' "$@" > "${argvLog}"\n`, { mode: 0o755 });
+    }
+    const r = await runCli(['canvas'], root, { ...env, PATH: `${bin}:${process.env.PATH}` }, 60_000);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).not.toMatch(/auth\?t=/);
+    let argv = '';
+    for (let i = 0; i < 100 && !argv; i++) {
+      argv = await readFile(argvLog, 'utf8').catch(() => '');
+      if (!argv) await sleep(50);
+    }
+    const opened = argv.trim();
+    expect(opened).not.toMatch(/t=|auth/);
+    expect(opened.startsWith(join(home, 'run', 'open-'))).toBe(true);
+    expect(statSync(opened).mode & 0o777).toBe(0o600);
+    expect(statSync(join(home, 'run')).mode & 0o777).toBe(0o700);
+    const html = await readFile(opened, 'utf8');
+    const url = /location\.replace\("([^"]+)"\)/.exec(html)?.[1] ?? '';
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\?t=/);
+    const res = await fetch(url, { redirect: 'manual' });
+    expect(res.status).toBe(303);
   }, 90_000);
 
   it('outside a project it opens Home', async () => {

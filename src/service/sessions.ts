@@ -2,7 +2,8 @@
  * Browser sessions for the explorer.
  *
  * The bearer token never reaches the browser. The CLI (which can read
- * daemon.json) mints a single-use code that lives 60 s; `GET /auth?t=<code>`
+ * its daemon info file) mints a single-use code that lives 15 s (longer for
+ * `--no-open`); `GET /auth?t=<code>`
  * consumes it and sets an HttpOnly, SameSite=Strict cookie holding a random
  * session id. Codes and sessions are kept only in memory, as SHA-256
  * digests, so a daemon restart signs every browser out.
@@ -41,12 +42,17 @@ export class SessionStore {
     return `${SESSION_COOKIE_PREFIX}${port}`;
   }
 
-  mintCode(redirect?: unknown): string {
+  /** `ttlMs` overrides the store default (callers clamp it). */
+  mintCode(redirect?: unknown, ttlMs = this.codeTtlMs): string {
     this.prune();
     if (this.codes.size >= MAX_CODES) this.codes.delete(this.codes.keys().next().value as string);
     const code = randomBytes(32).toString('base64url');
-    this.codes.set(digest(code), { expiresAt: this.now() + this.codeTtlMs, redirect: safeRedirect(redirect) });
+    this.codes.set(digest(code), { expiresAt: this.now() + ttlMs, redirect: safeRedirect(redirect) });
     return code;
+  }
+
+  get defaultCodeTtlMs(): number {
+    return this.codeTtlMs;
   }
 
   /** Single use: returns a new session id + redirect, or null for an unknown/expired code. */
