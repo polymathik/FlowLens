@@ -1,15 +1,9 @@
 /**
- * Displays annotation badges on nodes.
- * Color-coded by category: convention, decision, warning, todo.
+ * Displays annotation notes on symbol nodes.
+ * Colour-coded by category: convention, decision, warning, todo.
  */
 import React from 'react';
-
-interface Annotation {
-  id: string;
-  text: string;
-  category: string;
-  author: string;
-}
+import type { CanvasAnnotation } from '../../../contracts/canvas/index.js';
 
 const CATEGORY_COLORS: Record<string, string> = {
   convention: '#3b82f6',
@@ -18,34 +12,29 @@ const CATEGORY_COLORS: Record<string, string> = {
   todo: '#22c55e',
 };
 
-export function AnnotationTooltip({
-  annotations,
-}: {
-  annotations: Annotation[];
-}) {
+export function AnnotationTooltip({ annotations }: { annotations: CanvasAnnotation[] }) {
   if (!annotations || annotations.length === 0) return null;
-
   return (
     <div style={{ marginTop: 4 }}>
-      {annotations.map((ann) => (
-        <div
-          key={ann.id}
-          style={{
-            padding: '4px 6px',
-            marginTop: 2,
-            borderRadius: 4,
-            fontSize: 10,
-            backgroundColor:
-              (CATEGORY_COLORS[ann.category] ?? '#94a3b8') + '15',
-            borderLeft: `3px solid ${CATEGORY_COLORS[ann.category] ?? '#94a3b8'}`,
-          }}
-        >
-          <div style={{ fontWeight: 500 }}>{ann.text}</div>
-          <div style={{ color: '#94a3b8', fontSize: 9 }}>
-            &mdash; {ann.author}
+      {annotations.map((ann) => {
+        const color = CATEGORY_COLORS[ann.category] ?? '#94a3b8';
+        return (
+          <div
+            key={ann.id || ann.text}
+            style={{
+              padding: '3px 6px',
+              marginTop: 2,
+              borderRadius: 4,
+              fontSize: 10,
+              backgroundColor: `${color}15`,
+              borderLeft: `3px solid ${color}`,
+            }}
+          >
+            <div style={{ fontWeight: 500 }}>{ann.text}</div>
+            {ann.author && <div style={{ color: '#94a3b8', fontSize: 9 }}>— {ann.author}</div>}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

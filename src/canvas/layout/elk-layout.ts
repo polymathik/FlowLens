@@ -1,90 +1,77 @@
 /**
  * ELK.js layout engine integration.
- * Computes hierarchical/layered positions for React Flow nodes using ELK.
+ * Computes layered positions for the file and symbol views. Disconnected
+ * components are packed towards `elk.aspectRatio`, so a file with many
+ * unconnected symbols becomes a grid instead of one very wide row.
  *
  * Conforms to the canvas `LayoutEngine` contract in
  * `src/contracts/canvas/layout.ts` — see `createElkEngine()` below.
  */
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { Node, Edge } from '@xyflow/react';
 import type {
+  CanvasEdge,
+  CanvasNode,
   LayoutEngine,
   LayoutOptions as ContractLayoutOptions,
 } from '../../contracts/canvas/index.js';
-import type { CanvasNode, CanvasEdge } from '../../contracts/canvas/index.js';
+import type { LayoutBox, LayoutLink, Positions } from './force-layout';
 
 const elk = new ELK();
 
 /** ELK-specific options (flat bag matching ELK's config keys). */
-export interface LayoutOptions {
+export interface ElkOptions {
   algorithm?: string;
   direction?: string;
   nodeSpacing?: number;
   layerSpacing?: number;
 }
 
-export async function computeElkLayout(
-  nodes: Node[],
-  edges: Edge[],
-  options: LayoutOptions = {},
-): Promise<Node[]> {
+export async function computeElkPositions(
+  boxes: LayoutBox[],
+  links: LayoutLink[],
+  options: ElkOptions = {},
+): Promise<Positions> {
+  const ids = new Set(boxes.map((b) => b.id));
   const graph = {
     id: 'root',
     layoutOptions: {
       'elk.algorithm': options.algorithm ?? 'layered',
       'elk.direction': options.direction ?? 'DOWN',
-      'elk.spacing.nodeNode': String(options.nodeSpacing ?? 30),
-      'elk.spacing.edgeNode': '20',
-      'elk.layered.spacing.nodeNodeBetweenLayers': String(
-        options.layerSpacing ?? 60,
-      ),
+      'elk.spacing.nodeNode': String(options.nodeSpacing ?? 36),
+      'elk.spacing.edgeNode': '24',
+      'elk.spacing.componentComponent': '48',
+      'elk.layered.spacing.nodeNodeBetweenLayers': String(options.layerSpacing ?? 72),
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-      'elk.edgeRouting': 'SPLINES',
+      'elk.separateConnectedComponents': 'true',
+      'elk.aspectRatio': '1.6',
     },
-    children: nodes.map((n) => ({
-      id: n.id,
-      width:
-        n.measured?.width ?? n.width ?? (n.style?.width as number) ?? 180,
-      height:
-        n.measured?.height ?? n.height ?? (n.style?.height as number) ?? 60,
-    })),
-    edges: edges.map((e) => ({
-      id: e.id,
-      sources: [e.source],
-      targets: [e.target],
-    })),
+    children: boxes.map((b) => ({ id: b.id, width: b.width, height: b.height })),
+    edges: links
+      .filter((l) => ids.has(l.source) && ids.has(l.target) && l.source !== l.target)
+      .map((l, i) => ({ id: `e${i}`, sources: [l.source], targets: [l.target] })),
   };
 
   const result = await elk.layout(graph);
-
-  return nodes.map((node) => {
-    const elkNode = result.children?.find((n) => n.id === node.id);
-    if (!elkNode || elkNode.x === undefined || elkNode.y === undefined) {
-      return node;
-    }
-    return { ...node, position: { x: elkNode.x, y: elkNode.y } };
-  });
+  const positions: Positions = new Map();
+  for (const child of result.children ?? []) {
+    positions.set(child.id, { x: child.x ?? 0, y: child.y ?? 0 });
+  }
+  return positions;
 }
 
-/**
- * Contract-conforming factory. Maps the generic {@link ContractLayoutOptions}
- * (with nested `spacing: {node, layer}`) onto ELK's flat option keys and
- * delegates to {@link computeElkLayout}. Kept alongside the raw function so
- * both styles are usable: the Canvas hooks call `computeElkLayout` for
- * speed; external integrations target the `LayoutEngine` contract.
- */
+/** Contract-conforming factory (maps nested spacing onto ELK's flat keys). */
 export function createElkEngine(): LayoutEngine {
   return {
-    async computeLayout(
-      nodes: CanvasNode[],
-      edges: CanvasEdge[],
-      options: ContractLayoutOptions,
-    ) {
-      const positioned = await computeElkLayout(
-        nodes as unknown as Node[],
-        edges as unknown as Edge[],
+    async computeLayout(nodes: CanvasNode[], edges: CanvasEdge[], options: ContractLayoutOptions) {
+      const positions = await computeElkPositions(
+        nodes.map((n) => ({
+          id: n.id,
+          width: n.measured?.width ?? Number(n.style?.width ?? 180),
+          height: n.measured?.height ?? Number(n.style?.height ?? 60),
+        })),
+        edges,
         {
           algorithm: options.algorithm,
           direction: options.direction,
@@ -93,7 +80,7 @@ export function createElkEngine(): LayoutEngine {
         },
       );
       return {
-        nodes: positioned as unknown as CanvasNode[],
+        nodes: nodes.map((n) => ({ ...n, position: positions.get(n.id) ?? n.position })),
         edges,
       };
     },

@@ -1,183 +1,118 @@
 /**
- * Transforms Relation[] from the graph API into React Flow Edge[].
+ * Transforms Relation[] into React Flow Edge[] for the *currently visible*
+ * node set.
  *
- * Creates edges at four granularity levels:
- *   1. Entity-level: direct edges when both entity nodes are visible.
- *   2. File-level: aggregated edges between file nodes (deduped).
- *   3. Module-level: aggregated edges between module/subdirectory nodes (deduped).
- *   4. System-level: aggregated edges between directory nodes (deduped).
+ * Each relation endpoint is resolved to its deepest visible ancestor
+ * (`GraphIndex.resolveVisible`): a symbol, its file, module or system.
+ * Relations that land on the same (source, target) pair are aggregated into
+ * one edge carrying every relation type (`types`, most frequent first) and a
+ * count. This handles every drill level, including mixed views (e.g. the
+ * files of one module next to its sibling modules).
  *
- * Only edges whose both endpoints exist in the visible node set are created.
+ * Self-loops (both endpoints inside the same visible node) are dropped.
  */
 import type { Edge } from '@xyflow/react';
-import type { Entity, Relation } from '../api/graph-client';
+import type { Relation, RelationType } from '../../contracts/relations.js';
+import type { CanvasEdgeData } from '../../contracts/canvas/index.js';
+import type { GraphIndex } from './graph-index';
+import { arrowMarker, relationColor } from './relation-colors';
 
-const RELATION_COLORS: Record<string, string> = {
-  import: '#6366f1',
-  call: '#22c55e',
-  extend: '#f59e0b',
-  implement: '#3b82f6',
-  override: '#a855f7',
-  contain: '#94a3b8',
-  create: '#ec4899',
-  use: '#64748b',
-};
-
-const DEFAULT_COLOR = '#94a3b8';
-
-type PairInfo = { count: number; types: Map<string, number> };
-
-/** Increment count for an aggregated edge pair, tracking relation types. */
-function accumulatePairCount(
-  map: Map<string, PairInfo>,
-  key: string,
-  relType: string,
-): void {
-  const existing = map.get(key);
-  if (existing) {
-    existing.count += 1;
-    existing.types.set(relType, (existing.types.get(relType) ?? 0) + 1);
-  } else {
-    const types = new Map<string, number>();
-    types.set(relType, 1);
-    map.set(key, { count: 1, types });
-  }
+interface PairAcc {
+  source: string;
+  target: string;
+  count: number;
+  types: Map<RelationType, number>;
+  first: Relation;
 }
 
-/** Return the relation type with the highest count in the pair. */
-function getDominantType(types: Map<string, number>): string {
-  let best = '';
-  let bestCount = 0;
-  for (const [t, c] of types) {
-    if (c > bestCount) {
-      best = t;
-      bestCount = c;
+/** Sort types by frequency (desc), then name, for stable output. */
+function rankTypes(types: Map<RelationType, number>): RelationType[] {
+  return [...types.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([t]) => t);
+}
+
+export function transformRelationsToEdges(
+  relations: Relation[],
+  visibleIds: ReadonlySet<string>,
+  index: GraphIndex,
+): Edge<CanvasEdgeData>[] {
+  const pairs = new Map<string, PairAcc>();
+
+  for (const rel of relations) {
+    const source = index.resolveVisible(rel.from, visibleIds);
+    if (!source) continue;
+    const target = index.resolveVisible(rel.to, visibleIds);
+    if (!target || target === source) continue;
+    const key = `${source}->${target}`;
+    const acc = pairs.get(key);
+    if (acc) {
+      acc.count++;
+      acc.types.set(rel.type, (acc.types.get(rel.type) ?? 0) + 1);
+    } else {
+      pairs.set(key, {
+        source,
+        target,
+        count: 1,
+        types: new Map([[rel.type, 1]]),
+        first: rel,
+      });
     }
   }
-  return best;
-}
 
-/**
- * Derive the module path (first two directory segments) from a file path.
- * Returns null if the file is directly inside the top-level dir (no subdirectory).
- */
-function getModulePath(filePath: string): string | null {
-  const parts = filePath.split('/');
-  if (parts.length < 3) return null;
-  return parts.slice(0, 2).join('/');
-}
-
-/** Emit aggregated edges from a pair-count map. */
-function emitAggregatedEdges(
-  pairCounts: Map<string, PairInfo>,
-  prefix: string,
-  strokeWidth: number,
-): Edge[] {
-  const edges: Edge[] = [];
-  for (const [key, info] of pairCounts) {
-    const [source, target] = key.split('->');
-    const dominantType = getDominantType(info.types);
-    const dominantRel = { type: dominantType };
+  const edges: Edge<CanvasEdgeData>[] = [];
+  for (const [key, acc] of pairs) {
+    const types = rankTypes(acc.types);
+    const dominantType = types[0];
+    const direct =
+      acc.count === 1 && acc.source === acc.first.from && acc.target === acc.first.to;
     edges.push({
-      id: `agg-${prefix}:${key}`,
-      source,
-      target,
+      id: direct ? acc.first.id : `agg:${key}`,
+      source: acc.source,
+      target: acc.target,
       type: 'relation',
-      style: {
-        stroke: RELATION_COLORS[dominantType] ?? DEFAULT_COLOR,
-        strokeWidth,
-      },
+      markerEnd: arrowMarker(relationColor(dominantType)),
+      style: { stroke: relationColor(dominantType) },
       data: {
-        relation: dominantRel,
-        aggregated: true,
-        count: info.count,
-        types: [...info.types.keys()],
+        kind: direct ? 'entity-edge' : 'aggregated-edge',
+        types,
+        dominantType,
+        count: acc.count,
+        relation: direct ? acc.first : undefined,
       },
     });
   }
   return edges;
 }
 
-export function transformRelationsToEdges(
-  relations: Relation[],
-  nodeIds: Set<string>,
-  entities: Entity[],
-): Edge[] {
-  const edges: Edge[] = [];
-  const filePairCounts = new Map<string, PairInfo>();
-  const modulePairCounts = new Map<string, PairInfo>();
-  const systemPairCounts = new Map<string, PairInfo>();
-
-  // Build entity -> file and file -> dir lookups
-  const entityToFile = new Map<string, string>();
-  const fileToDir = new Map<string, string>();
-  for (const e of entities) {
-    entityToFile.set(e.id, e.file);
-    const dir = e.file.split('/')[0] || 'root';
-    fileToDir.set(e.file, dir);
-  }
-
-  for (const rel of relations) {
-    const sourceFile = entityToFile.get(rel.from) ?? rel.location.file;
-    const targetFile = entityToFile.get(rel.to);
-
-    // Direct entity-level edge (when both endpoints are visible nodes)
-    if (nodeIds.has(rel.from) && nodeIds.has(rel.to)) {
-      edges.push({
-        id: rel.id,
-        source: rel.from,
-        target: rel.to,
-        type: 'relation',
-        style: { stroke: RELATION_COLORS[rel.type] ?? DEFAULT_COLOR },
-        data: { relation: rel },
-      });
+/**
+ * Keep edges that carry at least one visible relation type. Checks every
+ * aggregated type, not just the dominant one; when the dominant type is
+ * hidden the edge is re-coloured by its most frequent *visible* type.
+ */
+export function filterEdgesByRelationType(
+  edges: Edge<CanvasEdgeData>[],
+  visibleTypes: ReadonlySet<string>,
+): Edge<CanvasEdgeData>[] {
+  const out: Edge<CanvasEdgeData>[] = [];
+  for (const e of edges) {
+    const data = e.data;
+    if (!data || data.types.length === 0) {
+      out.push(e);
       continue;
     }
-
-    // File-level aggregated edge — collect counts per pair
-    const sourceFileId = `file:${sourceFile}`;
-    const targetFileId = targetFile ? `file:${targetFile}` : null;
-    if (
-      targetFileId &&
-      nodeIds.has(sourceFileId) &&
-      nodeIds.has(targetFileId) &&
-      sourceFileId !== targetFileId
-    ) {
-      const key = `${sourceFileId}->${targetFileId}`;
-      accumulatePairCount(filePairCounts, key, rel.type);
+    const shown = data.types.find((t) => visibleTypes.has(t));
+    if (!shown) continue;
+    if (shown === data.dominantType) {
+      out.push(e);
       continue;
     }
-
-    // Module-level aggregated edge — collect counts per pair
-    const sourceModule = getModulePath(sourceFile);
-    const targetModule = targetFile ? getModulePath(targetFile) : null;
-    if (sourceModule && targetModule && sourceModule !== targetModule) {
-      const sourceModuleId = `module:${sourceModule}`;
-      const targetModuleId = `module:${targetModule}`;
-      if (nodeIds.has(sourceModuleId) && nodeIds.has(targetModuleId)) {
-        const key = `${sourceModuleId}->${targetModuleId}`;
-        accumulatePairCount(modulePairCounts, key, rel.type);
-        continue;
-      }
-    }
-
-    // System-level aggregated edge — collect counts per pair
-    const sourceDir = fileToDir.get(sourceFile);
-    const targetDir = targetFile ? fileToDir.get(targetFile) : null;
-    if (sourceDir && targetDir && sourceDir !== targetDir) {
-      const sourceSystemId = `system:${sourceDir}`;
-      const targetSystemId = `system:${targetDir}`;
-      if (nodeIds.has(sourceSystemId) && nodeIds.has(targetSystemId)) {
-        const key = `${sourceSystemId}->${targetSystemId}`;
-        accumulatePairCount(systemPairCounts, key, rel.type);
-      }
-    }
+    out.push({
+      ...e,
+      markerEnd: arrowMarker(relationColor(shown)),
+      style: { ...e.style, stroke: relationColor(shown) },
+      data: { ...data, dominantType: shown },
+    });
   }
-
-  // Emit aggregated edges at each level
-  edges.push(...emitAggregatedEdges(filePairCounts, 'file', 2));
-  edges.push(...emitAggregatedEdges(modulePairCounts, 'mod', 2.25));
-  edges.push(...emitAggregatedEdges(systemPairCounts, 'sys', 2.5));
-
-  return edges;
+  return out;
 }

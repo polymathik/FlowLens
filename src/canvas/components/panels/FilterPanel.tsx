@@ -1,63 +1,23 @@
 /**
- * Relation type filter panel with checkboxes.
- * Allows users to toggle visibility of specific relation types on the canvas.
+ * Relation-type filter: toggles which kinds of relations draw edges.
+ * Aggregated edges stay visible while any of their types is on.
  */
 import React from 'react';
 import { useCanvasStore } from '../../store/canvas-store';
-
-const ALL_TYPES = [
-  'import',
-  'call',
-  'extend',
-  'implement',
-  'override',
-  'mixin',
-  'use',
-  'contain',
-  'create',
-  'parameter',
-  'return',
-  'throw',
-  'decorate',
-];
+import { ALL_RELATION_TYPES, RELATION_COLORS } from '../../utils/relation-colors';
+import { floatingPanel, sectionTitle } from '../shared/ui';
 
 export function FilterPanel() {
   const visible = useCanvasStore((s) => s.visibleRelationTypes);
   const toggle = useCanvasStore((s) => s.toggleRelationType);
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 50,
-        right: 8,
-        zIndex: 10,
-        padding: '8px 12px',
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        borderRadius: 8,
-        fontSize: 11,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        maxHeight: '60vh',
-        overflowY: 'auto',
-      }}
-    >
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>Relation Filters</div>
-      {ALL_TYPES.map((type) => (
-        <label
-          key={type}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            padding: '2px 0',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={visible.has(type)}
-            onChange={() => toggle(type)}
-          />
+    <div data-testid="filter-panel" style={{ ...floatingPanel, top: 12, right: 12, padding: '10px 14px', maxHeight: '60vh', overflowY: 'auto' }}>
+      <div style={sectionTitle}>Show relations</div>
+      {ALL_RELATION_TYPES.map((type) => (
+        <label key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '2px 0' }}>
+          <input type="checkbox" checked={visible.has(type)} onChange={() => toggle(type)} />
+          <span style={{ width: 10, height: 3, borderRadius: 2, background: RELATION_COLORS[type] }} />
           <span>{type}</span>
         </label>
       ))}

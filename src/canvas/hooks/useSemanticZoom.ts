@@ -1,28 +1,37 @@
 /**
- * Semantic zoom hook — maps the React Flow viewport zoom level to a
- * discrete ZoomLevel ('system' | 'module' | 'file' | 'entity') and
- * keeps the Zustand store in sync as the user zooms in/out.
+ * Semantic zoom hook — maps the viewport zoom to a discrete detail tier
+ * (`zoomLevelFor`, thresholds from the state contract) and keeps the store
+ * in sync. Viewport changes fire on every animation frame while zooming,
+ * so updates are rAF-throttled and the store ignores unchanged tiers.
  */
-import { useOnViewportChange } from '@xyflow/react';
-import { useCanvasStore, type ZoomLevel } from '../store/canvas-store';
-import { useCallback } from 'react';
-
-function getZoomLevel(zoom: number): ZoomLevel {
-  if (zoom < 0.3) return 'system';
-  if (zoom < 0.7) return 'module';
-  if (zoom < 1.5) return 'file';
-  return 'entity';
-}
+import { useCallback, useEffect, useRef } from 'react';
+import { useOnViewportChange, type Viewport } from '@xyflow/react';
+import { useCanvasStore } from '../store/canvas-store';
+import { zoomLevelFor } from '../utils/zoom';
 
 export function useSemanticZoom() {
   const setZoomLevel = useCanvasStore((s) => s.setZoomLevel);
+  const frame = useRef<number | null>(null);
+  const latest = useRef(1);
 
-  useOnViewportChange({
-    onChange: useCallback(
-      (viewport: { zoom: number }) => {
-        setZoomLevel(getZoomLevel(viewport.zoom));
-      },
-      [setZoomLevel],
-    ),
-  });
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
+
+  const onChange = useCallback(
+    (viewport: Viewport) => {
+      latest.current = viewport.zoom;
+      if (frame.current !== null) return;
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        setZoomLevel(zoomLevelFor(latest.current));
+      });
+    },
+    [setZoomLevel],
+  );
+
+  useOnViewportChange({ onChange, onEnd: onChange });
 }

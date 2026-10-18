@@ -1,24 +1,56 @@
 /**
- * Icon component that maps entity kinds to visual emoji indicators.
- * Used in EntityNode and other components that display entity information.
+ * Small typographic glyph per symbol kind (no emoji: renders identically in
+ * every OS font and in image exports), plus the shared kind accent colours.
  */
 import React from 'react';
 
-const ICONS: Record<string, string> = {
-  file: '\u{1F4C4}',
-  module: '\u{1F4E6}',
-  namespace: '\u{1F3F7}\uFE0F',
-  class: '\u{1F537}',
-  interface: '\u{1F536}',
-  function: '\u26A1',
-  method: '\u{1F527}',
-  variable: '\u{1F4CC}',
-  field: '\u{1F517}',
-  type: '\u{1F170}\uFE0F',
-  enum: '\u{1F4CA}',
-  default: '\u25CF',
+export const KIND_COLORS: Record<string, string> = {
+  class: '#6366f1',
+  interface: '#d97706',
+  function: '#16a34a',
+  method: '#0891b2',
+  variable: '#94a3b8',
+  field: '#94a3b8',
+  enum: '#db2777',
+  type: '#7c3aed',
+  module: '#0d9488',
+  namespace: '#0d9488',
+};
+
+const GLYPHS: Record<string, string> = {
+  file: 'F',
+  module: 'M',
+  namespace: 'N',
+  class: 'C',
+  interface: 'I',
+  function: 'ƒ',
+  method: 'm',
+  variable: 'v',
+  field: 'f',
+  type: 'T',
+  enum: 'E',
 };
 
 export function EntityIcon({ kind }: { kind: string }) {
-  return <span style={{ marginRight: 4 }}>{ICONS[kind] ?? ICONS.default}</span>;
+  const color = KIND_COLORS[kind] ?? '#64748b';
+  return (
+    <span
+      aria-label={kind}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: '0 0 auto',
+        width: 16,
+        height: 16,
+        borderRadius: 4,
+        fontSize: 10,
+        fontWeight: 700,
+        color,
+        background: `${color}1f`,
+      }}
+    >
+      {GLYPHS[kind] ?? '•'}
+    </span>
+  );
 }
