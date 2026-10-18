@@ -55,3 +55,25 @@ export function sampleGraph() {
   ];
   return { entities, relations };
 }
+
+/** Hierarchy + view model helpers shared by the Map v2 unit tests. */
+import { buildHierarchy } from '../../../src/analysis/hierarchy/index.js';
+import { computeMapView } from '../../../src/canvas/utils/map-view.js';
+import { buildViewEdges, applyRelationFilter } from '../../../src/canvas/utils/edge-transformer.js';
+import { buildViewNodes, buildAnnotationMap } from '../../../src/canvas/utils/node-transformer.js';
+import { buildGraphIndex } from '../../../src/canvas/utils/graph-index.js';
+
+export function sampleHierarchy() {
+  const g = sampleGraph();
+  const hierarchy = buildHierarchy({ projectName: 'Sample', entities: g.entities });
+  const index = buildGraphIndex(g.entities, hierarchy);
+  const relationById = new Map(g.relations.map((r) => [r.id, r]));
+  /** Everything the canvas derives for the container opened by `drillPath`. */
+  const viewAt = (drillPath: string[], showLockfiles = false) => {
+    const view = computeMapView(hierarchy, g.relations, drillPath, { showLockfiles });
+    const nodes = buildViewNodes({ hierarchy, entityById: index.entityById, annotations: buildAnnotationMap() }, view);
+    const edges = buildViewEdges(view, relationById);
+    return { view, nodes, edges, visibleIds: new Set(nodes.map((n) => n.id)) };
+  };
+  return { ...g, hierarchy, index, relationById, viewAt, applyRelationFilter };
+}

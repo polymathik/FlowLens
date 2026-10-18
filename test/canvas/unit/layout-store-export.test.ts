@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { computeForceLayout, hasOverlap, separateRects } from '../../../src/canvas/layout/force-layout.js';
-import { computeLayout, layoutModeFor } from '../../../src/canvas/layout/compute-layout.js';
+import { computeLayout, sortForLayout } from '../../../src/canvas/layout/compute-layout.js';
 import { computeExportFrame } from '../../../src/canvas/utils/export-utils.js';
 import { useCanvasStore } from '../../../src/canvas/store/canvas-store.js';
 import { formatRelativeTime } from '../../../src/canvas/utils/format.js';
@@ -23,16 +23,33 @@ describe('layout', () => {
     expect(hasOverlap(r)).toBe(false);
   });
 
-  it('ELK layout (file/symbol views) packs nodes without overlap', async () => {
-    const nodes = boxes.map((b) => ({ id: b.id, position: { x: 0, y: 0 }, data: {}, style: { width: b.width, height: b.height } })) as Node[];
-    const pos = await computeLayout(nodes, links, 'layered');
+  it('container layout: connected nodes via ELK, the rest in a sorted grid below, no overlap', async () => {
+    const nodes = boxes.map((b, i) => ({ id: b.id, type: i % 2 ? 'file' : 'folder', position: { x: 0, y: 0 }, data: { label: b.id }, width: b.width, height: b.height })) as Node[];
+    const connectedLinks = links.slice(0, 8); // n0..n4 -> n1..n8; the other nodes stay loose
+    const pos = await computeLayout(nodes, connectedLinks);
     expect(hasOverlap(rects(pos))).toBe(false);
+    const linked = new Set(connectedLinks.flatMap((l) => [l.source, l.target]));
+    const loose = nodes.filter((n) => !linked.has(n.id));
+    const linkedBottom = Math.max(...[...linked].map((id) => pos.get(id)!.y + 60));
+    expect(Math.min(...loose.map((n) => pos.get(n.id)!.y))).toBeGreaterThanOrEqual(linkedBottom);
   });
 
-  it('chooses force for overview levels and layered once files are shown', () => {
-    expect(layoutModeFor([])).toBe('force');
-    expect(layoutModeFor(['system:src'])).toBe('force');
-    expect(layoutModeFor(['system:src', 'module:src/api'])).toBe('layered');
+  it('is deterministic whatever the input order, and edge-less sets become a name-sorted grid', async () => {
+    const nodes = boxes.slice(0, 7).map((b) => ({ id: b.id, type: 'file', position: { x: 0, y: 0 }, data: { label: b.id }, width: 180, height: 60 })) as Node[];
+    const a = await computeLayout(nodes, []);
+    const b = await computeLayout([...nodes].reverse(), []);
+    expect([...a.entries()].sort()).toEqual([...b.entries()].sort());
+    expect(sortForLayout([...nodes].reverse()).map((n) => n.id)).toEqual(['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']);
+    const ys = new Set([...a.values()].map((p) => p.y));
+    expect(ys.size).toBeGreaterThan(1); // a grid, not one long row
+  });
+
+  it('pins incoming portals before and outgoing portals after the content', async () => {
+    const mk = (id: string, type: string, data: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data: { label: id, ...data }, width: 200, height: 60 }) as Node;
+    const nodes = [mk('out', 'portal', { direction: 'out' }), mk('mid', 'file'), mk('in', 'portal', { direction: 'in' })];
+    const pos = await computeLayout(nodes, [{ source: 'in', target: 'mid' }, { source: 'mid', target: 'out' }]);
+    expect(pos.get('in')!.x).toBeLessThan(pos.get('mid')!.x);
+    expect(pos.get('mid')!.x).toBeLessThan(pos.get('out')!.x);
   });
 });
 
@@ -41,10 +58,10 @@ describe('canvas store (implements contracts/canvas/state.ts)', () => {
 
   it('navigateTo drills, selects, requests focus and optionally sets the overlay', () => {
     const s = useCanvasStore.getState();
-    s.navigateTo({ drillPath: ['system:src', 'module:src/api'], nodeId: 'file:src/api/a.ts', overlay: 'cycles' });
+    s.navigateTo({ drillPath: ['folder:src', 'folder:src/api'], nodeId: 'file:src/api/a.ts', overlay: 'cycles' });
     const first = useCanvasStore.getState();
-    expect(first).toMatchObject({ drillPath: ['system:src', 'module:src/api'], selectedNodeId: 'file:src/api/a.ts', activeOverlay: 'cycles' });
-    s.navigateTo({ drillPath: [], nodeId: 'system:src' });
+    expect(first).toMatchObject({ drillPath: ['folder:src', 'folder:src/api'], selectedNodeId: 'file:src/api/a.ts', activeOverlay: 'cycles' });
+    s.navigateTo({ drillPath: [], nodeId: 'folder:src' });
     const second = useCanvasStore.getState();
     expect(second.activeOverlay).toBe('cycles'); // undefined overlay keeps the current one
     expect(second.focusRequest!.seq).toBeGreaterThan(first.focusRequest!.seq);
@@ -52,11 +69,17 @@ describe('canvas store (implements contracts/canvas/state.ts)', () => {
 
   it('drillToLevel truncates and -1 returns to the root', () => {
     const s = useCanvasStore.getState();
-    s.setDrillPath(['system:src', 'module:src/api', 'file:src/api/a.ts']);
-    s.drillToLevel(0);
-    expect(useCanvasStore.getState().drillPath).toEqual(['system:src']);
+    s.setDrillPath(['folder:src', 'folder:src/api', 'file:src/api/a.ts', 'sym1', 'sym2']);
+    s.drillToLevel(1);
+    expect(useCanvasStore.getState().drillPath).toEqual(['folder:src', 'folder:src/api']);
     s.drillToLevel(-1);
     expect(useCanvasStore.getState().drillPath).toEqual([]);
+  });
+
+  it('opening a container (nodeId null) selects nothing and requests no focus', () => {
+    const s = useCanvasStore.getState();
+    s.navigateTo({ drillPath: ['folder:src'], nodeId: null });
+    expect(useCanvasStore.getState()).toMatchObject({ drillPath: ['folder:src'], selectedNodeId: null, focusRequest: null });
   });
 
   it('closing search clears the query', () => {

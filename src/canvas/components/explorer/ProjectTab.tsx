@@ -64,7 +64,7 @@ export function ProjectTab({ projectId, project, route, routeStamp }: Props) {
         {view === 'health' ? (
           <HealthView projectId={projectId} />
         ) : (
-          <ProjectProvider projectId={projectId} revision={revision} route={route} routeStamp={routeStamp}>
+          <ProjectProvider projectId={projectId} projectName={project.name} projectRoot={project.root} revision={revision} route={route} routeStamp={routeStamp}>
             <Suspense fallback={<div className="fl-center">Loading map…</div>}>
               <Canvas />
             </Suspense>

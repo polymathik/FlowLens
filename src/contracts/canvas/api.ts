@@ -7,6 +7,7 @@
  */
 import type { EntityKind } from '../entities.js';
 import type { ArchitectureViolation } from '../analysis/architecture.js';
+import type { WorkspaceInfo } from '../hierarchy.js';
 
 /** GET /flowlens-api/summary */
 export interface CanvasSummary {
@@ -67,3 +68,13 @@ export interface ArchitectureSaveResponse {
   ok: true;
   violation_count: number;
 }
+
+/**
+ * GET /flowlens-api/workspace (Map v2, additive) — workspace facts read from
+ * the project root: pnpm-workspace.yaml / package.json `workspaces` globs and
+ * every manifest (package.json, pyproject.toml, Cargo.toml, go.mod) among the
+ * indexed files with its name. The canvas selects packages from it
+ * (`selectPackages`); when the route is missing it falls back to manifests
+ * inferred from the entity list.
+ */
+export type CanvasWorkspaceResponse = WorkspaceInfo;

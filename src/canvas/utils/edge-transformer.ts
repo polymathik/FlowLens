@@ -1,118 +1,103 @@
 /**
- * Transforms Relation[] into React Flow Edge[] for the *currently visible*
- * node set.
- *
- * Each relation endpoint is resolved to its deepest visible ancestor
- * (`GraphIndex.resolveVisible`): a symbol, its file, module or system.
- * Relations that land on the same (source, target) pair are aggregated into
- * one edge carrying every relation type (`types`, most frequent first) and a
- * count. This handles every drill level, including mixed views (e.g. the
- * files of one module next to its sibling modules).
- *
- * Self-loops (both endpoints inside the same visible node) are dropped.
+ * Edges of a `MapView`: sibling links (aggregated, with count and a
+ * "imports 12 · calls 3" label) and portal links (stub ↔ inner node).
+ * `applyRelationFilter` restricts counts to the visible relation types and
+ * drops portals that no longer carry anything — recounting, so the numbers
+ * on screen always add up.
  */
-import type { Edge } from '@xyflow/react';
+import type { Edge, Node } from '@xyflow/react';
 import type { Relation, RelationType } from '../../contracts/relations.js';
-import type { CanvasEdgeData } from '../../contracts/canvas/index.js';
-import type { GraphIndex } from './graph-index';
+import type { AggregatedLink, CanvasEdgeData, MapView, PortalNodeData, TypeCounts } from '../../contracts/canvas/index.js';
 import { arrowMarker, relationColor } from './relation-colors';
+import { describeCounts, rankTypeCounts, totalOf } from './relation-labels';
 
-interface PairAcc {
-  source: string;
-  target: string;
-  count: number;
-  types: Map<RelationType, number>;
-  first: Relation;
+function linkToEdge(link: AggregatedLink, portal: 'in' | 'out' | undefined, relationById?: Map<string, Relation>): Edge<CanvasEdgeData> {
+  const ranked = rankTypeCounts(link.typeCounts);
+  const dominantType = ranked[0][0];
+  const single = link.count === 1 ? relationById?.get(link.relationIds[0]) : undefined;
+  return {
+    id: `agg:${link.source}->${link.target}`,
+    source: link.source,
+    target: link.target,
+    type: 'relation',
+    markerEnd: arrowMarker(relationColor(dominantType)),
+    style: { stroke: relationColor(dominantType), ...(portal ? { strokeDasharray: '5 4' } : {}) },
+    data: {
+      kind: link.count === 1 ? 'entity-edge' : 'aggregated-edge',
+      types: ranked.map(([t]) => t),
+      dominantType,
+      count: link.count,
+      typeCounts: link.typeCounts,
+      label: describeCounts(link.typeCounts),
+      relationIds: link.relationIds,
+      relation: single,
+      portal,
+    },
+  };
 }
 
-/** Sort types by frequency (desc), then name, for stable output. */
-function rankTypes(types: Map<RelationType, number>): RelationType[] {
-  return [...types.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([t]) => t);
-}
-
-export function transformRelationsToEdges(
-  relations: Relation[],
-  visibleIds: ReadonlySet<string>,
-  index: GraphIndex,
-): Edge<CanvasEdgeData>[] {
-  const pairs = new Map<string, PairAcc>();
-
-  for (const rel of relations) {
-    const source = index.resolveVisible(rel.from, visibleIds);
-    if (!source) continue;
-    const target = index.resolveVisible(rel.to, visibleIds);
-    if (!target || target === source) continue;
-    const key = `${source}->${target}`;
-    const acc = pairs.get(key);
-    if (acc) {
-      acc.count++;
-      acc.types.set(rel.type, (acc.types.get(rel.type) ?? 0) + 1);
-    } else {
-      pairs.set(key, {
-        source,
-        target,
-        count: 1,
-        types: new Map([[rel.type, 1]]),
-        first: rel,
-      });
-    }
-  }
-
-  const edges: Edge<CanvasEdgeData>[] = [];
-  for (const [key, acc] of pairs) {
-    const types = rankTypes(acc.types);
-    const dominantType = types[0];
-    const direct =
-      acc.count === 1 && acc.source === acc.first.from && acc.target === acc.first.to;
-    edges.push({
-      id: direct ? acc.first.id : `agg:${key}`,
-      source: acc.source,
-      target: acc.target,
-      type: 'relation',
-      markerEnd: arrowMarker(relationColor(dominantType)),
-      style: { stroke: relationColor(dominantType) },
-      data: {
-        kind: direct ? 'entity-edge' : 'aggregated-edge',
-        types,
-        dominantType,
-        count: acc.count,
-        relation: direct ? acc.first : undefined,
-      },
-    });
-  }
+/** All edges of a view, unfiltered (layout input). */
+export function buildViewEdges(view: MapView, relationById?: Map<string, Relation>): Edge<CanvasEdgeData>[] {
+  const edges = view.links.map((l) => linkToEdge(l, undefined, relationById));
+  for (const p of view.portals) for (const l of p.links) edges.push(linkToEdge(l, p.direction, relationById));
   return edges;
 }
 
+function restrict(counts: TypeCounts, visible: ReadonlySet<string>): TypeCounts {
+  const out: TypeCounts = {};
+  for (const [t, n] of Object.entries(counts)) if (visible.has(t)) out[t as RelationType] = n;
+  return out;
+}
+
 /**
- * Keep edges that carry at least one visible relation type. Checks every
- * aggregated type, not just the dominant one; when the dominant type is
- * hidden the edge is re-coloured by its most frequent *visible* type.
+ * Keep edges carrying at least one visible relation type, recounted and
+ * re-coloured by their most frequent visible type. Portals left without any
+ * edge are removed; the rest show the visible count (and how many relations
+ * the filter hides).
  */
-export function filterEdgesByRelationType(
+export function applyRelationFilter(
+  nodes: Node[],
   edges: Edge<CanvasEdgeData>[],
   visibleTypes: ReadonlySet<string>,
-): Edge<CanvasEdgeData>[] {
-  const out: Edge<CanvasEdgeData>[] = [];
+): { nodes: Node[]; edges: Edge<CanvasEdgeData>[] } {
+  const kept: Edge<CanvasEdgeData>[] = [];
+  const portalCounts = new Map<string, { counts: TypeCounts; all: number }>();
   for (const e of edges) {
     const data = e.data;
-    if (!data || data.types.length === 0) {
-      out.push(e);
+    if (!data?.typeCounts) {
+      kept.push(e);
       continue;
     }
-    const shown = data.types.find((t) => visibleTypes.has(t));
-    if (!shown) continue;
-    if (shown === data.dominantType) {
-      out.push(e);
-      continue;
+    const counts = restrict(data.typeCounts, visibleTypes);
+    const count = totalOf(counts);
+    if (data.portal) {
+      const pid = data.portal === 'in' ? e.source : e.target;
+      const acc = portalCounts.get(pid) ?? { counts: {}, all: 0 };
+      for (const [t, n] of Object.entries(counts)) acc.counts[t as RelationType] = (acc.counts[t as RelationType] ?? 0) + (n ?? 0);
+      acc.all += totalOf(data.typeCounts);
+      portalCounts.set(pid, acc);
     }
-    out.push({
+    if (count === 0) continue;
+    const ranked = rankTypeCounts(counts);
+    const dominantType = ranked[0][0];
+    kept.push({
       ...e,
-      markerEnd: arrowMarker(relationColor(shown)),
-      style: { ...e.style, stroke: relationColor(shown) },
-      data: { ...data, dominantType: shown },
+      markerEnd: arrowMarker(relationColor(dominantType)),
+      style: { ...e.style, stroke: relationColor(dominantType) },
+      data: { ...data, types: ranked.map(([t]) => t), dominantType, count, typeCounts: counts, label: describeCounts(counts), kind: count === 1 ? 'entity-edge' : 'aggregated-edge' },
     });
   }
-  return out;
+  const outNodes: Node[] = [];
+  for (const n of nodes) {
+    if (n.type !== 'portal') {
+      outNodes.push(n);
+      continue;
+    }
+    const acc = portalCounts.get(n.id);
+    const count = acc ? totalOf(acc.counts) : 0;
+    if (count === 0) continue;
+    const data = n.data as PortalNodeData;
+    outNodes.push({ ...n, data: { ...data, count, typeCounts: acc!.counts, hiddenByFilter: acc!.all - count } });
+  }
+  return { nodes: outNodes, edges: kept };
 }

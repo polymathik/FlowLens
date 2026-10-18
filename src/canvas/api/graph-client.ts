@@ -22,6 +22,7 @@ import type {
   ArchitectureSaveResponse,
   CanvasHotspotsResponse,
   CanvasSummary,
+  CanvasWorkspaceResponse,
 } from '../../contracts/canvas/index.js';
 import { postJson, requestJson } from './http.js';
 
@@ -38,6 +39,8 @@ export function createGraphClient(base: string) {
     fetchEntities: () => get<Entity[]>('/entities'),
     fetchRelations: () => get<Relation[]>('/relations'),
     fetchSummary: () => get<CanvasSummary>('/summary'),
+    /** Workspace globs + manifests for package detection (Map v2); callers fall back when absent. */
+    fetchWorkspace: () => get<CanvasWorkspaceResponse>('/workspace'),
     /** Runtime cycles; `includeTypeOnly` also counts type-only imports/annotations. */
     fetchCycles: (includeTypeOnly = false) =>
       get<DetectedCycle[]>(includeTypeOnly ? '/cycles?include_type_only=1' : '/cycles'),

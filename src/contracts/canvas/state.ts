@@ -13,7 +13,7 @@
 import type { RelationType } from '../relations.js';
 import type { ArchitectureViolation } from '../analysis/architecture.js';
 
-/** Four discrete zoom tiers mapped from React Flow viewport zoom. */
+/** Four discrete zoom tiers mapped from React Flow viewport zoom (names are historical; they are detail tiers). */
 export type ZoomLevel = 'system' | 'module' | 'file' | 'entity';
 
 /** Identifiers for the six analytical overlays. */
@@ -35,12 +35,21 @@ export interface FocusRequest {
   seq: number;
 }
 
-/** Target handed to `navigateTo` by search, deep links and the Health screen. */
+/** `scheme://file/<abs>:<line>` link scheme of the "Open in editor" action. */
+export type EditorScheme = 'vscode' | 'cursor' | 'vscode-insiders' | 'windsurf';
+export const EDITOR_SCHEMES: readonly EditorScheme[] = ['vscode', 'cursor', 'vscode-insiders', 'windsurf'];
+export const DEFAULT_EDITOR_SCHEME: EditorScheme = 'vscode';
+
+/** Target handed to `navigateTo` by search, deep links, portals and the Health screen. */
 export interface NavigationTarget {
-  /** Drill path that makes the node visible (e.g. ["system:src", "module:src/api"]). */
+  /**
+   * Hierarchy path of containers that makes the view show `nodeId` (or the
+   * container itself when `nodeId` is null), root excluded, e.g.
+   * ["folder:packages", "package:packages/server", "folder:packages/server/src"].
+   */
   drillPath: string[];
-  /** Node to select and centre. */
-  nodeId: string;
+  /** Node to select and centre; null = just open the container. */
+  nodeId: string | null;
   /** Optional overlay to switch on as part of the jump. */
   overlay?: OverlayType | null;
   /** Optional ids to highlight alongside the selection (Health "Show on map"). */
@@ -57,6 +66,8 @@ export interface CanvasState {
 
   // Selection
   selectedNodeId: string | null;
+  /** Selected edge (the detail panel lists its relations with reference lines). */
+  selectedEdgeId: string | null;
   /** Pending viewport focus (consumed by the canvas once layout settles). */
   focusRequest: FocusRequest | null;
 
@@ -80,16 +91,26 @@ export interface CanvasState {
    */
   highlightedIds: string[];
 
+  // View options
+  /** Lockfiles are hidden by default (they are never code). */
+  showLockfiles: boolean;
+  /** URL scheme of the "Open in editor" links. */
+  editorScheme: EditorScheme;
+
   // Drill-down
   /**
-   * Breadcrumb trail of container node ids, always a prefix-consistent
-   * hierarchy: system → module? → file (e.g. ["system:src", "module:src/parser"]).
+   * The real path from the project root to the open container, as hierarchy
+   * node ids (any depth; the view shows ONLY that container's children), e.g.
+   * ["folder:packages", "package:packages/server", "folder:packages/server/src"].
    */
   drillPath: string[];
 
   // Actions
   setZoomLevel: (level: ZoomLevel) => void;
   selectNode: (id: string | null) => void;
+  selectEdge: (id: string | null) => void;
+  setShowLockfiles: (show: boolean) => void;
+  setEditorScheme: (scheme: EditorScheme) => void;
   toggleRelationType: (type: RelationType | string) => void;
   setOverlay: (overlay: OverlayType | null) => void;
   setSearch: (query: string) => void;

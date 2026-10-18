@@ -1,10 +1,14 @@
 /** React Flow node type registry (keys match `CanvasNodeType`). */
-import { FileNode, ModuleNode, SystemNode } from './ContainerNodes';
+import { ConfigNode, FileNode, FolderNode, ScopeNode } from './ContainerNodes';
 import { EntityNode } from './EntityNode';
+import { PortalNode } from './PortalNode';
 
 export const nodeTypes = {
-  system: SystemNode,
-  module: ModuleNode,
+  package: FolderNode,
+  folder: FolderNode,
+  config: ConfigNode,
   file: FileNode,
   entity: EntityNode,
+  scope: ScopeNode,
+  portal: PortalNode,
 };

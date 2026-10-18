@@ -23,7 +23,8 @@
  * and state-changing ones must carry a same-origin `Origin`.
  */
 import type { HealthSummary } from '../health.js';
-import type { CanvasOverlay, CanvasLinkKind } from '../canvas-links.js';
+import type { CanvasOverlay } from '../canvas-links.js';
+import type { CanvasRouteTargetKind } from './router.js';
 
 /** Explorer routes (templates; `:id` = project id). Additive to SERVICE_ROUTES. */
 export const EXPLORER_ROUTES = {
@@ -112,7 +113,7 @@ export type ExplorerRoute =
       /** Absent for legacy `#/entity/…` links: the UI maps them to the active (or only) project. */
       projectId?: string;
       view: ProjectView;
-      target?: { kind: CanvasLinkKind; identifier: string };
+      target?: { kind: CanvasRouteTargetKind; identifier: string };
       overlay?: CanvasOverlay;
     };
 

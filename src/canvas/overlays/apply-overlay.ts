@@ -33,16 +33,19 @@ const MUTED: NodeOverlayStyle = { tag: 'none', fill: 'var(--fl-overlay-muted-fil
 type Data = Record<string, unknown>;
 const num = (n: Node, key: string) => (n.data as Data)[key] as number | undefined;
 
+/** Portals are links, not code: overlays never colour them. */
+const decoratable = (n: Node): boolean => n.type !== 'portal';
+
 function decorate(nodes: Node[], fn: (n: Node) => NodeOverlayStyle | undefined): Node[] {
   return nodes.map((n) => {
-    const overlay = fn(n);
+    const overlay = decoratable(n) ? fn(n) : undefined;
     return overlay ? { ...n, data: { ...n.data, overlay } } : n;
   });
 }
 
 function maxOf(nodes: Node[], key: string): number {
   let max = 0;
-  for (const n of nodes) max = Math.max(max, num(n, key) ?? 0);
+  for (const n of nodes) if (decoratable(n)) max = Math.max(max, num(n, key) ?? 0);
   return max;
 }
 

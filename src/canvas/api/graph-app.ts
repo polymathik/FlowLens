@@ -29,6 +29,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { parseArchitectureConfig } from './architecture-schema.js';
 import { computeHotspotList, computeSummary } from './canvas-queries.js';
+import { computeWorkspace } from './workspace.js';
 
 export type { GraphApp, GraphAppOptions, GraphEvents, GraphProvider } from '../../contracts/canvas/graph-app.js';
 
@@ -86,6 +87,7 @@ export function createGraphApp(opts: GraphAppOptions): GraphApp {
 
   router.get('/entities', route(async (_req, res) => res.json(await withGraph((s) => s.getAllNodes()))));
   router.get('/relations', route(async (_req, res) => res.json(await withGraph((s) => s.getAllEdges()))));
+  router.get('/workspace', route(async (_req, res) => res.json(await withGraph((s) => computeWorkspace(s, opts.rootDir)))));
   router.get('/summary', route(async (_req, res) => res.json(await withGraph((s) => computeSummary(s, flowlensDir)))));
 
   router.get('/hotspots', route(async (req, res) => {
