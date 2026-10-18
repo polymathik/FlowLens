@@ -17,6 +17,7 @@
  * registry ProjectRecord.id).
  */
 import type { GraphStore } from './graph.js';
+import type { IndexResult, IndexRunRequest } from './indexer.js';
 import type { GraphManifest } from './manifest.js';
 import type { ProjectWithStatus } from './projects.js';
 
@@ -54,6 +55,7 @@ export const SERVICE_ROUTES = {
   lease: '/api/projects/:id/leases/:lease', // PUT (renew) / DELETE (release)
   close: '/api/projects/:id/close', // POST → { ok: true } (evict: stop watcher, close DB)
   events: '/api/projects/:id/events', // GET  → text/event-stream of ServiceEvent
+  reindex: '/api/projects/:id/reindex', // POST ReindexRequest → ReindexResponse (Phase 12)
 } as const;
 
 /** Fill a route template: `routePath(SERVICE_ROUTES.rpc, { id })`. */
@@ -122,6 +124,20 @@ export interface ProjectGraphState {
 export interface ProjectDetail extends ProjectWithStatus {
   manifest: GraphManifest | null;
   graph: ProjectGraphState;
+}
+
+/* ---------------- re-index (Phase 12 review H1) ---------------- */
+
+/**
+ * Run the incremental indexer inside the daemon, in the project's write
+ * queue, so index runs from hooks, `flowlens index`, `init` and the watcher
+ * never overlap (each run reads and rewrites symbols.json/file_index.json).
+ */
+export type ReindexRequest = IndexRunRequest;
+
+export interface ReindexResponse {
+  ok: true;
+  result: IndexResult;
 }
 
 /* ---------------- leases ---------------- */

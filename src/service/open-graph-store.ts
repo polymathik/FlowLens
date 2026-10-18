@@ -8,21 +8,20 @@
  * only, as before Phase 9. Either way the project is registered.
  */
 import type { GraphStore } from '../contracts/graph.js';
+import type { IndexResult, IndexRunRequest } from '../contracts/indexer.js';
+import type { OpenGraphOptions } from '../contracts/open-graph.js';
+import type { FlowLensConfig } from '../contracts/config.js';
 import { NO_DAEMON_ENV } from '../contracts/service.js';
 import { LevelGraphStore } from '../graph/levelgraph-store.js';
-import { canonicalRoot, projectGraphPath } from '../projects/paths.js';
+import { runIndex } from '../indexer/indexer.js';
+import { loadProjectConfig } from '../projects/config.js';
+import { canonicalRoot, projectFlowlensDir, projectGraphPath } from '../projects/paths.js';
+import { join } from 'node:path';
 import { FileProjectRegistry } from '../projects/registry.js';
 import { connectDaemon } from './autostart.js';
 import { RemoteGraphStore } from './remote-graph-store.js';
 
-export interface OpenGraphOptions {
-  /** `false` (from commander's `--no-daemon`) opens LevelDB directly. */
-  daemon?: boolean;
-  /** Label shown by `flowlens daemon status`. */
-  client?: string;
-  /** Wait this long for an auto-started daemon (default 15 s). */
-  startTimeoutMs?: number;
-}
+export type { OpenGraphOptions } from '../contracts/open-graph.js';
 
 export function daemonDisabled(o: OpenGraphOptions = {}): boolean {
   return o.daemon === false || process.env[NO_DAEMON_ENV] === '1';
@@ -40,6 +39,7 @@ export async function openGraphStore(rootDir: string, o: OpenGraphOptions = {}):
   const store = new RemoteGraphStore(
     () => connectDaemon({ timeoutMs: o.startTimeoutMs }),
     o.client ?? 'cli',
+    { rpcTimeoutMs: o.rpcTimeoutMs, reindexTimeoutMs: o.reindexTimeoutMs },
   );
   await store.open(graphPath);
   return store;
@@ -52,4 +52,33 @@ async function registerQuietly(root: string): Promise<void> {
   } catch (err) {
     process.stderr.write(`[flowlens] could not register project: ${(err as Error).message}\n`);
   }
+}
+
+export interface IndexProjectOptions extends IndexRunRequest {
+  rootDir: string;
+  /** Direct runs only (the daemon reads `.flowlens/config.json`). Default: that file. */
+  config?: FlowLensConfig;
+  /** Direct runs only: called once when another run holds the index lock. */
+  onLockWait?: (holderPid?: number) => void;
+}
+
+/**
+ * Run the indexer for a project on `store`: in the daemon's per-project
+ * write queue when `store` is daemon-backed (never a client-side run over
+ * RPC — concurrent runs would lose edits), else directly under the
+ * project's cross-process index lock (`--no-daemon`).
+ */
+export async function indexProject(store: GraphStore, o: IndexProjectOptions): Promise<IndexResult> {
+  if (store instanceof RemoteGraphStore) return store.reindex({ paths: o.paths, full: o.full });
+  const flowlensDir = projectFlowlensDir(o.rootDir);
+  return runIndex({
+    rootDir: o.rootDir,
+    graphStore: store,
+    config: o.config ?? loadProjectConfig(o.rootDir),
+    fileIndexPath: join(flowlensDir, 'file_index.json'),
+    flowlensDir,
+    incremental: o.full !== true,
+    paths: o.full ? undefined : o.paths,
+    onLockWait: o.onLockWait,
+  });
 }

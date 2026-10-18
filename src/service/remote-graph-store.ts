@@ -3,46 +3,57 @@
  *
  * `open(<root>/.flowlens/graph)` resolves (and registers) the project and
  * takes a lease that is renewed in the background; `close()` releases it.
- * If the daemon disappears mid-session (crash, `daemon stop`, upgrade) the
- * next call reconnects — auto-starting a new daemon — re-leases and
- * retries once, so a long-lived `serve` survives daemon restarts.
+ * If the daemon disappears mid-session (crash, `daemon stop`, upgrade) or
+ * the project is removed from the registry (explorer "Remove from list"),
+ * the next call recovers — reconnecting / re-registering, re-leasing — and
+ * retries once (see remote-session.ts), so a long-lived `serve` survives.
+ *
+ * Every call has a timeout (`rpcTimeoutMs`, default 30 s, env
+ * `FLOWLENS_RPC_TIMEOUT_MS`); `reindex` has its own, longer one because it
+ * waits in the project's write queue and then runs the indexer.
  */
 import { basename, dirname, resolve } from 'node:path';
 import type { Entity, EntityKind } from '../contracts/entities.js';
 import type { GraphStore } from '../contracts/graph.js';
-import type { ProjectWithStatus } from '../contracts/projects.js';
+import type { IndexResult } from '../contracts/indexer.js';
 import type { Relation, RelationType } from '../contracts/relations.js';
 import {
   routePath, SERVICE_ROUTES, type GraphChangedEvent, type GraphRpcMethod,
-  type GraphRpcSuccess, type LeaseRequest, type LeaseResponse, type ServiceEvent,
+  type GraphRpcSuccess, type ReindexRequest, type ReindexResponse, type ServiceEvent,
 } from '../contracts/service.js';
+import type { RemoteStoreOptions } from '../contracts/open-graph.js';
 import { connectDaemon } from './autostart.js';
-import { isConnectionError, type DaemonClient, type Subscription } from './client.js';
-import { RemoteServiceError } from './errors.js';
+import type { Subscription } from './client.js';
+import { RemoteSession, type Connect } from './remote-session.js';
 
-export type Connect = () => Promise<DaemonClient>;
+export type { Connect } from './remote-session.js';
 
-interface LeaseState {
-  id: string;
-  req: LeaseRequest;
-  timer: NodeJS.Timeout;
+/** Override the default per-call RPC timeout (ms). */
+export const RPC_TIMEOUT_ENV = 'FLOWLENS_RPC_TIMEOUT_MS';
+export const DEFAULT_RPC_TIMEOUT_MS = 30_000;
+export const DEFAULT_REINDEX_TIMEOUT_MS = 10 * 60_000;
+
+function envTimeout(): number | undefined {
+  const v = Number(process.env[RPC_TIMEOUT_ENV]);
+  return process.env[RPC_TIMEOUT_ENV] !== undefined && Number.isFinite(v) && v > 0 ? v : undefined;
 }
 
 export class RemoteGraphStore implements GraphStore {
-  private client: DaemonClient | null = null;
-  private project: ProjectWithStatus | null = null;
-  private root = '';
-  private reconnecting: Promise<void> | null = null;
-  private leases: LeaseState[] = [];
-  private subs: Array<{ onEvent: (e: ServiceEvent) => void; sub: Subscription }> = [];
+  private session: RemoteSession | null = null;
+  private readonly rpcTimeoutMs: number;
+  private readonly reindexTimeoutMs: number;
 
   constructor(
     private readonly connect: Connect = () => connectDaemon(),
     private readonly clientLabel = 'cli',
-  ) {}
+    o: RemoteStoreOptions = {},
+  ) {
+    this.rpcTimeoutMs = o.rpcTimeoutMs ?? envTimeout() ?? DEFAULT_RPC_TIMEOUT_MS;
+    this.reindexTimeoutMs = o.reindexTimeoutMs ?? DEFAULT_REINDEX_TIMEOUT_MS;
+  }
 
   get projectId(): string | null {
-    return this.project?.id ?? null;
+    return this.session?.project?.id ?? null;
   }
 
   /* ---------------- lifecycle ---------------- */
@@ -52,22 +63,13 @@ export class RemoteGraphStore implements GraphStore {
     if (basename(abs) !== 'graph' || basename(dirname(abs)) !== '.flowlens') {
       throw new Error(`RemoteGraphStore expects <root>/.flowlens/graph, got ${dbPath}`);
     }
-    this.root = dirname(dirname(abs));
-    await this.attach();
-    await this.addLease({ client: this.clientLabel });
+    this.session = new RemoteSession(this.connect, dirname(dirname(abs)));
+    await this.session.attach();
+    await this.session.addLease({ client: this.clientLabel });
   }
 
   async close(): Promise<void> {
-    for (const s of this.subs) s.sub.close();
-    this.subs = [];
-    const leases = this.leases;
-    this.leases = [];
-    for (const l of leases) {
-      clearInterval(l.timer);
-      await this.leaseCall('DELETE', l.id).catch(() => undefined);
-    }
-    this.client?.destroy();
-    this.client = null;
+    await this.session?.close();
   }
 
   /**
@@ -75,22 +77,27 @@ export class RemoteGraphStore implements GraphStore {
    * watcher) and deliver `graph-changed` events from the watcher.
    */
   async watch(debounceMs: number, onChange: (e: GraphChangedEvent) => void): Promise<void> {
-    await this.addLease({ client: `${this.clientLabel}:watch`, watch: true, debounce_ms: debounceMs });
+    await this.requireSession().addLease({ client: `${this.clientLabel}:watch`, watch: true, debounce_ms: debounceMs });
     this.subscribe((e) => { if (e.source === 'watch') onChange(e); });
   }
 
   /** All graph-changed events for this project (watch and RPC writes). */
   subscribe(onChange: (e: GraphChangedEvent) => void): Subscription {
-    const { client, project } = this.requireOpen();
-    const onEvent = (e: ServiceEvent) => { if (e.type === 'graph-changed') onChange(e); };
-    const entry = { onEvent, sub: client.subscribe(project.id, onEvent) };
-    this.subs.push(entry);
-    return {
-      close: () => {
-        entry.sub.close();
-        this.subs = this.subs.filter((x) => x !== entry);
-      },
-    };
+    return this.requireSession().subscribe((e: ServiceEvent) => { if (e.type === 'graph-changed') onChange(e); });
+  }
+
+  /**
+   * Run the incremental indexer in the daemon (in the project's write
+   * queue, so concurrent runs never lose each other's edits).
+   */
+  reindex(req: ReindexRequest = {}): Promise<IndexResult> {
+    return this.withRecovery(async () => {
+      const { project } = this.requireSession().requireOpen();
+      const res = await this.requireSession().request<ReindexResponse>(
+        'POST', routePath(SERVICE_ROUTES.reindex, { id: project.id }), req, { timeoutMs: this.reindexTimeoutMs },
+      );
+      return res.result;
+    });
   }
 
   /* ---------------- GraphStore ---------------- */
@@ -122,85 +129,28 @@ export class RemoteGraphStore implements GraphStore {
 
   /* ---------------- internals ---------------- */
 
-  private requireOpen(): { client: DaemonClient; project: ProjectWithStatus } {
-    if (!this.client || !this.project) throw new Error('RemoteGraphStore is not open');
-    return { client: this.client, project: this.project };
+  private requireSession(): RemoteSession {
+    if (!this.session) throw new Error('RemoteGraphStore is not open');
+    return this.session;
   }
 
-  private async attach(): Promise<void> {
-    this.client?.destroy();
-    this.client = await this.connect();
-    this.project = await this.client.request<ProjectWithStatus>(
-      'POST', SERVICE_ROUTES.resolve, { root: this.root, register: true },
-    );
-  }
-
-  private async call<T>(method: GraphRpcMethod, args: unknown[]): Promise<T> {
-    const send = async () => {
-      const { client, project } = this.requireOpen();
-      const res = await client.request<GraphRpcSuccess>(
-        'POST', routePath(SERVICE_ROUTES.rpc, { id: project.id }), { method, args },
+  private call<T>(method: GraphRpcMethod, args: unknown[]): Promise<T> {
+    return this.withRecovery(async () => {
+      const { project } = this.requireSession().requireOpen();
+      const res = await this.requireSession().request<GraphRpcSuccess>(
+        'POST', routePath(SERVICE_ROUTES.rpc, { id: project.id }), { method, args }, { timeoutMs: this.rpcTimeoutMs },
       );
       return (method.startsWith('get') ? res.result : undefined) as T;
-    };
+    });
+  }
+
+  /** Run `send`; on a recoverable failure recover once and retry. */
+  private async withRecovery<T>(send: () => Promise<T>): Promise<T> {
     try {
       return await send();
     } catch (err) {
-      if (!isConnectionError(err)) throw err;
-      await this.reconnect();
+      await this.requireSession().recover(err);
       return send();
     }
-  }
-
-  /** Single-flight: concurrent failures share one reconnect. */
-  private reconnect(): Promise<void> {
-    this.reconnecting ??= this.doReconnect().finally(() => { this.reconnecting = null; });
-    return this.reconnecting;
-  }
-
-  private async doReconnect(): Promise<void> {
-    await this.attach();
-    for (const l of this.leases) await this.reacquire(l);
-    const { client, project } = this.requireOpen();
-    for (const s of this.subs) {
-      s.sub.close();
-      s.sub = client.subscribe(project.id, s.onEvent);
-    }
-  }
-
-  private async addLease(req: LeaseRequest): Promise<void> {
-    const { client, project } = this.requireOpen();
-    const res = await client.request<LeaseResponse>(
-      'POST', routePath(SERVICE_ROUTES.leases, { id: project.id }), req,
-    );
-    const state = { id: res.lease_id, req } as LeaseState;
-    state.timer = setInterval(() => void this.renew(state), Math.max(200, res.ttl_ms / 3));
-    state.timer.unref();
-    this.leases.push(state);
-  }
-
-  private async renew(l: LeaseState): Promise<void> {
-    try {
-      await this.leaseCall('PUT', l.id);
-    } catch (err) {
-      const lost = err instanceof RemoteServiceError && err.code === 'not_found';
-      try {
-        if (isConnectionError(err)) await this.reconnect();
-        else if (lost) await this.reacquire(l);
-      } catch { /* try again next tick */ }
-    }
-  }
-
-  private async reacquire(l: LeaseState): Promise<void> {
-    const { client, project } = this.requireOpen();
-    const res = await client.request<LeaseResponse>(
-      'POST', routePath(SERVICE_ROUTES.leases, { id: project.id }), l.req,
-    );
-    l.id = res.lease_id;
-  }
-
-  private leaseCall(method: 'PUT' | 'DELETE', leaseId: string): Promise<unknown> {
-    const { client, project } = this.requireOpen();
-    return client.request(method, routePath(SERVICE_ROUTES.lease, { id: project.id, lease: leaseId }), undefined, { timeoutMs: 5_000 });
   }
 }

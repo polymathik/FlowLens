@@ -7,7 +7,7 @@
  */
 
 import chalk from 'chalk';
-import type { IndexResult } from '../indexer/indexer.js';
+import type { IndexResult } from '../contracts/indexer.js';
 
 export function printHeader(text: string): void {
   console.log(chalk.bold.cyan(`\n${text}\n`));

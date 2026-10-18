@@ -16,6 +16,7 @@ import type { GraphPool } from './graph-pool.js';
 import type { ProjectCache } from './project-cache.js';
 import { mountGraphRoutes } from './routes-graph.js';
 import { mountProjectRoutes } from './routes-projects.js';
+import { mountReindexRoute } from './routes-reindex.js';
 import type { Logger, WatcherManager } from './watchers.js';
 
 export interface ServiceDeps {
@@ -84,6 +85,7 @@ export function createServiceApp(deps: ServiceDeps, mount?: MountRoutes): Expres
 
   mountProjectRoutes(app, deps);
   mountGraphRoutes(app, deps);
+  mountReindexRoute(app, deps);
   mount?.(app, deps);
 
   app.use('/api', (_req, res) => {

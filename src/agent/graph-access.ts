@@ -18,6 +18,7 @@ import type { Entity } from '../contracts/entities.js';
 import type { GraphStore } from '../contracts/graph.js';
 import type { Relation } from '../contracts/relations.js';
 import type { AgentGraphOptions, AgentGraphUnavailable } from '../contracts/agent.js';
+import { HOOK_STORE_TIMEOUTS } from '../contracts/open-graph.js';
 import { RemoteServiceError } from '../service/errors.js';
 import { daemonDisabled, openGraphStore, type OpenGraphOptions } from '../service/open-graph-store.js';
 
@@ -66,7 +67,7 @@ export async function openAgentGraph(
   for (let attempt = 0; attempt < attempts; attempt++) {
     let store: GraphStore | null = null;
     try {
-      store = await open(rootDir, { client: 'hook', daemon: options.daemon });
+      store = await open(rootDir, { client: 'hook', daemon: options.daemon, ...HOOK_STORE_TIMEOUTS });
       await store.getNode(PROBE_ID);
       const opened = store;
       return { ok: true, graph: memoizeGraphScans(opened), flowlensDir, close: () => opened.close() };
@@ -131,6 +132,7 @@ export function memoizeGraphScans(inner: GraphStore): GraphStore {
   const writes = new Set([
     'putNode', 'putNodes', 'deleteNode', 'deleteNodesByFile',
     'putEdge', 'putEdges', 'deleteEdge', 'deleteEdgesByFile', 'clear', 'open',
+    'replaceFile', 'reindex',
   ]);
   return new Proxy(inner, {
     get(target, prop, receiver) {

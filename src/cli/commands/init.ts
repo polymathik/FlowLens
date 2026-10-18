@@ -14,9 +14,8 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
-import { openGraphStore } from '../../service/open-graph-store.js';
+import { indexProject, openGraphStore } from '../../service/open-graph-store.js';
 import { resetFlowlensDir } from '../../service/project-setup.js';
-import { runIndex } from '../../indexer/indexer.js';
 import { formatQualitySummary } from '../../quality/graph-quality.js';
 import { inferArchitecture } from '../../architecture/heuristic-inference.js';
 import { parseAIProvider, runInference } from '../../ai/ai-integration.js';
@@ -146,13 +145,8 @@ export const initCommand = new Command('init')
       // Open graph store and run full index
       const graphStore = await openGraphStore(rootDir, { daemon: opts.daemon, client: 'init' });
 
-      const result = await runIndex({
-        rootDir,
-        graphStore,
-        config: DEFAULT_CONFIG,
-        fileIndexPath: join(flowlensDir, 'file_index.json'),
-        incremental: false,
-      });
+      // Full rebuild in the daemon's write queue (or under .flowlens/index.lock with --no-daemon).
+      const result = await indexProject(graphStore, { rootDir, config: DEFAULT_CONFIG, full: true });
 
       printSuccess(`Indexed ${result.filesIndexed} files`);
 
