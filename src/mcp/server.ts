@@ -20,6 +20,8 @@ import { registerCheckArchitecture } from './tools/check-architecture.js';
 import { registerGetSummary } from './tools/get-summary.js';
 import { registerGetHotspots } from './tools/get-hotspots.js';
 import { registerGetLayerMap } from './tools/get-layer-map.js';
+import { registerTraceFlow } from './tools/trace-flow.js';
+import { registerListEntryPoints } from './tools/list-entry-points.js';
 import { registerAgentPrompts, registerAgentResources } from './agent-resources.js';
 import { registerHealthResource } from './health-resource.js';
 
@@ -48,6 +50,10 @@ export function createFlowLensServer(deps: ServerDependencies): McpServer {
   registerGetSummary(server, deps);
   registerGetHotspots(server, deps);
   registerGetLayerMap(server, deps);
+
+  // Map v2 M6a: flow service (trace_flow, list_entry_points)
+  registerTraceFlow(server, deps);
+  registerListEntryPoints(server, deps);
 
   // Phase 7: agent-native MCP resources and prompts
   registerAgentResources(server, deps);

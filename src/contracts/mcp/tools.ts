@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { toolResponseSchema } from './schemas/common.js';
 import * as E from './schemas/entity-tools.js';
 import * as A from './schemas/analysis-tools.js';
+import * as F from './schemas/flow-tools.js';
 
 export type { Detail, EntityView, ToolError, ToolErrorCode, EntityCandidate } from './schemas/common.js';
 export type { MetricSortField } from './schemas/analysis-tools.js';
@@ -66,6 +67,12 @@ export type GetHotspotsOutput = z.infer<typeof A.GetHotspotsOutputSchema>;
 export type GetLayerMapInput = InputOf<typeof A.GetLayerMapInputShape>;
 export type GetLayerMapOutput = z.infer<typeof A.GetLayerMapOutputSchema>;
 
+export type TraceFlowInput = F.TraceFlowInput;
+export type TraceFlowOutput = z.infer<typeof F.TraceFlowDataSchema>;
+
+export type ListEntryPointsInput = F.ListEntryPointsInput;
+export type ListEntryPointsOutput = z.infer<typeof F.ListEntryPointsDataSchema>;
+
 /** Per-tool contract: input shape, data schema, and whether it is a paginated list tool. */
 export interface ToolContract {
   input: z.ZodRawShape;
@@ -87,6 +94,9 @@ export const TOOL_CONTRACTS = {
   get_summary: { input: A.GetSummaryInputShape, output: A.GetSummaryOutputSchema },
   get_hotspots: { input: A.GetHotspotsInputShape, output: A.GetHotspotsOutputSchema, list: 'hotspots' },
   get_layer_map: { input: A.GetLayerMapInputShape, output: A.GetLayerMapOutputSchema },
+  // Map v2 M6a: the flow service ("what happens when X runs?"), contracts in contracts/flow.ts
+  trace_flow: { input: F.TraceFlowInputShape, output: F.TraceFlowDataSchema },
+  list_entry_points: { input: F.ListEntryPointsInputShape, output: F.ListEntryPointsDataSchema, list: 'entry_points' },
 } as const satisfies Record<string, ToolContract>;
 
 export type ToolName = keyof typeof TOOL_CONTRACTS;
@@ -99,3 +109,4 @@ export function toolEnvelopeSchema(name: ToolName) {
 
 export * as EntityToolSchemas from './schemas/entity-tools.js';
 export * as AnalysisToolSchemas from './schemas/analysis-tools.js';
+export * as FlowToolSchemas from './schemas/flow-tools.js';

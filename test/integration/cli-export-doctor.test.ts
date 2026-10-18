@@ -132,7 +132,7 @@ describe('CLI export/doctor (spawned)', () => {
     };
     const mcp = report.checks.find((c) => c.name === 'mcp-reachable');
     expect(mcp?.status).toBe('ok');
-    expect(mcp?.message).toMatch(/12 tools listed/);
+    expect(mcp?.message).toMatch(/14 tools listed/);
     const ai = report.checks.find((c) => c.name === 'ai-configured');
     expect(ai?.status).toBe('skipped');
     expect(ai?.message).toMatch(/disabled/);

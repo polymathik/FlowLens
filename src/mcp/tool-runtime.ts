@@ -54,6 +54,11 @@ function linkProjectId(flowlensDir: string): string | undefined {
   return projectIds.get(flowlensDir);
 }
 
+/** Project id of the served project (for explorer links), when it has an identity. */
+export function projectIdFor(deps: Pick<ServerDependencies, 'flowlensDir'>): string | undefined {
+  return linkProjectId(deps.flowlensDir);
+}
+
 /**
  * Explorer deep link for an entity: the running daemon's port when one is
  * known (`$FLOWLENS_HOME/daemon.json`), and the project id when `deps` is given.

@@ -30,6 +30,9 @@ export const EXPECTED_MCP_TOOLS = [
   'get_summary',
   'get_hotspots',
   'get_layer_map',
+  // Map v2 M6a (flow service)
+  'trace_flow',
+  'list_entry_points',
 ] as const;
 
 const BASE = { name: 'mcp-reachable', title: 'MCP server initializes' };
