@@ -6,7 +6,8 @@
  *   1. Relative / absolute specifiers against the importing file's directory.
  *   2. Node builtins (`node:fs`, `fs`, …) → external.
  *   3. tsconfig/jsconfig `paths` and `baseUrl` of the nearest config.
- *   4. Local workspace packages (npm/yarn/pnpm) → their source entry.
+ *   4. Local workspace packages (npm/yarn/pnpm) → their *source* entry
+ *      (build output `dist/…` is mapped back to `src/…`, see build-layout.ts).
  *   5. Anything else → external package.
  * ESM-style `.js/.jsx/.mjs/.cjs` specifiers map to `.ts/.tsx/.mts/.cts`
  * sources first, as TypeScript does.
@@ -17,6 +18,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path';
 import { normalizeRelativePath } from '../../utils/paths.js';
 import { findNearestConfig, loadPathMapping, expandWithPaths, clearTsconfigCache } from './tsconfig.js';
 import { getWorkspacePackages, packageEntryCandidates, clearWorkspaceCache } from './workspaces.js';
+import { builtToSourceCandidates, clearBuildLayoutCache, findPackageDir, getBuildLayout } from './build-layout.js';
 
 export interface ModuleResolution {
   /** Project-relative path of the resolved file, or null. */
@@ -34,11 +36,12 @@ const JS_TO_TS: Record<string, string[]> = {
   '.cjs': ['.cts', '.d.cts'],
 };
 
-const PROBE_EXTENSIONS = ['.ts', '.tsx', '.d.ts', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'];
+const PROBE_EXTENSIONS = ['.ts', '.tsx', '.d.ts', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.svelte', '.vue'];
 
 export function clearModuleResolverCaches(): void {
   clearTsconfigCache();
   clearWorkspaceCache();
+  clearBuildLayoutCache();
 }
 
 export function isRelativeSpecifier(specifier: string): boolean {
@@ -56,6 +59,8 @@ export function resolveModuleSpecifier(
   const root = resolve(rootDir);
 
   if (relative) {
+    // SvelteKit's `./$types` is written by `svelte-kit sync` (gitignored): generated, not a project file.
+    if (/(^|\/)\$(types|houdini)$/.test(specifier)) return { file: null, external: true };
     const base = dirname(join(root, fromFile));
     return { file: toProjectPath(probe(resolve(base, specifier)), root), external: false };
   }
@@ -69,34 +74,71 @@ export function resolveModuleSpecifier(
   const mapping = configFile ? loadPathMapping(configFile) : null;
   if (mapping) {
     for (const candidate of expandWithPaths(bare, mapping)) {
-      const hit = toProjectPath(probe(candidate), root);
+      const hit = toProjectPath(probeSourceFirst(candidate, root), root);
       if (hit) return { file: hit, external: false };
     }
   }
 
+  const lib = resolveSvelteKitLib(bare, fromFile, root);
+  if (lib) return lib;
+
   const ws = resolveWorkspaceImport(bare, root);
-  if (ws) return { file: ws, external: false };
+  if (ws.matched) return { file: ws.file, external: false };
 
   return { file: null, external: true };
 }
 
-function resolveWorkspaceImport(specifier: string, root: string): string | null {
+/**
+ * SvelteKit's `$lib` alias → `<package>/src/lib`. SvelteKit writes it into the
+ * generated `.svelte-kit/tsconfig.json`, which is usually absent (gitignored,
+ * created by `svelte-kit sync`), so it is built in.
+ */
+function resolveSvelteKitLib(bare: string, fromFile: string, root: string): ModuleResolution | null {
+  if (bare !== '$lib' && !bare.startsWith('$lib/')) return null;
+  const pkgDir = findPackageDir(join(root, fromFile), root);
+  const libDir = pkgDir ? join(pkgDir, 'src', 'lib') : null;
+  if (!libDir || !statSync(libDir, { throwIfNoEntry: false })?.isDirectory()) return { file: null, external: true };
+  return { file: toProjectPath(probe(join(libDir, bare.slice(5))), root), external: false };
+}
+
+/**
+ * A workspace package is part of the project: an import that names one but
+ * finds no file is *unresolved* (so the indexer re-checks it when a file is
+ * added), never "external".
+ */
+function resolveWorkspaceImport(specifier: string, root: string): { matched: boolean; file: string | null } {
   const packages = getWorkspacePackages(root);
-  if (packages.size === 0) return null;
+  if (packages.size === 0) return { matched: false, file: null };
   let best: string | null = null;
   for (const name of packages.keys()) {
     if ((specifier === name || specifier.startsWith(name + '/')) && (!best || name.length > best.length)) {
       best = name;
     }
   }
-  if (!best) return null;
+  if (!best) return { matched: false, file: null };
   const pkg = packages.get(best)!;
   const subpath = specifier.slice(best.length + 1);
   for (const candidate of packageEntryCandidates(pkg, subpath)) {
     const hit = toProjectPath(probe(candidate), root);
-    if (hit) return hit;
+    if (hit) return { matched: true, file: hit };
   }
-  return null;
+  return { matched: true, file: null };
+}
+
+/**
+ * Probe `abs`, but if it lies in a package's build output (`dist/…`) look for
+ * the matching source file first (Map M0, D1). Path-based: the build output
+ * does not have to exist.
+ */
+function probeSourceFirst(abs: string, root: string): string | null {
+  const pkgDir = findPackageDir(abs, root);
+  if (pkgDir) {
+    for (const c of builtToSourceCandidates(getBuildLayout(pkgDir), abs)) {
+      const hit = probe(c);
+      if (hit) return hit;
+    }
+  }
+  return probe(abs);
 }
 
 function isFile(p: string): boolean {

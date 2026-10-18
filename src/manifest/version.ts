@@ -2,7 +2,9 @@
 import { createRequire } from 'node:module';
 
 /** Bump when extraction output changes (entity identity, relation semantics). */
-export const PARSER_VERSION = '8.0.0';
+export const PARSER_VERSION = '8.1.0';
+// 8.1.0 (Map M0): source-first workspace imports, .svelte/.vue components (`component` entity),
+//                 `file_role` on file entities, `meta.reexport` on re-export edges.
 
 let cached: string | null = null;
 

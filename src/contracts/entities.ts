@@ -1,7 +1,24 @@
 export type EntityKind =
   | 'file' | 'module' | 'namespace' | 'class' | 'interface'
   | 'function' | 'method' | 'variable' | 'field' | 'parameter'
-  | 'type' | 'enum' | 'enum_member' | 'decorator';
+  | 'type' | 'enum' | 'enum_member' | 'decorator'
+  /** Single-file UI component (`.svelte`, `.vue`) — Map M0, additive. */
+  | 'component';
+
+/**
+ * What a file is *for* (Map M0, additive). Computed from the path alone by
+ * `src/parser/file-role.ts` and stored on the `file` entity so downstream
+ * views can group or mute files without re-deriving it.
+ *
+ * - `source`    — application / library code (default)
+ * - `test`      — tests, specs, mocks, fixtures
+ * - `config`    — tool and build configuration (package.json, tsconfig, yaml, toml, .env)
+ * - `generated` — lockfiles, minified or generated output
+ * - `docs`      — documentation
+ * - `data`      — data files that are not configuration (locale JSON, fixtures data)
+ */
+export const FILE_ROLES = ['source', 'test', 'config', 'generated', 'docs', 'data'] as const;
+export type FileRole = (typeof FILE_ROLES)[number];
 
 export type Location = {
   line_start: number;
@@ -52,4 +69,6 @@ export type Entity = {
   language: string;
   metrics?: EntityMetrics;
   annotations?: Record<string, string>;
+  /** Set on `file` entities only (Map M0); absent on graphs indexed before it. */
+  file_role?: FileRole;
 };

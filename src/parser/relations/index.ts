@@ -28,6 +28,7 @@ import { aggregateRelations } from '../../graph/aggregate.js';
  * Extract all relations from a parsed TS/JS AST.
  *
  * @param symbols - the file's symbols (computed here when omitted)
+ * @param rootEntity - owner of top-level statements (single-file components); default none
  */
 export function extractRelations(
   root: SgNode,
@@ -35,12 +36,13 @@ export function extractRelations(
   entities: Entity[],
   rootDir: string,
   symbols?: FileSymbols,
+  rootEntity?: Entity,
 ): Relation[] {
   const sym = symbols ?? extractTsSymbols(root, filePath, rootDir, entities[0]?.language ?? 'typescript');
   const ctx = createTsContext(filePath, rootDir, entities, sym);
   const methodsByClass = groupMethods(entities, filePath);
 
-  walkWithContext<ScopeFrame>(root, rootFrame(), (node, frame) => visit(node, frame, ctx, methodsByClass));
+  walkWithContext<ScopeFrame>(root, rootFrame(rootEntity), (node, frame) => visit(node, frame, ctx, methodsByClass));
 
   return aggregateRelations([...containRelations(entities, filePath), ...ctx.emitter.relations]);
 }

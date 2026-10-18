@@ -38,10 +38,20 @@ export async function detectChanges(
   incremental: boolean,
   /** Only these paths may have changed (watch mode): hash just them. */
   hint?: Set<string>,
+  /**
+   * The parser that wrote the index is older than this one: every file is re-parsed
+   * (its output may differ even though its content hash did not), while files that
+   * disappeared since are still detected and removed.
+   */
+  reparseAll = false,
 ): Promise<{ changed: DiscoveredFile[]; deleted: string[]; previousIndex: Record<string, FileIndexEntry> }> {
   if (!incremental) return { changed: discovered, deleted: [], previousIndex: {} };
   const manager = new FileIndexManager();
   const previousIndex = await manager.load(fileIndexPath);
+  if (reparseAll) {
+    const present = new Set(discovered.map((f) => f.path));
+    return { changed: discovered, deleted: Object.keys(previousIndex).filter((p) => !present.has(p)), previousIndex };
+  }
   const candidates = hint ? discovered.filter((f) => hint.has(f.path)) : discovered;
   const known = hint
     ? Object.fromEntries(Object.entries(previousIndex).filter(([p]) => hint.has(p)))

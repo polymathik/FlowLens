@@ -30,6 +30,11 @@ export interface RelationMeta {
   candidates?: string[];
   /** For import edges added through a barrel: the file the specifier named. */
   via?: string;
+  /**
+   * `export … from '…'` / `export * from '…'` — the file→file `import` edge is
+   * a re-export (barrel), not a consuming import (Map M0, additive).
+   */
+  reexport?: boolean;
 }
 
 /**

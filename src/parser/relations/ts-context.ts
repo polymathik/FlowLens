@@ -64,8 +64,9 @@ export function fileEntityIdFor(filePath: string): string {
   return generateEntityId(filePath, path.basename(filePath), 'file');
 }
 
-export function rootFrame(): ScopeFrame {
-  return { path: [], entity: undefined, cls: null, inThrow: false };
+/** @param entity - owner of top-level code (a single-file component owns its `<script>` body). */
+export function rootFrame(entity?: Entity): ScopeFrame {
+  return { path: [], entity, cls: null, inThrow: false };
 }
 
 /** Name of a class / function / namespace declaration node. */

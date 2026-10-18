@@ -9,7 +9,7 @@ import type { RelationType } from '../../contracts/relations.js';
 export const TARGET_KINDS: Record<RelationType, EntityKind[] | undefined> = {
   import: undefined,
   call: ['function', 'method', 'variable'],
-  create: ['class'],
+  create: ['class', 'component'],
   throw: ['class'],
   extend: ['class', 'interface'],
   implement: ['interface', 'class'],

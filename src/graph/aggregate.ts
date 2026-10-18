@@ -28,6 +28,11 @@ export function aggregateRelations(relations: Relation[]): Relation[] {
       delete prev.meta.type_only;
       if (Object.keys(prev.meta).length === 0) delete prev.meta;
     }
+    if (prev.meta?.reexport && !r.meta?.reexport) {
+      // a consuming import of the same file makes it more than a re-export
+      delete prev.meta.reexport;
+      if (Object.keys(prev.meta).length === 0) delete prev.meta;
+    }
     if (prev.resolution === 'resolved' && r.resolution !== 'resolved') {
       // a direct occurrence makes the edge direct
       delete prev.resolution;
