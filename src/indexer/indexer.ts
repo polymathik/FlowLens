@@ -87,13 +87,17 @@ async function runIndexLocked(options: IndexOptions): Promise<IndexResult> {
     started_at: startedAt, finished_at: null, file_count: 0, entity_count: 0, relation_count: 0,
     errors: { parse_failures: 0, unresolved_relations: 0, ambiguous_relations: 0, failed_files: [] },
   });
+  // An index written by an older parser is rebuilt even if no file changed: resolution
+  // and extraction rules (e.g. source-first workspace imports, .svelte files) moved on.
+  const prior = (incremental ? await manifestStore.read(flowlensDir) : null) as IndexManifest | null;
+  const parserChanged = !!prior && prior.parser_version !== PARSER_VERSION;
   await manifestStore.write(flowlensDir, baseManifest());
 
   // 1–2. discover + change detection
   const { discovered, languageCounts } = await discoverProjectFiles(rootDir, config);
   const previous = incremental ? await loadSymbolSnapshot(snapshotPath) : new Map<string, FileSymbolRecord>();
-  const hint = options.paths && previous.size > 0 ? new Set(options.paths) : undefined;
-  const { changed, deleted, previousIndex } = await detectChanges(discovered, fileIndexPath, incremental, hint);
+  const hint = options.paths && previous.size > 0 && !parserChanged ? new Set(options.paths) : undefined;
+  const { changed, deleted, previousIndex } = await detectChanges(discovered, fileIndexPath, incremental, hint, parserChanged);
   const records = new Map(previous);
   for (const d of deleted) records.delete(d);
 
