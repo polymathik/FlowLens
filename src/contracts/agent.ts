@@ -14,7 +14,7 @@ export type AgentEvent =
 
 export type AgentOutputFormat = 'markdown' | 'json';
 export type AgentRisk = 'none' | 'low' | 'medium' | 'high';
-export type AgentProvider = 'claude-code';
+export type AgentProvider = 'claude-code' | 'codex';
 export type AgentChangedSource = 'argument' | 'hook' | 'git' | 'none';
 
 export interface AgentContextRequest {

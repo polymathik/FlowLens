@@ -163,7 +163,7 @@ describe('agent hooks end to end', () => {
     await writeFile(path, good);
     const removed = runCli(['agent', 'uninstall', 'claude-code', '--format', 'json'], { cwd: proj });
     expect(removed.status).toBe(0);
-    expect(JSON.parse(removed.stdout).hooks_removed).toBe(3);
+    expect(JSON.parse(removed.stdout).hooks_removed).toBe(5);
     expect(JSON.parse(await readFile(path, 'utf-8')).hooks).toEqual({});
   }, E2E_TIMEOUT);
 
