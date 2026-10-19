@@ -15,6 +15,9 @@ import { git, runCli, runHookCommand, stopTestDaemon, TSX_CLI_COMMAND } from './
 
 const E2E_TIMEOUT = 180000;
 
+const countFlowLensHooks = (raw: string): number =>
+  Object.values((JSON.parse(raw) as ClaudeSettings).hooks ?? {}).flatMap((groups) => groups.flatMap((g) => g.hooks)).filter((h) => h.command.includes('flowlens-managed')).length;
+
 describe('agent hooks end to end', () => {
   let proj: string;
   let elsewhere: string;
@@ -46,7 +49,7 @@ describe('agent hooks end to end', () => {
     expect(runCli(['init'], { cwd: proj }).status).toBe(0);
     expect(runCli(['index'], { cwd: proj }).status).toBe(0);
 
-    const install = runCli(['agent', 'install', 'claude-code', '--command', TSX_CLI_COMMAND, '--format', 'json'], { cwd: proj });
+    const install = runCli(['agent', 'install', 'claude-code', '--no-mcp', '--command', TSX_CLI_COMMAND, '--format', 'json'], { cwd: proj });
     expect(install.status).toBe(0);
     const settings = JSON.parse(await readFile(join(proj, '.claude/settings.local.json'), 'utf-8')) as ClaudeSettings;
     commands = {
@@ -155,7 +158,7 @@ describe('agent hooks end to end', () => {
     const path = join(proj, '.claude/settings.local.json');
     const good = await readFile(path, 'utf-8');
     await writeFile(path, '{ broken');
-    const bad = runCli(['agent', 'install', 'claude-code'], { cwd: proj });
+    const bad = runCli(['agent', 'install', 'claude-code', '--no-mcp'], { cwd: proj });
     expect(bad.status).toBe(2);
     expect(bad.stderr).toContain('not valid JSON');
     expect(await readFile(path, 'utf-8')).toBe('{ broken');
@@ -163,7 +166,8 @@ describe('agent hooks end to end', () => {
     await writeFile(path, good);
     const removed = runCli(['agent', 'uninstall', 'claude-code', '--format', 'json'], { cwd: proj });
     expect(removed.status).toBe(0);
-    expect(JSON.parse(removed.stdout).hooks_removed).toBe(5);
+    // --no-mcp: no connected MCP server, so the install withheld the edit gate; count what was installed rather than a fixed number.
+    expect(JSON.parse(removed.stdout).hooks_removed).toBe(countFlowLensHooks(good));
     expect(JSON.parse(await readFile(path, 'utf-8')).hooks).toEqual({});
   }, E2E_TIMEOUT);
 
