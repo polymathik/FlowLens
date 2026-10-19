@@ -180,6 +180,18 @@ describe('settings file scope (review M3)', () => {
   const gitInit = () => execFileSync('git', ['init', '-q'], { cwd: tmp });
 
   it('defaults to .claude/settings.local.json and keeps it out of git', async () => {
+    // A developer's global excludes may already ignore the file; this test needs git to start with no rules.
+    const saved = { ...process.env };
+    Object.assign(process.env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.excludesfile', GIT_CONFIG_VALUE_0: '/dev/null' });
+    try {
+      await assertDefaultScopeIgnoredViaInfoExclude();
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
+  });
+
+  async function assertDefaultScopeIgnoredViaInfoExclude(): Promise<void> {
     gitInit();
     const result = await installClaudeCodeHooks({ project_dir: tmp });
     expect(result.scope).toBe('local');
@@ -192,7 +204,7 @@ describe('settings file scope (review M3)', () => {
     await installClaudeCodeHooks({ project_dir: tmp });
     const exclude = await readFile(join(tmp, '.git', 'info', 'exclude'), 'utf-8');
     expect(exclude.match(/settings\.local\.json/g)).toHaveLength(1);
-  });
+  }
 
   it('--shared uses the portable npx command when FlowLens is a project dependency', async () => {
     await writeFile(join(tmp, 'package.json'), JSON.stringify({ devDependencies: { flowlens: '^0.1.0' } }));

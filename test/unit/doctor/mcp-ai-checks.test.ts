@@ -3,7 +3,7 @@
  * lists tools in-process; the AI check reports `skipped` when disabled.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runIndex } from '../../../src/indexer/indexer.js';
@@ -29,7 +29,8 @@ describe('mcpReachableCheck (real server, indexed fixture)', () => {
   let ctx: { rootDir: string; flowlensDir: string; daemon: boolean };
 
   beforeAll(async () => {
-    tmp = await mkdtemp(join(tmpdir(), 'flowlens-doctor-mcp-'));
+    // Real path: the lock is keyed by path, and the check opens the graph by its canonical root.
+    tmp = await realpath(await mkdtemp(join(tmpdir(), 'flowlens-doctor-mcp-')));
     const flowlensDir = join(tmp, '.flowlens');
     await mkdir(flowlensDir, { recursive: true });
     await writeFile(join(flowlensDir, 'config.json'), JSON.stringify(CONFIG));

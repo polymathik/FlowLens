@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { whichSync } from '../../src/agent/setup/claude-cli.js';
@@ -15,7 +15,8 @@ const claude = whichSync('claude');
 
 describe.skipIf(!claude)('real claude CLI (scratch HOME)', () => {
   it('registers, detects, refreshes and removes the FlowLens server', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'fl-real-claude-'));
+    // Real path: claude keys ~/.claude.json projects by the canonical path.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'fl-real-claude-')));
     const home = join(root, 'home');
     const proj = join(root, 'proj');
     mkdirSync(home);

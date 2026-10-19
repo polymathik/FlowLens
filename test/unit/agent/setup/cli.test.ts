@@ -3,7 +3,7 @@
  * `claude`/`codex`, so nothing here can touch the developer's agent configuration.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { symlinkSync as linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,7 +20,8 @@ describe('agent install / status / uninstall and init flags (real CLI)', () => {
   const cli = (args: string[], cwd = proj) => runCli(args, { cwd, env });
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), 'fl-setup-cli-'));
+    // Real path: the CLI reports canonical (/private/var on macOS) project paths.
+    root = realpathSync(await mkdtemp(join(tmpdir(), 'fl-setup-cli-')));
     proj = join(root, 'proj');
     const home = join(root, 'home');
     const bin = join(root, 'bin');

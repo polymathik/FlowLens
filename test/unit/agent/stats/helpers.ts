@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -6,7 +6,8 @@ export const FIXTURES = resolve(__dirname, '../../../fixtures/agent-stats');
 
 /** A temp project with `.flowlens/`, plus a fake Claude config dir for transcripts. */
 export function makeProject(): { root: string; flowlensDir: string; claudeHome: string; projectsRoot: string } {
-  const base = mkdtempSync(join(tmpdir(), 'flowlens-stats-'));
+  // Real path: the CLI subprocess sees its cwd canonicalised, and transcript dirs are named after it.
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'flowlens-stats-')));
   const root = join(base, 'my.proj_x');
   const flowlensDir = join(root, '.flowlens');
   mkdirSync(join(flowlensDir, 'agent-ledger'), { recursive: true });
