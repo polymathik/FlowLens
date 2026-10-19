@@ -218,7 +218,7 @@ export interface ClaudeHookInput {
   };
 }
 
-export type ClaudeHookEventName = 'SessionStart' | 'UserPromptSubmit' | 'PostToolUse';
+export type ClaudeHookEventName = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse';
 
 /** Hook stdout JSON (https://code.claude.com/docs/en/hooks#json-output). */
 export interface ClaudeHookOutput {
@@ -230,6 +230,9 @@ export interface ClaudeHookOutput {
   hookSpecificOutput?: {
     hookEventName: ClaudeHookEventName;
     additionalContext?: string;
+    /** PreToolUse (Claude Code and Codex): `deny` stops the tool call and shows `permissionDecisionReason` to the agent. */
+    permissionDecision?: 'deny';
+    permissionDecisionReason?: string;
   };
 }
 
@@ -276,6 +279,8 @@ export interface ClaudeCodeHookInstallOptions {
   force?: boolean;
   /** Write `.claude/settings.json` instead of `.claude/settings.local.json`. */
   shared?: boolean;
+  /** Phase 23: install the PreToolUse edit gate (default true). The recorder hook is always installed. */
+  gate?: boolean;
 }
 
 export interface AgentInstallResult {
