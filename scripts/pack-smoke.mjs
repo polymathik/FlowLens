@@ -112,7 +112,7 @@ try {
   process.exitCode = 1;
 } finally {
   try {
-    execFileSync(process.execPath, [join(work, 'app', 'node_modules', 'flowlens', 'dist', 'cli', 'index.js'), 'daemon', 'stop'], { env: ENV, stdio: 'ignore' });
+    execFileSync(process.execPath, [join(work, 'app', 'node_modules', '@polymathik', 'flowlens', 'dist', 'cli', 'index.js'), 'daemon', 'stop'], { env: ENV, stdio: 'ignore' });
   } catch { /* not running */ }
   if (!keep) {
     rmSync(work, { recursive: true, force: true });

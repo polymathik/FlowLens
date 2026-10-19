@@ -2,13 +2,14 @@
  * Resolves the base command installed hooks use to invoke FlowLens.
  *
  * Default: `node "<absolute path to this package's dist/cli/index.js>"`, which
- * works without a global install (the package is not on npm yet). The package
+ * works without a global install. The package
  * root is found from `import.meta.url`, so this resolves correctly whether the
  * code runs from `dist/` (normal) or from `src/` under a test runner.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLI_BIN_NAME, LEGACY_PACKAGE_NAME, PACKAGE_NAME, isFlowLensPackageName } from '../contracts/package-identity.js';
 
 export function findPackageRoot(fromUrl: string = import.meta.url): string | null {
   let dir = dirname(fileURLToPath(fromUrl));
@@ -17,7 +18,7 @@ export function findPackageRoot(fromUrl: string = import.meta.url): string | nul
     if (existsSync(pkg)) {
       try {
         const name = (JSON.parse(readFileSync(pkg, 'utf-8')) as { name?: string }).name;
-        if (name === 'flowlens') return dir;
+        if (isFlowLensPackageName(name)) return dir;
       } catch {
         // keep walking
       }
@@ -60,8 +61,9 @@ export function portableHookBaseCommand(projectDir: string): string | null {
     const pkg = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf-8')) as {
       dependencies?: Record<string, string>; devDependencies?: Record<string, string>;
     };
-    const declared = Boolean(pkg.devDependencies?.flowlens ?? pkg.dependencies?.flowlens);
-    const installed = ['flowlens', 'flowlens.cmd'].some((b) => existsSync(join(projectDir, 'node_modules', '.bin', b)));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    const declared = Boolean(deps[PACKAGE_NAME] ?? deps[LEGACY_PACKAGE_NAME]);
+    const installed = [CLI_BIN_NAME, `${CLI_BIN_NAME}.cmd`].some((b) => existsSync(join(projectDir, 'node_modules', '.bin', b)));
     return declared && installed ? PORTABLE_HOOK_COMMAND : null;
   } catch {
     return null;

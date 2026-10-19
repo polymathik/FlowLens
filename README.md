@@ -39,22 +39,17 @@ knowledge through an MCP server and Claude Code hooks, so it stops guessing.
   </picture>
 </p>
 
-> **Status:** pre-release (0.1). FlowLens is **not published to npm yet**.
-> It will be published as `flowlens`. Until then, install it from a tarball
-> built from source (below).
+> **Status:** early release (0.1), published on npm as
+> [`@polymathik/flowlens`](https://www.npmjs.com/package/@polymathik/flowlens).
+> The command it installs is `flowlens`.
 
 ## Quickstart
 
 Requires Node.js 20 or newer.
 
 ```bash
-# 1. Build a tarball from source (once)
-git clone https://github.com/sarupurisailalith/FlowLens.git
-cd FlowLens && npm ci && npm run build && npm pack    # → flowlens-0.1.0.tgz
-
-# 2. Use it in any project
 cd your-project
-npm i -D /path/to/FlowLens/flowlens-0.1.0.tgz         # or: npm i -g <tgz>
+npm i -D @polymathik/flowlens                         # or: npm i -g @polymathik/flowlens
 npx flowlens init      # index the code, infer layers → .flowlens/, offer to connect your coding agent
 npx flowlens canvas    # open the explorer in your browser
 npx flowlens report    # the same health check-up as Markdown in the terminal
@@ -122,7 +117,7 @@ explicit command), and every file FlowLens edits is backed up first
 
 ```bash
 cd your-project
-npm i -D /path/to/FlowLens/flowlens-0.1.0.tgz      # or npm i -g <tgz>
+npm i -D @polymathik/flowlens                      # or npm i -g @polymathik/flowlens
 npx flowlens init          # index → "Connect Claude Code now? [Y/n]" → yes
 npx flowlens canvas        # open the explorer
 ```
@@ -145,7 +140,7 @@ dependencies.
 
 ```bash
 # the person setting it up
-npm i -D flowlens                                  # (tarball path until it is on npm)
+npm i -D @polymathik/flowlens
 npx flowlens init --shared --agents claude-code    # or: flowlens agent install claude-code --shared
 git add package.json package-lock.json .mcp.json .claude/settings.json
 git commit -m "Connect FlowLens"

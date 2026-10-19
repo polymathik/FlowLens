@@ -11,10 +11,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PACKAGE_NAME = 'flowlens';
+import { isFlowLensPackageName } from '../../contracts/package-identity.js';
 
 /**
- * Walk up from `startFile` until a `package.json` whose name is `flowlens`
+ * Walk up from `startFile` until a `package.json` whose name is the FlowLens package's
  * is found. Returns that directory, or null when not found (should not
  * happen for a correctly installed package).
  */
@@ -25,7 +25,7 @@ export function findPackageRoot(startFile: string = fileURLToPath(import.meta.ur
     if (existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string };
-        if (pkg.name === PACKAGE_NAME) return dir;
+        if (isFlowLensPackageName(pkg.name)) return dir;
       } catch {
         /* unreadable package.json — keep walking */
       }

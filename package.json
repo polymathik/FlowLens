@@ -1,5 +1,5 @@
 {
-  "name": "flowlens",
+  "name": "@polymathik/flowlens",
   "version": "0.1.0",
   "description": "Local-first codebase map and health check for AI-built projects, with an MCP server for coding agents",
   "keywords": [
@@ -14,6 +14,9 @@
     "local-first",
     "tree-sitter"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "homepage": "https://github.com/sarupurisailalith/FlowLens#readme",
   "bugs": {
     "url": "https://github.com/sarupurisailalith/FlowLens/issues"

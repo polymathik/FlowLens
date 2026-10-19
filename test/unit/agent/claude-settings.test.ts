@@ -217,6 +217,14 @@ describe('settings file scope (review M3)', () => {
     expect(guard.startsWith('npx --no-install flowlens agent guard')).toBe(true);
   });
 
+  it('--shared also recognises the scoped npm package as a project dependency', async () => {
+    await writeFile(join(tmp, 'package.json'), JSON.stringify({ dependencies: { '@polymathik/flowlens': '^0.1.0' } }));
+    await mkdir(join(tmp, 'node_modules', '.bin'), { recursive: true });
+    await writeFile(join(tmp, 'node_modules', '.bin', 'flowlens'), '#!/bin/sh\n');
+    const result = await installClaudeCodeHooks({ project_dir: tmp, shared: true });
+    expect(result).toMatchObject({ scope: 'shared', command: 'npx --no-install flowlens' });
+  });
+
   it('--shared warns when the command embeds an absolute path', async () => {
     const result = await installClaudeCodeHooks({ project_dir: tmp, shared: true });
     expect(result.command).toMatch(/^node "\//);
