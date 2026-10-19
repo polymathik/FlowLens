@@ -26,6 +26,7 @@ describe('agent gate, recorder and ledger', () => {
     await mkdir(join(root, 'src'), { recursive: true });
     for (const f of [CORE, 'src/hot.ts', 'src/small.ts']) await writeFile(join(root, f), '// x\n');
     await writeFile(join(fl, 'agent.json'), JSON.stringify({ gate: { paths: ['packages/core/**'] } }));
+    await writeFile(join(root, '.mcp.json'), JSON.stringify({ mcpServers: { flowlens: { command: 'npx', args: ['--no-install', 'flowlens', 'serve'] } } }));
     const row = (id: string, kind: string, name: string, file: string, afferent: number) =>
       [id, kind, name, name, file, 0, 0, 'typescript', 0, 0, 0, 0, afferent];
     await writeFile(join(fl, 'agent-digest.json'), JSON.stringify({
@@ -85,6 +86,12 @@ describe('agent gate, recorder and ledger', () => {
     expect((await gate(CORE)).stdout).not.toBe('');
   });
 
+  it('fails open when the FlowLens MCP server is known to be missing', async () => {
+    await rm(join(root, '.mcp.json'));
+    expect((await gate(CORE)).stdout).toBe('');
+    expect(await readSessionLog(fl, SESSION)).toEqual([]);
+  });
+
   it('fails open: env off, disabled config, known-missing MCP, malformed input, missing session', async () => {
     expect((await gate(CORE, { FLOWLENS_GATE: 'off' })).stdout).toBe('');
     expect((await runAgentGate({ rootDir: root, hookInput: { ...edit(CORE), session_id: undefined } })).stdout).toBe('');
@@ -104,7 +111,7 @@ describe('agent gate, recorder and ledger', () => {
 
   it('gates every file of an apply_patch and reports them together', async () => {
     const patch = `*** Begin Patch\n*** Update File: ${CORE}\n*** Update File: src/small.ts\n*** End Patch`;
-    const out = await runAgentGate({ rootDir: root, hookInput: { ...edit(CORE, 'apply_patch'), tool_input: { command: patch } }, agent: 'codex', env: {} });
+    const out = await runAgentGate({ rootDir: root, hookInput: { ...edit(CORE, 'apply_patch'), tool_input: { command: patch } }, env: {} });
     const reason = parse(out.stdout).hookSpecificOutput!.permissionDecisionReason!;
     expect(reason).toContain(CORE);
     expect(reason).not.toContain('src/small.ts');
