@@ -16,6 +16,7 @@ import {
 import { DEFAULT_BUDGET_CHARS } from '../../agent/hook-output.js';
 import { AGENT_OPTION_HELP, addHookCommands, parseAgentId } from './agent-hooks.js';
 import { done, execute } from './agent-exec.js';
+import { agentStatsCommand } from './agent-stats.js';
 
 const NO_DAEMON_HELP = 'Open the graph directly instead of via the FlowLens daemon (may then report "busy")';
 const ROOT_HELP = 'Project root (hooks pass "$CLAUDE_PROJECT_DIR"); defaults to hook cwd, then the current directory';
@@ -119,6 +120,8 @@ agentCommand.addCommand(new Command('baseline')
     format: parseFormat(opts.format),
     daemon: opts.daemon,
   }))));
+
+agentCommand.addCommand(agentStatsCommand);
 
 const installCommand = new Command('install').description('Install agent integrations');
 installCommand.addCommand(new Command('claude-code')
