@@ -62,7 +62,7 @@ describe('agent hooks + serve --watch through the daemon', () => {
     git(proj, ['commit', '-qm', 'init']);
     const init = await runCli(['init'], proj, env);
     expect(init.code, init.stderr).toBe(0);
-    const install = await runCli(['agent', 'install', 'claude-code', '--command', TSX_CLI_COMMAND], proj, env);
+    const install = await runCli(['agent', 'install', 'claude-code', '--no-mcp', '--command', TSX_CLI_COMMAND], proj, env);
     expect(install.code, install.stderr).toBe(0);
     const settings = JSON.parse(await readFile(join(proj, '.claude/settings.local.json'), 'utf-8')) as ClaudeSettings;
     commands = {

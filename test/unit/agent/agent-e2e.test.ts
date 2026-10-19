@@ -46,7 +46,7 @@ describe('agent hooks end to end', () => {
     expect(runCli(['init'], { cwd: proj }).status).toBe(0);
     expect(runCli(['index'], { cwd: proj }).status).toBe(0);
 
-    const install = runCli(['agent', 'install', 'claude-code', '--command', TSX_CLI_COMMAND, '--format', 'json'], { cwd: proj });
+    const install = runCli(['agent', 'install', 'claude-code', '--no-mcp', '--command', TSX_CLI_COMMAND, '--format', 'json'], { cwd: proj });
     expect(install.status).toBe(0);
     const settings = JSON.parse(await readFile(join(proj, '.claude/settings.local.json'), 'utf-8')) as ClaudeSettings;
     commands = {
@@ -155,7 +155,7 @@ describe('agent hooks end to end', () => {
     const path = join(proj, '.claude/settings.local.json');
     const good = await readFile(path, 'utf-8');
     await writeFile(path, '{ broken');
-    const bad = runCli(['agent', 'install', 'claude-code'], { cwd: proj });
+    const bad = runCli(['agent', 'install', 'claude-code', '--no-mcp'], { cwd: proj });
     expect(bad.status).toBe(2);
     expect(bad.stderr).toContain('not valid JSON');
     expect(await readFile(path, 'utf-8')).toBe('{ broken');

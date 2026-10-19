@@ -22,6 +22,7 @@ import { parseAIProvider, runInference } from '../../ai/ai-integration.js';
 import { buildTopology } from '../../ai/topology-builder.js';
 import { AIConfigError, type AIProvider } from '../../contracts/ai-integration.js';
 import { printWarning } from '../output.js';
+import { connectAgentsAfterInit, parseAgentList } from '../../agent/setup/prompt.js';
 import { SnapshotManager } from '../../analysis/snapshot-manager.js';
 import { printHeader, printSuccess, printError, printSummary } from '../output.js';
 import type { FlowLensConfig } from '../../contracts/config.js';
@@ -89,7 +90,14 @@ export const initCommand = new Command('init')
   .option('--provider <provider>', 'AI provider: anthropic, openai, ollama', 'anthropic')
   .option('--model <model>', 'Override the default model for the chosen provider')
   .option('--no-daemon', 'Open the graph directly instead of via the FlowLens daemon')
-  .action(async (opts: { force?: boolean; ai?: boolean; provider?: string; model?: string; daemon?: boolean }) => {
+  .option('--yes', 'Connect Claude Code (MCP server + hooks) without asking; choose agents with --agents')
+  .option('--agents <list>', 'Agents to connect after init: claude-code, codex (comma-separated)')
+  .option('--no-agent', 'Do not offer to connect a coding agent')
+  .option('--shared', 'Connect agents with committed, team-wide config instead of personal config')
+  .action(async (opts: {
+    force?: boolean; ai?: boolean; provider?: string; model?: string; daemon?: boolean;
+    yes?: boolean; agents?: string; agent?: boolean; shared?: boolean;
+  }) => {
     const rootDir = resolve('.');
     const flowlensDir = join(rootDir, '.flowlens');
 
@@ -101,6 +109,15 @@ export const initCommand = new Command('init')
       } catch (err) {
         if (!(err instanceof AIConfigError)) throw err;
         printError(err.message);
+        process.exit(2);
+      }
+    }
+
+    if (opts.agents && opts.agent !== false) {
+      try {
+        parseAgentList(opts.agents);
+      } catch (err) {
+        printError((err as Error).message);
         process.exit(2);
       }
     }
@@ -205,6 +222,7 @@ export const initCommand = new Command('init')
       printSummary(result);
       for (const line of formatQualitySummary(result.quality)) console.log(line);
       printSuccess('\nFlowLens initialized successfully!');
+      await connectAgentsAfterInit(rootDir, opts);
     } catch (err) {
       printError(`Init failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
