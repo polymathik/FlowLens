@@ -165,7 +165,7 @@ describe('agent hooks + serve --watch through the daemon', () => {
   }, TIMEOUT);
 
   it('--no-daemon while serve holds the graph through the daemon is honest, and strict never passes silently', async () => {
-    const direct = await runHook(`${commands.guard.replace(' # flowlens-managed', '')} --no-daemon`, postToolUse('src/b.ts'), env, proj);
+    const direct = await runHook(`${commands.guard.replace(/ # flowlens-managed(:\w+)?/, '')} --no-daemon`, postToolUse('src/b.ts'), env, proj);
     expect(direct.code).toBe(0);
     const out = parse(direct.stdout);
     expect(out.decision).toBeUndefined();

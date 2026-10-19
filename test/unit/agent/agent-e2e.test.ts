@@ -15,6 +15,9 @@ import { git, runCli, runHookCommand, stopTestDaemon, TSX_CLI_COMMAND } from './
 
 const E2E_TIMEOUT = 180000;
 
+const countFlowLensHooks = (raw: string): number =>
+  Object.values((JSON.parse(raw) as ClaudeSettings).hooks ?? {}).flatMap((groups) => groups.flatMap((g) => g.hooks)).filter((h) => h.command.includes('flowlens-managed')).length;
+
 describe('agent hooks end to end', () => {
   let proj: string;
   let elsewhere: string;
@@ -163,7 +166,8 @@ describe('agent hooks end to end', () => {
     await writeFile(path, good);
     const removed = runCli(['agent', 'uninstall', 'claude-code', '--format', 'json'], { cwd: proj });
     expect(removed.status).toBe(0);
-    expect(JSON.parse(removed.stdout).hooks_removed).toBe(5);
+    // --no-mcp: no connected MCP server, so the install withheld the edit gate; count what was installed rather than a fixed number.
+    expect(JSON.parse(removed.stdout).hooks_removed).toBe(countFlowLensHooks(good));
     expect(JSON.parse(await readFile(path, 'utf-8')).hooks).toEqual({});
   }, E2E_TIMEOUT);
 
