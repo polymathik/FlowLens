@@ -14,7 +14,7 @@ export type AgentEvent =
 
 export type AgentOutputFormat = 'markdown' | 'json';
 export type AgentRisk = 'none' | 'low' | 'medium' | 'high';
-export type AgentProvider = 'claude-code';
+export type AgentProvider = 'claude-code' | 'codex';
 export type AgentChangedSource = 'argument' | 'hook' | 'git' | 'none';
 
 export interface AgentContextRequest {
@@ -22,6 +22,12 @@ export interface AgentContextRequest {
   prompt?: string;
   changed_files?: string[];
   max_items?: number;
+  /** Phase 23: name the FlowLens MCP tools in the guidance (set unless the MCP server is known to be missing). */
+  tools_hint?: boolean;
+  /** Phase 23: the PreToolUse edit gate is installed (the guidance says edits to protected files are held). */
+  gate?: boolean;
+  /** Phase 23: the agent receiving the guidance (the ToolSearch hint is Claude Code only). */
+  agent?: 'claude-code' | 'codex';
 }
 
 export interface AgentEntityReference {
@@ -218,7 +224,7 @@ export interface ClaudeHookInput {
   };
 }
 
-export type ClaudeHookEventName = 'SessionStart' | 'UserPromptSubmit' | 'PostToolUse';
+export type ClaudeHookEventName = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse';
 
 /** Hook stdout JSON (https://code.claude.com/docs/en/hooks#json-output). */
 export interface ClaudeHookOutput {
@@ -230,6 +236,9 @@ export interface ClaudeHookOutput {
   hookSpecificOutput?: {
     hookEventName: ClaudeHookEventName;
     additionalContext?: string;
+    /** PreToolUse (Claude Code and Codex): `deny` stops the tool call and shows `permissionDecisionReason` to the agent. */
+    permissionDecision?: 'deny';
+    permissionDecisionReason?: string;
   };
 }
 
@@ -276,6 +285,8 @@ export interface ClaudeCodeHookInstallOptions {
   force?: boolean;
   /** Write `.claude/settings.json` instead of `.claude/settings.local.json`. */
   shared?: boolean;
+  /** Phase 23: install the PreToolUse edit gate (default true). The recorder hook is always installed. */
+  gate?: boolean;
 }
 
 export interface AgentInstallResult {
@@ -285,6 +296,8 @@ export interface AgentInstallResult {
   hooks_existing: number;
   /** FlowLens hooks replaced (via --force or legacy/unmarked migration). */
   hooks_replaced?: number;
+  /** Phase 23: FlowLens hooks that are no longer planned and were removed (e.g. the gate after --no-gate). */
+  hooks_removed?: number;
   /** Backup of the previous settings file, when one existed. */
   backup_path?: string;
   /** Base command written into the hooks. */

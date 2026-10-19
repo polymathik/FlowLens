@@ -18,6 +18,9 @@ import type {
   AgentOutputFormat,
   ClaudeHookEventName,
 } from '../contracts/agent.js';
+import type { AgentProviderId } from '../contracts/agent-setup.js';
+import { appendLogEvent, pruneLedgers } from './ledger.js';
+import { getMcpState } from './mcp-state.js';
 import { loadBaseline, makeBaseline, saveBaseline } from './baseline.js';
 import { getGitHead } from './changed-files.js';
 import { buildContextFromDigest } from './context-builder.js';
@@ -41,6 +44,13 @@ export interface RunContextOptions {
   budget?: number;
   /** `false` = `--no-daemon`. */
   daemon?: boolean;
+  /** Phase 23: agent session (hook input) for the usage log; the agent receiving the context. */
+  sessionId?: string;
+  transcriptPath?: string;
+  source?: string;
+  agent?: AgentProviderId;
+  /** The PreToolUse gate is installed (the hook command carries `--gate`). */
+  gate?: boolean;
 }
 
 export type DigestResolution =
@@ -84,13 +94,41 @@ export async function runAgentContext(options: RunContextOptions): Promise<Agent
   if (options.event === 'session_start') {
     await ensureBaseline(options.rootDir, resolution.digest);
   }
+  const agent = options.agent ?? 'claude-code';
+  const mcp = await getMcpState(options.rootDir, agent);
+  const toolsHint = mcp !== 'not_connected';
   const packet = buildContextFromDigest(resolution.digest, {
     event: options.event,
     prompt: options.prompt,
     changed_files: options.changedFiles,
     max_items: options.maxItems,
+    tools_hint: toolsHint,
+    gate: toolsHint && Boolean(options.gate),
+    agent,
   }, resolution.source);
+  if (options.hook) await logContext(options, agent, formatContextMarkdown(packet).length, packet.relevant_files.length, toolsHint);
   return render(options, eventName, packet);
+}
+
+/** Usage log: the session's first record (SessionStart) and every injection. Never throws. */
+async function logContext(options: RunContextOptions, agent: AgentProviderId, chars: number, relevantFiles: number, toolsHint: boolean): Promise<void> {
+  if (!options.sessionId) return;
+  try {
+    const flowlensDir = flowlensDirFor(options.rootDir);
+    const base = { ts: new Date().toISOString(), session_id: options.sessionId };
+    const sessionStart = options.event === 'session_start';
+    if (sessionStart) {
+      await appendLogEvent(flowlensDir, {
+        ...base, t: 'session', provider: agent, source: options.source, transcript_path: options.transcriptPath, cwd: options.rootDir,
+      });
+      await pruneLedgers(flowlensDir);
+    }
+    await appendLogEvent(flowlensDir, {
+      ...base, t: 'inject', event: sessionStart ? 'session_start' : 'prompt_submit', chars, relevant_files: relevantFiles, tools_hint: toolsHint,
+    });
+  } catch {
+    // logging must never break the hook
+  }
 }
 
 async function ensureBaseline(rootDir: string, digest: AgentGraphDigest): Promise<void> {

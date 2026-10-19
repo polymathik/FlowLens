@@ -10,6 +10,7 @@ import { architectureValidCheck } from './architecture-valid.js';
 import { fileIndexCurrentCheck } from './file-index-current.js';
 import { mcpReachableCheck } from './mcp-check.js';
 import { aiConfiguredCheck } from './ai-check.js';
+import { agentIntegrationCheck } from './agent-integration.js';
 import {
   nodeVersionCheck,
   gitAvailableCheck,
@@ -24,6 +25,7 @@ export const ALL_CHECKS: DiagnosticRunner[] = [
   fileIndexCurrentCheck,
   mcpReachableCheck,
   aiConfiguredCheck,
+  agentIntegrationCheck,
   gitAvailableCheck,
   nodeVersionCheck,
   diskSpaceCheck,

@@ -45,7 +45,7 @@ describe('Claude Code settings safety', () => {
   it('normalises "hooks": null safely but refuses non-array event groups', async () => {
     await writeSettings(JSON.stringify({ model: 'opus', hooks: null }));
     const result = await installClaudeCodeHooks({ project_dir: tmp, command: 'flowlens', shared: true });
-    expect(result.hooks_added).toBe(3);
+    expect(result.hooks_added).toBe(5);
     expect((await read()).model).toBe('opus');
 
     await writeSettings(JSON.stringify({ hooks: { Stop: { command: 'x' } } }));
@@ -82,7 +82,7 @@ describe('Claude Code settings safety', () => {
     await installClaudeCodeHooks({ project_dir: tmp, command: 'flowlens', shared: true });
     const before = await readFile(settingsPath, 'utf-8');
     const second = await installClaudeCodeHooks({ project_dir: tmp, command: 'flowlens', shared: true });
-    expect(second).toMatchObject({ hooks_added: 0, hooks_existing: 3 });
+    expect(second).toMatchObject({ hooks_added: 0, hooks_existing: 5 });
     expect(second.backup_path).toBeUndefined();
     expect(await readFile(settingsPath, 'utf-8')).toBe(before);
   });
@@ -93,13 +93,15 @@ describe('Claude Code settings safety', () => {
       hooks: { PostToolUse: [{ matcher: 'Edit|MultiEdit|Write', hooks: [{ type: 'command', command: 'prettier --write' }] }] },
     }));
     const installed = await installClaudeCodeHooks({ project_dir: tmp, command, shared: true });
-    expect(installed.hooks_added).toBe(3);
+    expect(installed.hooks_added).toBe(5);
     const content = await read();
-    expect(content.hooks.PostToolUse[0].hooks.map((h: { command: string }) => h.command))
-      .toEqual(['prettier --write', `${command} agent guard --hook --reindex --strict --root "\${CLAUDE_PROJECT_DIR}" # flowlens-managed`]);
+    // The user's own PostToolUse group (a different matcher) is untouched; ours are separate groups.
+    expect(content.hooks.PostToolUse[0].hooks.map((h: { command: string }) => h.command)).toEqual(['prettier --write']);
+    expect(content.hooks.PostToolUse[1].hooks.map((h: { command: string }) => h.command))
+      .toEqual([`${command} agent guard --hook --reindex --strict --root "\${CLAUDE_PROJECT_DIR}" # flowlens-managed:guard`]);
 
     const removed = await uninstallClaudeCodeHooks(tmp);
-    expect(removed.hooks_removed).toBe(3);
+    expect(removed.hooks_removed).toBe(5);
     expect(removed.backup_path).toBeDefined();
     expect((await read()).hooks).toEqual({
       PostToolUse: [{ matcher: 'Edit|MultiEdit|Write', hooks: [{ type: 'command', command: 'prettier --write' }] }],
@@ -111,17 +113,17 @@ describe('Claude Code settings safety', () => {
     // hooks pointing at a dead path until --force).
     await installClaudeCodeHooks({ project_dir: tmp, command: 'old-flowlens', shared: true });
     const refreshed = await installClaudeCodeHooks({ project_dir: tmp, command: 'new-flowlens', shared: true });
-    expect(refreshed).toMatchObject({ hooks_added: 0, hooks_existing: 0, hooks_replaced: 3 });
+    expect(refreshed).toMatchObject({ hooks_added: 0, hooks_existing: 0, hooks_replaced: 5 });
     const text = JSON.stringify(await read());
     expect(text).not.toContain('old-flowlens');
-    expect(text.match(/flowlens-managed/g)).toHaveLength(3);
+    expect(text.match(/flowlens-managed/g)).toHaveLength(5);
 
     const same = await installClaudeCodeHooks({ project_dir: tmp, command: 'new-flowlens', shared: true });
-    expect(same).toMatchObject({ hooks_existing: 3, hooks_replaced: 0 });
+    expect(same).toMatchObject({ hooks_existing: 5, hooks_replaced: 0 });
     expect(same.backup_path).toBeUndefined();
     const forced = await installClaudeCodeHooks({ project_dir: tmp, command: 'new-flowlens', force: true, shared: true });
-    expect(forced.hooks_replaced).toBe(3);
-    expect(JSON.stringify(await read()).match(/flowlens-managed/g)).toHaveLength(3);
+    expect(forced.hooks_replaced).toBe(5);
+    expect(JSON.stringify(await read()).match(/flowlens-managed/g)).toHaveLength(5);
   });
 
   it('migrates legacy unmarked hooks (old regex shape) instead of duplicating them', async () => {
@@ -136,12 +138,12 @@ describe('Claude Code settings safety', () => {
       },
     }));
     const result = await installClaudeCodeHooks({ project_dir: tmp, command: 'flowlens', shared: true });
-    expect(result).toMatchObject({ hooks_added: 0, hooks_replaced: 3 });
+    expect(result).toMatchObject({ hooks_added: 2, hooks_replaced: 3 });
     const content = await read();
     const all = Object.values(content.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>)
       .flatMap((groups) => groups.flatMap((g) => g.hooks.map((h) => h.command)));
-    expect(all.filter((c) => c.includes('agent '))).toHaveLength(3);
-    expect(all.every((c) => !c.includes('agent ') || c.endsWith('# flowlens-managed'))).toBe(true);
+    expect(all.filter((c) => c.includes('agent '))).toHaveLength(5);
+    expect(all.every((c) => !c.includes('agent ') || /# flowlens-managed:(context|guard|gate|record)$/.test(c))).toBe(true);
     expect(all).toContain('echo user-hook');
     expect(content.hooks.SessionStart).toHaveLength(1);
     expect(content.hooks.SessionStart[0].matcher).toBe('startup|resume|clear|compact');
@@ -216,7 +218,7 @@ describe('settings file scope (review M3)', () => {
     await writeFile(join(tmp, '.claude', 'settings.json'), JSON.stringify(shared));
 
     const local = await installClaudeCodeHooks({ project_dir: tmp, command: 'node "/new/place/dist/cli/index.js"' });
-    expect(local).toMatchObject({ scope: 'local', hooks_added: 3, hooks_moved: 3, moved_from: join(tmp, '.claude', 'settings.json') });
+    expect(local).toMatchObject({ scope: 'local', hooks_added: 5, hooks_moved: 5, moved_from: join(tmp, '.claude', 'settings.json') });
     expect((await readJson('.claude/settings.json')).hooks).toEqual({ Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] });
 
     // Portable shared hooks are left alone, with a warning.
@@ -227,9 +229,9 @@ describe('settings file scope (review M3)', () => {
 
     // (the --shared install in between moved the earlier local hooks out of settings.local.json)
     const removed = await uninstallClaudeCodeHooks(tmp);
-    expect(removed.hooks_removed).toBe(6);
+    expect(removed.hooks_removed).toBe(10);
     expect(removed.files?.map((f) => [f.path.endsWith('settings.local.json') ? 'local' : 'shared', f.hooks_removed]))
-      .toEqual([['local', 3], ['shared', 3]]);
+      .toEqual([['local', 5], ['shared', 5]]);
     expect((await readJson('.claude/settings.json')).hooks).toEqual({ Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] });
   });
 });

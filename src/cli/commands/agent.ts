@@ -1,14 +1,10 @@
 import { Command } from 'commander';
-import type { AgentCommandResult } from '../../contracts/agent.js';
 import { runAgentContext } from '../../agent/run-context.js';
 import { runAgentGuard } from '../../agent/run-guard.js';
-import { installClaudeCodeHooks, uninstallClaudeCodeHooks } from '../../agent/claude-code.js';
-import { ClaudeSettingsError } from '../../agent/settings-file.js';
 import { changedFilesFromHook, promptFromHook, readHookInput, resolveAgentRoot } from '../../agent/hook-input.js';
 import { resolveChangedFiles } from '../../agent/changed-files.js';
 import { runAgentBaseline } from '../../agent/run-baseline.js';
 import {
-  AgentUsageError,
   parseBudget,
   parseEvent,
   parseFileList,
@@ -17,6 +13,10 @@ import {
   parseRisk,
 } from '../../agent/options.js';
 import { DEFAULT_BUDGET_CHARS } from '../../agent/hook-output.js';
+import { AGENT_OPTION_HELP, addHookCommands, parseAgentId } from './agent-hooks.js';
+import { execute } from './agent-exec.js';
+import { agentStatsCommand } from './agent-stats.js';
+import { addAgentSetupCommands } from './agent-setup.js';
 
 const NO_DAEMON_HELP = 'Open the graph directly instead of via the FlowLens daemon (may then report "busy")';
 const ROOT_HELP = 'Project root (hooks pass "$CLAUDE_PROJECT_DIR"); defaults to hook cwd, then the current directory';
@@ -35,6 +35,8 @@ agentCommand.addCommand(new Command('context')
   .option('--root <dir>', ROOT_HELP)
   .option('--hook', 'Read Claude Code hook JSON from stdin and print hook JSON')
   .option('--git', 'Use git changed files when --changed is not provided')
+  .option('--gate', 'Hook mode: the PreToolUse edit gate is installed (the context says protected edits are held)')
+  .option('--agent <agent>', AGENT_OPTION_HELP)
   .option('--no-daemon', NO_DAEMON_HELP)
   .action((opts) => execute(async () => {
     const event = parseEvent(opts.event);
@@ -60,6 +62,11 @@ agentCommand.addCommand(new Command('context')
       hookEventName: hookInput.hook_event_name,
       budget,
       daemon: opts.daemon,
+      sessionId: hookInput.session_id,
+      transcriptPath: hookInput.transcript_path,
+      source: hookInput.source,
+      agent: parseAgentId(opts.agent),
+      gate: Boolean(opts.gate),
     });
   })));
 
@@ -75,6 +82,7 @@ agentCommand.addCommand(new Command('guard')
   .option('--git', 'Use git changed files when hook/argument input is empty')
   .option('--reindex', 'Incrementally re-index changed files before guard analysis')
   .option('--strict', 'Block on NEW cycles/violations (exit 2, or decision:block in hook mode)')
+  .option('--agent <agent>', AGENT_OPTION_HELP)
   .option('--no-daemon', NO_DAEMON_HELP)
   .action((opts) => execute(async () => {
     const format = parseFormat(opts.format);
@@ -98,6 +106,8 @@ agentCommand.addCommand(new Command('guard')
     });
   })));
 
+addHookCommands(agentCommand);
+
 agentCommand.addCommand(new Command('baseline')
   .description('Show or reset the strict-mode baseline of pre-existing cycles/violations')
   .option('--reset', 'Re-capture the baseline for the current git HEAD from the current graph')
@@ -111,75 +121,6 @@ agentCommand.addCommand(new Command('baseline')
     daemon: opts.daemon,
   }))));
 
-const installCommand = new Command('install').description('Install agent integrations');
-installCommand.addCommand(new Command('claude-code')
-  .description('Install Claude Code project hooks into .claude/settings.local.json (personal; --shared: .claude/settings.json)')
-  .option('--command <command>', 'Base command hooks use to run FlowLens (default: node "<this install>/dist/cli/index.js"; with --shared, "npx --no-install flowlens" when FlowLens is a project dependency)')
-  .option('--shared', 'Write the committed .claude/settings.json for the whole team instead of your personal settings.local.json')
-  .option('--force', 'Rewrite FlowLens hook entries even when they are up to date')
-  .option('--format <format>', 'Output format: markdown, json', 'markdown')
-  .option('--root <dir>', 'Project root (default: current directory)')
-  .action((opts) => execute(async () => {
-    const format = parseFormat(opts.format);
-    const result = await installClaudeCodeHooks({
-      project_dir: resolveAgentRoot(opts.root, {}),
-      command: opts.command,
-      force: Boolean(opts.force),
-      shared: Boolean(opts.shared),
-    });
-    const lines = [
-      'FlowLens Claude Code hooks installed.',
-      `Settings: ${result.settings_path} (${result.scope === 'shared' ? 'shared with the team' : 'personal, not committed'})`,
-      `Hook command: ${result.command}`,
-      `Hooks added: ${result.hooks_added}; refreshed: ${result.hooks_replaced ?? 0}; already up to date: ${result.hooks_existing}`,
-      result.hooks_moved ? `Moved ${result.hooks_moved} FlowLens hook(s) out of ${result.moved_from}` : '',
-      result.git_ignored_via ? `Kept out of git via: ${result.git_ignored_via}` : '',
-      result.backup_path ? `Backup: ${result.backup_path}` : '',
-      ...(result.warnings ?? []).map((w) => `Warning: ${w}`),
-    ].filter(Boolean);
-    return done(format === 'json' ? JSON.stringify(result, null, 2) : lines.join('\n'));
-  })));
-agentCommand.addCommand(installCommand);
+agentCommand.addCommand(agentStatsCommand);
 
-const uninstallCommand = new Command('uninstall').description('Uninstall agent integrations');
-uninstallCommand.addCommand(new Command('claude-code')
-  .description('Remove FlowLens-managed Claude Code project hooks (from settings.local.json and settings.json)')
-  .option('--shared', 'Only .claude/settings.json')
-  .option('--local', 'Only .claude/settings.local.json')
-  .option('--format <format>', 'Output format: markdown, json', 'markdown')
-  .option('--root <dir>', 'Project root (default: current directory)')
-  .action((opts) => execute(async () => {
-    const format = parseFormat(opts.format);
-    const scope = opts.shared ? 'shared' : opts.local ? 'local' : undefined;
-    const result = await uninstallClaudeCodeHooks(resolveAgentRoot(opts.root, {}), scope);
-    const lines = result.settings_found === false
-      ? [`No Claude Code settings in ${resolveAgentRoot(opts.root, {})}/.claude; nothing to remove.`]
-      : [
-        'FlowLens Claude Code hooks removed.',
-        ...(result.files ?? []).map((f) => `${f.path}: ${f.hooks_removed} removed${f.backup_path ? ` (backup: ${f.backup_path})` : ''}`),
-        `Hooks removed: ${result.hooks_removed}`,
-      ];
-    return done(format === 'json' ? JSON.stringify(result, null, 2) : lines.join('\n'));
-  })));
-agentCommand.addCommand(uninstallCommand);
-
-function done(stdout: string): AgentCommandResult {
-  return { exit_code: 0, stdout, stderr: '' };
-}
-
-/** Run a command body; usage/settings errors exit 2 with a message, nothing written. */
-async function execute(body: () => Promise<AgentCommandResult>): Promise<void> {
-  let result: AgentCommandResult;
-  try {
-    result = await body();
-  } catch (err) {
-    if (err instanceof AgentUsageError || err instanceof ClaudeSettingsError) {
-      result = { exit_code: 2, stdout: '', stderr: `flowlens agent: ${err.message}` };
-    } else {
-      throw err;
-    }
-  }
-  if (result.stdout) process.stdout.write(`${result.stdout}\n`);
-  if (result.stderr) process.stderr.write(`${result.stderr}\n`);
-  process.exitCode = result.exit_code;
-}
+addAgentSetupCommands(agentCommand);
