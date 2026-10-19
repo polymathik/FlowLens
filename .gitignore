@@ -33,3 +33,6 @@ npm-debug.log*
 .claude/settings.local.json
 .claude/worktrees/
 .codex/
+
+# Packed tarballs
+*.tgz

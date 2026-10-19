@@ -13,7 +13,20 @@
 
 /* ---------- tab bar ---------- */
 .fl-tabbar { display: flex; align-items: stretch; gap: 2px; height: 42px; padding: 0 8px; background: var(--fl-subtle); border-bottom: 1px solid var(--fl-border); flex: 0 0 auto; }
-.fl-brand { display: flex; align-items: center; padding: 0 10px 0 6px; font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
+.fl-brand { display: flex; align-items: center; gap: 8px; padding: 0 12px 0 6px; font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
+.fl-brand .fl-logo { flex: 0 0 auto; }
+
+/* ---------- logo mark (components/shared/LogoMark.tsx) ----------
+ * Field follows --fl-accent; the faint outer graph is #9590f0 in light and
+ * #5c5ca4 in dark, the values of the design system's light and dark marks. */
+.fl-logo { --fl-logo-faint: #9590f0; display: block; }
+.fl-logo-field { fill: var(--fl-accent); }
+.fl-logo-faint-stroke { stroke: var(--fl-logo-faint); }
+.fl-logo-faint-fill { fill: var(--fl-logo-faint); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .fl-logo { --fl-logo-faint: #5c5ca4; }
+}
+:root[data-theme='dark'] .fl-logo { --fl-logo-faint: #5c5ca4; }
 .fl-tabs { display: flex; align-items: stretch; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
 .fl-tab { position: relative; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 0 6px 0 12px; margin-top: 6px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; color: var(--fl-muted); cursor: pointer; font-size: 13px; white-space: nowrap; }
 .fl-tab:hover { color: var(--fl-text); background: color-mix(in srgb, var(--fl-surface) 60%, transparent); }
@@ -122,6 +135,7 @@ code, .fl-code { font-family: var(--fl-mono); font-size: 0.92em; background: var
 
 .fl-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; height: 100%; padding: 24px; text-align: center; color: var(--fl-muted); font-size: 14px; line-height: 1.6; }
 .fl-notice { max-width: 560px; padding: 28px; border-radius: 12px; border: 1px solid var(--fl-border); background: var(--fl-surface); text-align: left; color: var(--fl-text); }
+.fl-notice .fl-logo { margin-bottom: 14px; }
 .fl-notice h2 { font-size: 18px; margin-bottom: 8px; }
 .fl-notice p { color: var(--fl-muted); margin-bottom: 8px; }
 .fl-notice .fl-actions { margin-top: 14px; }

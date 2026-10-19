@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/flowlens-banner-dark.png">
+    <img alt="FlowLens: a local-first map and health check for your codebase" src="assets/brand/flowlens-banner-light.png" width="100%">
+  </picture>
+</p>
+
 # FlowLens
 
 **A local-first map and health check for your codebase, built for projects
@@ -14,15 +21,23 @@ knowledge through an MCP server and Claude Code hooks, so it stops guessing.
   (tangles, hard-to-follow code, fragile hubs, oversized files, rule breaks),
   each with a fix prompt for your AI assistant (`flowlens report`, or the
   Health screen in the explorer).
-- **Explorer**: one browser app for all your projects. Home shows every
-  project's health; each project has a Health screen and an interactive Map
-  (system → module → file → symbol, with overlays).
+- **Interactive map**: one browser app for all your projects. Home shows every
+  project's health; each project has a Health screen and a Map
+  (system → module → file → symbol, with overlays for quality, recent
+  changes, tangles and rule breaks).
 - **For coding agents**: an MCP server with 14 tools, health and context
   resources, and optional Claude Code hooks that add context to prompts and
-  check every edit.
+  check every edit, so your agent stops guessing.
 - **CI-friendly checks**: `flowlens check` exits non-zero on dependency
   cycles or architecture-rule violations. Exports to JSON, Graphviz DOT and
   Mermaid.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/flowlens-features-dark.png">
+    <img alt="Health check-up, interactive map, and an MCP server for coding agents" src="assets/brand/flowlens-features-light.png" width="100%">
+  </picture>
+</p>
 
 > **Status:** pre-release (0.1). FlowLens is **not published to npm yet**.
 > It will be published as `flowlens`. Until then, install it from a tarball
@@ -362,6 +377,13 @@ node dist/cli/index.js --help
   proxying the API to the daemon).
 - `src/contracts/` is the source of truth for every component boundary.
   See [CONTRIBUTING.md](CONTRIBUTING.md).
+- Brand: the banner, features image, logo lockups, favicon and social
+  preview live in `assets/brand/` (light and dark pairs, drawn from the
+  FlowLens design system). The explorer's mark is
+  `src/canvas/components/shared/LogoMark.tsx`, which follows the theme
+  through `--fl-accent`; its favicon is `src/canvas/public/favicon.svg`.
+  `assets/brand/flowlens-social-preview.png` is the GitHub social preview
+  (Settings → Social preview).
 
 ## License
 

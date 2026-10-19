@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchSession } from '../../api/explorer-client';
 import { onSignedOut } from '../../api/http';
 import { useExplorerStore } from '../../store/explorer-store';
+import { LogoMark } from '../shared/LogoMark';
 import { HomeView } from './HomeView';
 import { ProjectTab } from './ProjectTab';
 import { TabBar } from './TabBar';
@@ -68,6 +69,7 @@ function SignInNeeded({ offline }: { offline: boolean }) {
   return (
     <div className="fl-app fl-center" data-testid="sign-in-needed">
       <div className="fl-notice">
+        <LogoMark size={36} />
         <h2>{offline ? 'FlowLens is not running' : 'Open FlowLens from your terminal'}</h2>
         <p>
           {offline

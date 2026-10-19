@@ -8,6 +8,7 @@ import type { ProjectDetail } from '../../../contracts/service.js';
 import { useExplorerStore } from '../../store/explorer-store';
 import { tabHash } from '../../router/explorer-route';
 import { navigate } from '../../router/navigate';
+import { LogoMark } from '../shared/LogoMark';
 import { ProjectPicker } from './ProjectPicker';
 import { useThemeStore } from './theme';
 
@@ -41,7 +42,10 @@ export function TabBar({ byId }: { byId: (id: string) => ProjectDetail | null })
 
   return (
     <nav className="fl-tabbar" aria-label="Projects">
-      <span className="fl-brand">FlowLens</span>
+      <span className="fl-brand">
+        <LogoMark size={22} />
+        <span className="fl-brand-name">FlowLens</span>
+      </span>
       <div className="fl-tabs" role="tablist" aria-label="Open projects">
         {tabs.map((tab, i) => {
           const p = tab === 'home' ? null : byId(tab);
