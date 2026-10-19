@@ -1,0 +1,2 @@
+{"ts":"2026-10-11T10:00:00.000Z","session_id":"sess-codex","t":"session","provider":"codex","transcript_path":"/nonexistent/rollout.jsonl"}
+{"ts":"2026-10-11T10:00:05.000Z","session_id":"sess-codex","t":"query","tool":"mcp__flowlens__search","files":[],"response_chars":50}

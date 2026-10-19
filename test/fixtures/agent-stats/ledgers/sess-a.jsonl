@@ -1,0 +1,11 @@
+{"ts":"2026-10-10T09:00:00.000Z","session_id":"sess-a","t":"session","provider":"claude-code","source":"startup","transcript_path":"__TRANSCRIPT__","cwd":"/p"}
+{"ts":"2026-10-10T09:00:00.500Z","session_id":"sess-a","t":"inject","event":"session_start","chars":1200,"relevant_files":0,"tools_hint":true}
+{"ts":"2026-10-10T09:00:01.000Z","session_id":"sess-a","t":"inject","event":"prompt_submit","chars":800,"relevant_files":3,"tools_hint":false}
+{"ts":"2026-10-10T09:00:02.500Z","session_id":"sess-a","t":"query","tool":"mcp__flowlens__impact","files":["a.ts"],"response_chars":900}
+{"ts":"2026-10-10T09:00:02.600Z","session_id":"sess-a","t":"query","tool":"impact","files":["b.ts"],"response_chars":100}
+{"ts":"2026-10-10T09:00:03.500Z","session_id":"sess-a","t":"gate","file":"a.ts","decision":"deny","why":"hotspot"}
+{"ts":"2026-10-10T09:00:07.200Z","session_id":"sess-a","t":"gate","file":"a.ts","decision":"allow","why":"checked"}
+{"ts":"2026-10-10T09:00:07.300Z","session_id":"sess-a","t":"gate","file":"a.ts","decision":"relent","why":"unavailable"}
+{"ts":"2026-10-10T09:00:07.400Z","session_id":"sess-a","t":"guard","files":["a.ts"],"risk":"low","blocked":false}
+{"ts":"2026-10-10T09:00:07.500Z","session_id":"sess-a","t":"future-event-type","x":1}
+{"ts":"2026-10-10T09:00:08.000Z","session_id":"sess-a","t":"que
