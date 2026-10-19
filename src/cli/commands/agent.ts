@@ -1,14 +1,11 @@
 import { Command } from 'commander';
-import type { AgentCommandResult } from '../../contracts/agent.js';
 import { runAgentContext } from '../../agent/run-context.js';
 import { runAgentGuard } from '../../agent/run-guard.js';
 import { installClaudeCodeHooks, uninstallClaudeCodeHooks } from '../../agent/claude-code.js';
-import { ClaudeSettingsError } from '../../agent/settings-file.js';
 import { changedFilesFromHook, promptFromHook, readHookInput, resolveAgentRoot } from '../../agent/hook-input.js';
 import { resolveChangedFiles } from '../../agent/changed-files.js';
 import { runAgentBaseline } from '../../agent/run-baseline.js';
 import {
-  AgentUsageError,
   parseBudget,
   parseEvent,
   parseFileList,
@@ -17,6 +14,8 @@ import {
   parseRisk,
 } from '../../agent/options.js';
 import { DEFAULT_BUDGET_CHARS } from '../../agent/hook-output.js';
+import { AGENT_OPTION_HELP, addHookCommands, parseAgentId } from './agent-hooks.js';
+import { done, execute } from './agent-exec.js';
 
 const NO_DAEMON_HELP = 'Open the graph directly instead of via the FlowLens daemon (may then report "busy")';
 const ROOT_HELP = 'Project root (hooks pass "$CLAUDE_PROJECT_DIR"); defaults to hook cwd, then the current directory';
@@ -35,6 +34,8 @@ agentCommand.addCommand(new Command('context')
   .option('--root <dir>', ROOT_HELP)
   .option('--hook', 'Read Claude Code hook JSON from stdin and print hook JSON')
   .option('--git', 'Use git changed files when --changed is not provided')
+  .option('--gate', 'Hook mode: the PreToolUse edit gate is installed (the context says protected edits are held)')
+  .option('--agent <agent>', AGENT_OPTION_HELP)
   .option('--no-daemon', NO_DAEMON_HELP)
   .action((opts) => execute(async () => {
     const event = parseEvent(opts.event);
@@ -60,6 +61,11 @@ agentCommand.addCommand(new Command('context')
       hookEventName: hookInput.hook_event_name,
       budget,
       daemon: opts.daemon,
+      sessionId: hookInput.session_id,
+      transcriptPath: hookInput.transcript_path,
+      source: hookInput.source,
+      agent: parseAgentId(opts.agent),
+      gate: Boolean(opts.gate),
     });
   })));
 
@@ -75,6 +81,7 @@ agentCommand.addCommand(new Command('guard')
   .option('--git', 'Use git changed files when hook/argument input is empty')
   .option('--reindex', 'Incrementally re-index changed files before guard analysis')
   .option('--strict', 'Block on NEW cycles/violations (exit 2, or decision:block in hook mode)')
+  .option('--agent <agent>', AGENT_OPTION_HELP)
   .option('--no-daemon', NO_DAEMON_HELP)
   .action((opts) => execute(async () => {
     const format = parseFormat(opts.format);
@@ -97,6 +104,8 @@ agentCommand.addCommand(new Command('guard')
       daemon: opts.daemon,
     });
   })));
+
+addHookCommands(agentCommand);
 
 agentCommand.addCommand(new Command('baseline')
   .description('Show or reset the strict-mode baseline of pre-existing cycles/violations')
@@ -162,24 +171,3 @@ uninstallCommand.addCommand(new Command('claude-code')
     return done(format === 'json' ? JSON.stringify(result, null, 2) : lines.join('\n'));
   })));
 agentCommand.addCommand(uninstallCommand);
-
-function done(stdout: string): AgentCommandResult {
-  return { exit_code: 0, stdout, stderr: '' };
-}
-
-/** Run a command body; usage/settings errors exit 2 with a message, nothing written. */
-async function execute(body: () => Promise<AgentCommandResult>): Promise<void> {
-  let result: AgentCommandResult;
-  try {
-    result = await body();
-  } catch (err) {
-    if (err instanceof AgentUsageError || err instanceof ClaudeSettingsError) {
-      result = { exit_code: 2, stdout: '', stderr: `flowlens agent: ${err.message}` };
-    } else {
-      throw err;
-    }
-  }
-  if (result.stdout) process.stdout.write(`${result.stdout}\n`);
-  if (result.stderr) process.stderr.write(`${result.stderr}\n`);
-  process.exitCode = result.exit_code;
-}

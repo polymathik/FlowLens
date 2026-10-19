@@ -31,9 +31,23 @@ export function resolveAgentRoot(
   return start;
 }
 
+/** File paths named in a Codex `apply_patch` body (`*** Add|Update|Delete File: <path>`, `*** Move to: <path>`). */
+export function patchFiles(patch: unknown): string[] {
+  if (typeof patch !== 'string') return [];
+  const out: string[] = [];
+  for (const line of patch.split('\n')) {
+    const m = /^\*\*\* (?:(?:Add|Update|Delete) File|Move to):\s*(.+?)\s*$/.exec(line);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
+
 export function changedFilesFromHook(input: ClaudeHookInput, rootDir: string): string[] {
   const files = new Set<string>();
   const add = (file: unknown) => addFile(files, file, rootDir);
+  if (input.tool_name === 'apply_patch' || input.tool_name === 'ApplyPatch') {
+    for (const f of patchFiles(input.tool_input?.command)) add(f);
+  }
   add(input.tool_input?.file_path);
   add(input.tool_input?.filePath);
   add(input.tool_input?.notebook_path);

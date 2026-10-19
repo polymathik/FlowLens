@@ -22,6 +22,12 @@ export interface AgentContextRequest {
   prompt?: string;
   changed_files?: string[];
   max_items?: number;
+  /** Phase 23: name the FlowLens MCP tools in the guidance (set unless the MCP server is known to be missing). */
+  tools_hint?: boolean;
+  /** Phase 23: the PreToolUse edit gate is installed (the guidance says edits to protected files are held). */
+  gate?: boolean;
+  /** Phase 23: the agent receiving the guidance (the ToolSearch hint is Claude Code only). */
+  agent?: 'claude-code' | 'codex';
 }
 
 export interface AgentEntityReference {
@@ -290,6 +296,8 @@ export interface AgentInstallResult {
   hooks_existing: number;
   /** FlowLens hooks replaced (via --force or legacy/unmarked migration). */
   hooks_replaced?: number;
+  /** Phase 23: FlowLens hooks that are no longer planned and were removed (e.g. the gate after --no-gate). */
+  hooks_removed?: number;
   /** Backup of the previous settings file, when one existed. */
   backup_path?: string;
   /** Base command written into the hooks. */

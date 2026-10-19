@@ -1,3 +1,4 @@
+import { buildToolGuidance } from './guidance.js';
 import type { GraphStore } from '../contracts/graph.js';
 import type {
   AgentContextPacket,
@@ -149,5 +150,6 @@ function buildGuidance(
   if (cycleCount > 0) guidance.push(`The graph has ${cycleCount} file cycle(s); do not add imports that extend them.`);
   if (violationCount > 0) guidance.push(`The graph has ${violationCount} architecture violation(s); respect layer rules when moving dependencies.`);
   if (relevantCount === 0 && request.prompt) guidance.push('No direct prompt matches found; fall back to graph summary and hotspots.');
+  guidance.push(...buildToolGuidance({ tools: request.tools_hint ?? false, gate: request.gate ?? false, agent: request.agent }));
   return guidance;
 }

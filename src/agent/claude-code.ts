@@ -42,7 +42,7 @@ import {
 } from './settings-file.js';
 
 export {
-  buildClaudeCodeHookSettings, HOOK_ROOT_ARG, HOOK_TIMEOUTS, isFlowLensHook, removeFlowLensHooks,
+  buildClaudeCodeHookSettings, describeHookRoles, HOOK_ROOT_ARG, HOOK_TIMEOUTS, isFlowLensHook, removeFlowLensHooks,
 } from './claude-hooks.js';
 
 /** Remove FlowLens hooks matching `filter` from one settings file (backup + atomic write). */
@@ -75,7 +75,7 @@ export async function installClaudeCodeHooks(
     warnings.push(`The hook command embeds an absolute path on this machine (${command}); teammates who use the committed .claude/settings.json need FlowLens at the same path. Add FlowLens as a devDependency (then hooks use "npx --no-install flowlens"), pass --command, or install without --shared.`);
   }
 
-  const planned = buildClaudeCodeHookSettings(command);
+  const planned = buildClaudeCodeHookSettings(command, { gate: options.gate ?? true });
   const stats = mergeHooks(loaded.settings, planned, options.force ?? false);
   let backupPath: string | undefined;
   if (stats.changed) {
@@ -108,6 +108,7 @@ export async function installClaudeCodeHooks(
     hooks_added: stats.added,
     hooks_existing: stats.existing,
     hooks_replaced: stats.replaced,
+    ...(stats.removed > 0 ? { hooks_removed: stats.removed } : {}),
     backup_path: backupPath,
     command,
     scope,

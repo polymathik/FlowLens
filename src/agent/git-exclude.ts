@@ -28,9 +28,17 @@ export type GitIgnoreOutcome =
 
 /** Make sure git ignores `<projectDir>/.claude/settings.local.json`. */
 export function ensureLocalSettingsIgnored(projectDir: string): GitIgnoreOutcome {
+  return ensurePathIgnored(projectDir, '.claude/settings.local.json', 'personal Claude Code settings');
+}
+
+/**
+ * Make sure git ignores `<projectDir>/<rel>` (`rel` uses `/`), by appending to `.git/info/exclude` (never a
+ * committed file) unless an ignore rule already covers it. A tracked file is never excluded by this.
+ */
+export function ensurePathIgnored(projectDir: string, rel: string, comment: string): GitIgnoreOutcome {
   const top = git(projectDir, ['rev-parse', '--show-toplevel']);
   if (top.code !== 0 || !top.out) return { kind: 'not_git' };
-  const rel = '.claude/settings.local.json';
+  if (git(projectDir, ['ls-files', '--error-unmatch', rel]).code === 0) return { kind: 'already', via: 'tracked file (not excluded)' };
   const check = git(projectDir, ['check-ignore', '-q', '--no-index', rel]);
   if (check.code === 0) return { kind: 'already', via: 'git ignore rules' };
   const raw = git(projectDir, ['rev-parse', '--git-path', 'info/exclude']).out;
@@ -40,12 +48,12 @@ export function ensureLocalSettingsIgnored(projectDir: string): GitIgnoreOutcome
   let dir = projectDir;
   try { dir = realpathSync.native(projectDir); } catch { /* keep as given */ }
   const prefix = dir === top.out || !dir.startsWith(top.out) ? '' : `/${dir.slice(top.out.length + 1).replaceAll('\\', '/')}`;
-  const pattern = `${prefix}${LOCAL_SETTINGS_PATTERN}`;
+  const pattern = `${prefix}/${rel}`;
   try {
     mkdirSync(dirname(exclude), { recursive: true });
     const current = existsSync(exclude) ? readFileSync(exclude, 'utf-8') : '';
     if (!current.split(/\r?\n/).includes(pattern)) {
-      appendFileSync(exclude, `${current === '' || current.endsWith('\n') ? '' : '\n'}# FlowLens: personal Claude Code settings\n${pattern}\n`);
+      appendFileSync(exclude, `${current === '' || current.endsWith('\n') ? '' : '\n'}# FlowLens: ${comment}\n${pattern}\n`);
     }
     return { kind: 'added', via: exclude };
   } catch (err) {

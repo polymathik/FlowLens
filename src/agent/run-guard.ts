@@ -40,6 +40,7 @@ import { computeHealthHeadline } from './health-headline.js';
 import { changedFilesFromHook } from './hook-input.js';
 import { blockOutput, contextOutput } from './hook-output.js';
 import { riskAtLeast } from './options.js';
+import { appendLogEvent } from './ledger.js';
 import { reindexAgentChangedFiles } from './reindex.js';
 
 export interface RunGuardOptions {
@@ -143,9 +144,10 @@ async function analyse(
   }, { flowlensDir, issues });
 }
 
-function render(options: RunGuardOptions, report: AgentGuardReport): AgentCommandResult {
+async function render(options: RunGuardOptions, report: AgentGuardReport): Promise<AgentCommandResult> {
   const markdown = formatGuardMarkdown(report);
   const block = options.strict && shouldBlock(report);
+  await logGuard(options, report, block);
   if (options.hook) {
     if (block) {
       const reason = `FlowLens strict guard: this edit introduced ${report.cycles.length} new cycle(s) and ${report.architecture_violations.length} new architecture violation(s). Fix them or explain why they are acceptable before continuing.`;
@@ -157,6 +159,15 @@ function render(options: RunGuardOptions, report: AgentGuardReport): AgentComman
   const stdout = options.format === 'json' ? JSON.stringify(report, null, 2) : markdown;
   if (block) return { exit_code: 2, stdout: options.format === 'json' ? stdout : '', stderr: markdown };
   return ok(stdout);
+}
+
+/** Usage log (hook mode only): which files the guard checked and what it found. Never throws. */
+async function logGuard(options: RunGuardOptions, report: AgentGuardReport, blocked: boolean): Promise<void> {
+  const sessionId = options.hookInput.session_id;
+  if (!options.hook || !sessionId) return;
+  await appendLogEvent(flowlensDirFor(options.rootDir), {
+    t: 'guard', ts: new Date().toISOString(), session_id: sessionId, files: report.changed_files, risk: report.risk, blocked,
+  });
 }
 
 function unavailable(options: RunGuardOptions, failure: AgentGraphUnavailable): AgentCommandResult {
