@@ -64,10 +64,10 @@ describe('agent integration', () => {
     // Updated for Phase 7 hardening: marker + $CLAUDE_PROJECT_DIR root + clear/compact re-injection.
     expect(settings.hooks?.SessionStart?.[0]?.matcher).toBe('startup|resume|clear|compact');
     expect(settings.hooks?.UserPromptSubmit?.[0]?.hooks[0]?.command)
-      .toBe('flowlens agent context --hook --event prompt_submit --root "${CLAUDE_PROJECT_DIR}" # flowlens-managed');
-    expect(settings.hooks?.PostToolUse?.[0]?.matcher).toBe('Edit|MultiEdit|Write');
+      .toBe('flowlens agent context --hook --event prompt_submit --gate --root "${CLAUDE_PROJECT_DIR}" # flowlens-managed:context');
+    expect(settings.hooks?.PostToolUse?.[0]?.matcher).toBe('Edit|MultiEdit|Write|apply_patch');
     expect(settings.hooks?.PostToolUse?.[0]?.hooks[0]?.command)
-      .toBe('flowlens agent guard --hook --reindex --strict --root "${CLAUDE_PROJECT_DIR}" # flowlens-managed');
+      .toBe('flowlens agent guard --hook --reindex --strict --root "${CLAUDE_PROJECT_DIR}" # flowlens-managed:guard');
     expect(settings.hooks?.PostToolUse?.[0]?.hooks[0]?.timeout).toBe(60);
   });
 
@@ -80,7 +80,7 @@ describe('agent integration', () => {
       await readFile(join(tmp, '.claude/settings.local.json'), 'utf-8'),
     );
 
-    expect(result.hooks_added).toBe(3);
+    expect(result.hooks_added).toBe(5);
     expect(content.hooks.SessionStart[0].hooks[0].command)
       .toContain('flowlens agent context');
   });
@@ -92,7 +92,7 @@ describe('agent integration', () => {
       await readFile(join(tmp, '.claude/settings.local.json'), 'utf-8'),
     );
 
-    expect(result.hooks_removed).toBe(3);
+    expect(result.hooks_removed).toBe(5);
     expect(content.hooks).toEqual({});
   });
 
