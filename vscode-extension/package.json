@@ -7,7 +7,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sarupurisailalith/FlowLens.git",
+    "url": "git+https://github.com/polymathik/FlowLens.git",
     "directory": "vscode-extension"
   },
   "engines": {
